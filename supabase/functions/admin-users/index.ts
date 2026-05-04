@@ -1,0 +1,412 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    // Verify caller is authenticated
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "No autorizado" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+    // Verify calling user with anon client
+    const anonClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await anonClient.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims?.sub) {
+      return new Response(JSON.stringify({ error: "No autorizado" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const caller = { id: claimsData.claims.sub as string };
+
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
+
+    const { action, ...params } = await req.json();
+
+    // Get caller's empresa_id
+    const { data: callerProfile } = await adminClient
+      .from("profiles")
+      .select("empresa_id")
+      .eq("user_id", caller.id)
+      .single();
+
+    if (!callerProfile?.empresa_id) {
+      return new Response(JSON.stringify({ error: "Sin empresa" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const empresaId = callerProfile.empresa_id;
+
+    if (action === "list-users" || action === "list-empresa-users") {
+      // Super admin can query any empresa
+      let targetEmpresaId = empresaId;
+      if (action === "list-empresa-users" && params.empresa_id) {
+        // Verify caller is super admin
+        const { data: isSA } = await adminClient.rpc('is_super_admin', { p_user_id: caller.id });
+        if (!isSA) {
+          return new Response(JSON.stringify({ error: "No autorizado" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        targetEmpresaId = params.empresa_id;
+      }
+
+      // Get all profiles for this empresa
+      const { data: profiles } = await adminClient
+        .from("profiles")
+        .select("user_id, nombre, telefono")
+        .eq("empresa_id", targetEmpresaId);
+
+      const userIds = (profiles ?? []).map((p: any) => p.user_id);
+
+      if (userIds.length === 0) {
+        return new Response(JSON.stringify({ users: [] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get auth users
+      const { data: { users } } = await adminClient.auth.admin.listUsers({
+        perPage: 1000,
+      });
+
+      // Get roles
+      const { data: userRoles } = await adminClient
+        .from("user_roles")
+        .select("user_id, role_id, roles(nombre)")
+        .in("user_id", userIds);
+
+      const rolesMap: Record<string, string> = {};
+      (userRoles || []).forEach((ur: any) => {
+        rolesMap[ur.user_id] = ur.roles?.nombre || 'Sin rol';
+      });
+
+      const profilesMap: Record<string, any> = {};
+      (profiles || []).forEach((p: any) => { profilesMap[p.user_id] = p; });
+
+      const filtered = users
+        .filter((u: any) => userIds.includes(u.id))
+        .map((u: any) => ({
+          id: u.id,
+          email: u.email,
+          nombre: profilesMap[u.id]?.nombre || null,
+          telefono: profilesMap[u.id]?.telefono || null,
+          rol: rolesMap[u.id] || null,
+          created_at: u.created_at,
+          last_sign_in_at: u.last_sign_in_at,
+        }));
+
+      return new Response(JSON.stringify({ users: filtered }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "set-password") {
+      const { user_id, password } = params;
+
+      // Verify user belongs to same empresa
+      const { data: targetProfile } = await adminClient
+        .from("profiles")
+        .select("empresa_id")
+        .eq("user_id", user_id)
+        .single();
+
+      if (targetProfile?.empresa_id !== empresaId) {
+        return new Response(JSON.stringify({ error: "No autorizado" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { error } = await adminClient.auth.admin.updateUserById(user_id, {
+        password,
+      });
+
+      if (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "confirm-email") {
+      const { user_id } = params;
+      // Only super admins can confirm emails
+      const { data: isSA } = await adminClient.rpc('is_super_admin', { p_user_id: caller.id });
+      if (!isSA) {
+        return new Response(JSON.stringify({ error: "No autorizado" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { error } = await adminClient.auth.admin.updateUserById(user_id, {
+        email_confirm: true,
+      });
+      if (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "create-user") {
+      const { email, password, nombre, role_id, almacen_id } = params;
+
+      // Check if email already exists in auth system BEFORE attempting to create
+      const { data: { users: existingUsers } } = await adminClient.auth.admin.listUsers({ perPage: 1000 });
+      const emailLower = email.trim().toLowerCase();
+      const duplicate = existingUsers?.find((u: any) => u.email?.toLowerCase() === emailLower);
+      if (duplicate) {
+        return new Response(JSON.stringify({ error: "Este correo electrónico ya está registrado en el sistema. Por favor usa otro correo." }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Create auth user with empresa metadata so handle_new_user trigger won't create a random empresa
+      const { data: newUser, error: createError } =
+        await adminClient.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+        });
+
+      if (createError) {
+        const msg = createError.message?.includes("already been registered")
+          ? "Este correo electrónico ya está registrado en el sistema. Por favor usa otro correo."
+          : createError.message;
+        return new Response(JSON.stringify({ error: msg }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (newUser.user) {
+        // Wait a moment for the trigger to fire
+        await new Promise((r) => setTimeout(r, 500));
+
+        // Ensure profile points to caller's empresa (trigger may have created it under wrong empresa)
+        const { data: existingProfile } = await adminClient
+          .from("profiles")
+          .select("id")
+          .eq("user_id", newUser.user.id)
+          .maybeSingle();
+
+        if (existingProfile) {
+          await adminClient
+            .from("profiles")
+            .update({ empresa_id: empresaId, nombre: nombre || null, almacen_id: almacen_id || null })
+            .eq("user_id", newUser.user.id);
+        } else {
+          await adminClient
+            .from("profiles")
+            .insert({ user_id: newUser.user.id, empresa_id: empresaId, nombre: nombre || null, almacen_id: almacen_id || null });
+        }
+
+        // Assign role if provided
+        if (role_id) {
+          await adminClient
+            .from("user_roles")
+            .insert({ user_id: newUser.user.id, role_id });
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ ok: true, user_id: newUser.user.id }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (action === "reset-password") {
+      const { user_id, password, force_change } = params;
+      if (!user_id || !password) {
+        return new Response(JSON.stringify({ error: "user_id y password requeridos" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Verify caller is super admin
+      const { data: isSA } = await adminClient.rpc('is_super_admin', { p_user_id: caller.id });
+      if (!isSA) {
+        return new Response(JSON.stringify({ error: "Solo super admin puede resetear contraseñas" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Update password
+      const { error: pwError } = await adminClient.auth.admin.updateUserById(user_id, { password });
+      if (pwError) {
+        return new Response(JSON.stringify({ error: pwError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Set must_change_password flag if requested
+      if (force_change) {
+        await adminClient
+          .from("profiles")
+          .update({ must_change_password: true })
+          .eq("user_id", user_id);
+      }
+
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "force-change-all") {
+      // Force all users of an empresa to change password on next login
+      const { empresa_id: targetEmpId } = params;
+      if (!targetEmpId) {
+        return new Response(JSON.stringify({ error: "empresa_id requerido" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: isSA } = await adminClient.rpc('is_super_admin', { p_user_id: caller.id });
+      if (!isSA) {
+        return new Response(JSON.stringify({ error: "Solo super admin" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: updated, error: upErr } = await adminClient
+        .from("profiles")
+        .update({ must_change_password: true })
+        .eq("empresa_id", targetEmpId)
+        .select("user_id");
+
+      if (upErr) {
+        return new Response(JSON.stringify({ error: upErr.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ ok: true, count: updated?.length || 0 }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "create_user_with_empresa") {
+      const { email, password, nombre, empresa_nombre, telefono } = params;
+
+      // Only super admins can do this
+      const { data: isSA } = await adminClient.rpc('is_super_admin', { p_user_id: caller.id });
+      if (!isSA) {
+        return new Response(JSON.stringify({ error: "Solo super admin" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (!email || !password || !nombre || !empresa_nombre) {
+        return new Response(JSON.stringify({ error: "Todos los campos son requeridos" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Check duplicate email
+      const { data: { users: existingUsers } } = await adminClient.auth.admin.listUsers({ perPage: 1000 });
+      const emailLower = email.trim().toLowerCase();
+      if (existingUsers?.find((u: any) => u.email?.toLowerCase() === emailLower)) {
+        return new Response(JSON.stringify({ error: "Este correo ya está registrado" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Create auth user with empresa metadata so handle_new_user trigger creates empresa
+      const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          full_name: nombre,
+          empresa_nombre: empresa_nombre,
+          phone: telefono || '',
+        },
+      });
+
+      if (createError) {
+        return new Response(JSON.stringify({ error: createError.message }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Wait for trigger
+      await new Promise(r => setTimeout(r, 800));
+
+      // Get the created empresa
+      const { data: newProfile } = await adminClient
+        .from("profiles")
+        .select("empresa_id")
+        .eq("user_id", newUser.user.id)
+        .maybeSingle();
+
+      // Update empresa phone if needed
+      if (newProfile?.empresa_id && telefono) {
+        await adminClient
+          .from("empresas")
+          .update({ telefono })
+          .eq("id", newProfile.empresa_id);
+      }
+
+      return new Response(JSON.stringify({ ok: true, user_id: newUser.user.id, empresa_id: newProfile?.empresa_id }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Acción no válida" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return new Response(JSON.stringify({ error: msg }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});

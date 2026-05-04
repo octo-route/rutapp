@@ -1,0 +1,419 @@
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;500;600;700;900&family=EB+Garamond:wght@400;500;600;700&family=Fira+Code:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Prevent pull-to-refresh on mobile */
+html, body {
+  overscroll-behavior-y: contain;
+}
+
+/* Safe area class for bottom elements */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@layer base {
+  :root {
+    /* Core palette — Light, ultra-clean */
+    --background: 0 0% 98%;
+    --foreground: 220 14% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 14% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 14% 10%;
+
+    /* Primary: neutral indigo — professional, understated */
+    --primary: 230 55% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 10% 40%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 220 10% 56%;
+    --muted-foreground: 220 10% 46%;
+
+    --accent: 220 14% 96%;
+    --accent-foreground: 230 55% 52%;
+
+    --destructive: 0 65% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 56% 38%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 90% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 230 55% 52%;
+
+    --radius: 0.625rem;
+
+    /* Sidebar — clean light */
+    --sidebar: 220 14% 96%;
+    --sidebar-foreground: 220 14% 28%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-hover: 220 14% 92%;
+    --sidebar-accent: 230 55% 52%;
+    --sidebar-muted: 220 10% 56%;
+
+    /* Chart colors */
+    --chart-1: 230 55% 60%;
+    --chart-2: 260 45% 60%;
+    --chart-3: 200 55% 50%;
+    --chart-4: 170 50% 42%;
+    --chart-5: 220 10% 50%;
+
+    /* Status */
+    --info: 210 80% 52%;
+    --info-foreground: 0 0% 100%;
+
+    /* Table */
+    --table-header: 220 10% 46%;
+    --table-hover: 220 14% 97%;
+    --table-border: 220 13% 93%;
+
+    /* Accents */
+    --teal: 182 60% 30%;
+    --teal-foreground: 0 0% 100%;
+    --violet: 265 60% 55%;
+    --violet-foreground: 0 0% 100%;
+    --pink: 330 70% 52%;
+    --pink-foreground: 0 0% 100%;
+    --notes-bg: 0 0% 99%;
+    --badge-bg: 220 14% 94%;
+    --badge-fg: 220 14% 28%;
+
+    /* Shadows — minimal */
+    --shadow-2xs: 0 1px 2px 0px hsl(0 0% 0% / 0.04);
+    --shadow-xs: 0 1px 2px 0px hsl(0 0% 0% / 0.04);
+    --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.06), 0 1px 2px -1px hsl(0 0% 0% / 0.06);
+    --shadow-md: 0 2px 6px 0px hsl(0 0% 0% / 0.06), 0 1px 3px -1px hsl(0 0% 0% / 0.06);
+    --shadow-lg: 0 4px 12px 0px hsl(0 0% 0% / 0.06), 0 2px 4px -1px hsl(0 0% 0% / 0.04);
+    --shadow-xl: 0 8px 20px 0px hsl(0 0% 0% / 0.08), 0 2px 6px -1px hsl(0 0% 0% / 0.04);
+    --shadow-2xl: 0 12px 30px 0px hsl(0 0% 0% / 0.1);
+  }
+
+  .dark {
+    --background: 220 14% 8%;
+    --foreground: 220 10% 93%;
+
+    --card: 220 14% 12%;
+    --card-foreground: 220 10% 93%;
+
+    --popover: 220 14% 12%;
+    --popover-foreground: 220 10% 93%;
+
+    --primary: 228 60% 65%;
+    --primary-foreground: 225 30% 12%;
+
+    --secondary: 220 10% 45%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 220 10% 40%;
+    --muted-foreground: 220 10% 60%;
+
+    --accent: 225 20% 18%;
+    --accent-foreground: 228 60% 70%;
+
+    --destructive: 0 65% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 50% 38%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 85% 48%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 220 14% 20%;
+    --input: 220 14% 20%;
+    --ring: 228 60% 65%;
+
+    --sidebar: 220 14% 12%;
+    --sidebar-foreground: 220 10% 75%;
+    --sidebar-border: 220 14% 18%;
+    --sidebar-hover: 220 14% 16%;
+    --sidebar-accent: 228 60% 65%;
+    --sidebar-muted: 220 10% 50%;
+
+    --chart-1: 228 60% 65%;
+    --chart-2: 260 45% 62%;
+    --chart-3: 200 50% 55%;
+    --chart-4: 170 45% 45%;
+    --chart-5: 220 10% 45%;
+
+    --table-header: 220 10% 55%;
+    --table-hover: 220 14% 14%;
+    --table-border: 220 14% 18%;
+
+    --teal: 182 50% 35%;
+    --teal-foreground: 0 0% 100%;
+    --violet: 265 55% 65%;
+    --violet-foreground: 0 0% 100%;
+    --pink: 330 65% 62%;
+    --pink-foreground: 0 0% 100%;
+    --notes-bg: 220 14% 10%;
+    --badge-bg: 220 14% 18%;
+    --badge-fg: 220 10% 75%;
+
+    --shadow-2xs: 0 1px 2px 0px hsl(0 0% 0% / 0.15);
+    --shadow-xs: 0 1px 2px 0px hsl(0 0% 0% / 0.15);
+    --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.2), 0 1px 2px -1px hsl(0 0% 0% / 0.15);
+    --shadow-md: 0 2px 6px 0px hsl(0 0% 0% / 0.2), 0 1px 3px -1px hsl(0 0% 0% / 0.15);
+    --shadow-lg: 0 4px 12px 0px hsl(0 0% 0% / 0.2), 0 2px 4px -1px hsl(0 0% 0% / 0.15);
+    --shadow-xl: 0 8px 20px 0px hsl(0 0% 0% / 0.25), 0 2px 6px -1px hsl(0 0% 0% / 0.15);
+    --shadow-2xl: 0 12px 30px 0px hsl(0 0% 0% / 0.3);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    font-size: 16px;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+  @media (min-width: 768px) {
+    html {
+      font-size: 13px;
+    }
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Lato', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Custom scrollbar for webkit */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted) / 0.5);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted));
+  }
+}
+
+@layer components {
+  /* Status pills */
+  .status-pill {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold leading-tight tracking-wide;
+  }
+  .status-borrador {
+    background-color: hsl(var(--badge-bg));
+    color: hsl(var(--badge-fg));
+  }
+  .status-activo {
+    background-color: hsl(142 72% 92%);
+    color: hsl(142 72% 30%);
+  }
+  .status-inactivo {
+    background-color: hsl(0 50% 93%);
+    color: hsl(0 65% 45%);
+  }
+  .status-confirmado {
+    background-color: hsl(234 60% 92%);
+    color: hsl(234 75% 50%);
+  }
+
+  /* Links */
+  .odoo-link {
+    @apply text-primary hover:underline cursor-pointer font-medium text-[13px] inline-flex items-center gap-1;
+  }
+
+  /* Section card */
+  .section-card {
+    @apply bg-card rounded-lg border p-4;
+    box-shadow: var(--shadow-xs);
+  }
+
+  /* Buttons */
+  .btn-odoo-primary {
+    @apply inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold
+           bg-primary text-primary-foreground hover:opacity-90 transition-all
+           disabled:opacity-50 disabled:pointer-events-none;
+    box-shadow: var(--shadow-xs);
+  }
+  .btn-odoo-secondary {
+    @apply inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-medium
+           bg-card text-foreground border border-border hover:bg-accent transition-all
+           disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  /* Inputs */
+  .input-odoo {
+    @apply w-full border border-input rounded-lg px-3 py-2 text-[13px] bg-card
+           focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-primary
+           placeholder:text-muted-foreground/60 transition-all;
+  }
+
+  /* Table headers — sentence case */
+  .th-odoo {
+    @apply text-[11px] tracking-wide font-semibold text-muted-foreground py-2.5 px-3
+           border-b bg-card select-none;
+  }
+
+  /* Form label */
+  .label-odoo {
+    @apply text-[12px] text-muted-foreground font-semibold mb-1 block;
+  }
+  .label-required::after {
+    content: ' *';
+    @apply text-destructive;
+  }
+
+  /* Tabs */
+  .odoo-tab {
+    @apply px-4 py-2.5 text-[13px] border-b-2 border-transparent cursor-pointer
+           text-muted-foreground hover:text-foreground transition-all font-medium;
+  }
+  .odoo-tab-active {
+    color: hsl(var(--foreground));
+    border-color: hsl(var(--primary));
+  }
+
+  /* Statusbar */
+  .statusbar-step {
+    @apply px-4 py-1.5 text-[12px] font-semibold cursor-pointer transition-all relative;
+  }
+  .statusbar-step-active {
+    @apply bg-primary text-primary-foreground;
+  }
+  .statusbar-step-done {
+    @apply bg-primary/10 text-primary;
+  }
+  .statusbar-step-pending {
+    @apply bg-accent text-muted-foreground hover:bg-accent/80;
+  }
+
+  /* Form field rows */
+  .odoo-field-row {
+    @apply flex items-start py-[6px] min-h-[32px];
+  }
+  .odoo-field-label {
+    @apply text-[13px] font-semibold text-foreground w-[140px] shrink-0 flex items-center gap-1 pt-[2px];
+  }
+  .odoo-field-value {
+    @apply text-[13px] text-foreground flex-1 cursor-pointer min-h-[24px] px-1.5 rounded-md
+           hover:bg-accent transition-colors;
+  }
+  .odoo-field-value-empty {
+    @apply text-muted-foreground;
+  }
+  .odoo-field-value-teal {
+    color: hsl(var(--teal));
+  }
+  .odoo-field-editing {
+    @apply flex-1;
+  }
+  .odoo-field-editing .input-odoo {
+    @apply py-1.5 text-[13px];
+  }
+
+  /* Help icon */
+  .odoo-help-icon {
+    @apply text-muted-foreground/50 text-[11px] cursor-help;
+  }
+
+  /* Section divider */
+  .odoo-section-title {
+    @apply text-[11px] tracking-wide font-bold text-muted-foreground py-2 flex items-center gap-2 cursor-pointer select-none;
+  }
+  .odoo-section-divider {
+    @apply border-t border-border;
+  }
+
+  /* Badge pill */
+  .odoo-badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[12px] font-medium;
+    background-color: hsl(var(--badge-bg));
+    color: hsl(var(--badge-fg));
+  }
+  .odoo-badge-remove {
+    @apply text-muted-foreground hover:text-foreground cursor-pointer text-[10px] leading-none;
+  }
+
+  /* Notes textarea */
+  .odoo-textarea {
+    @apply w-full border-0 rounded-lg px-3 py-2 text-[13px] resize-y min-h-[60px]
+           focus:outline-none focus:ring-2 focus:ring-ring/30
+           placeholder:text-muted-foreground/50;
+    background-color: hsl(var(--notes-bg));
+  }
+
+  /* Image placeholder */
+  .odoo-image-placeholder {
+    @apply w-[120px] h-[120px] rounded-lg border-2 border-dashed border-border
+           flex items-center justify-center cursor-pointer
+           hover:border-primary/40 transition-colors;
+    background-color: hsl(var(--notes-bg));
+  }
+
+  /* Module checkboxes */
+  .odoo-module-checks {
+    @apply flex items-center gap-6 py-2 px-1 border-b border-border;
+  }
+  .odoo-module-check {
+    @apply flex items-center gap-1.5 text-[13px] cursor-pointer select-none;
+  }
+  .odoo-module-check input[type="checkbox"] {
+    @apply rounded border-input h-3.5 w-3.5;
+  }
+
+  /* Inline edit cells — global pattern */
+  .inline-edit-cell {
+    @apply text-[13px] min-h-[24px] px-1.5 py-0.5 rounded-md block;
+    cursor: text;
+  }
+  .inline-edit-idle {
+    @apply hover:bg-accent transition-colors;
+  }
+  .inline-edit-readonly {
+    cursor: default;
+  }
+  .inline-edit-input {
+    @apply w-full border border-input rounded-md px-1.5 py-0.5 text-[13px]
+           bg-card focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-primary
+           transition-all;
+    background-color: hsl(var(--accent));
+  }
+  .inline-edit-invalid {
+    @apply border-destructive focus:ring-destructive/30;
+  }
+}
+
+/* Safe area for mobile */
+.safe-area-bottom {
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+}
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+@keyframes banner-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes banner-pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+.animate-banner-pulse {
+  animation: banner-pulse-glow 1.5s ease-in-out infinite;
+}

@@ -1,0 +1,608 @@
+import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Truck, Search, Package, Zap, PackageCheck } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import SearchableSelect from '@/components/SearchableSelect';
+import ModalSelect from '@/components/ModalSelect';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { useEntregasList, useVendedoresList, useAsignarEntrega, useCargarEntrega, useAsignarYCargar } from '@/hooks/useEntregas';
+import { fmtDate, cn , todayLocal } from '@/lib/utils';
+import { toast } from 'sonner';
+
+const STATUS_BADGE: Record<string, { label: string; variant: 'secondary' | 'default' | 'outline' | 'destructive'; className?: string }> = {
+  borrador: { label: 'Borrador', variant: 'secondary' },
+  surtido: { label: 'Surtido', variant: 'default' },
+  asignado: { label: 'Asignado', variant: 'default' },
+  cargado: { label: 'Cargado', variant: 'default' },
+  en_ruta: { label: 'En ruta', variant: 'default' },
+  hecho: { label: 'Entregado', variant: 'outline', className: 'bg-success text-success-foreground border-transparent hover:bg-success/90' },
+  cancelado: { label: 'Cancelado', variant: 'destructive' },
+};
+
+export default function EntregaListPage() {
+  const { empresa, user } = useAuth();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [vendedorFilter, setVendedorFilter] = useState('todos');
+  const [statusFilter, setStatusFilter] = useState('todos');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showSurtirDialog, setShowSurtirDialog] = useState(false);
+  const [showAsignarDialog, setShowAsignarDialog] = useState(false);
+  const [almacenId, setAlmacenId] = useState('');
+  const [vendedorRutaId, setVendedorRutaId] = useState('');
+
+  // Always fetch ALL entregas (no status filter) so counts are correct
+  const { data: allEntregas, isLoading } = useEntregasList(search, vendedorFilter);
+  const { data: vendedores } = useVendedoresList();
+
+  const { data: almacenesList } = useQuery({
+    queryKey: ['almacenes', empresa?.id],
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      const { data } = await supabase.from('almacenes').select('id, nombre').eq('empresa_id', empresa!.id).order('nombre');
+      return data ?? [];
+    },
+  });
+
+  const almacenOptions = (almacenesList ?? []).map(a => ({ value: a.id, label: a.nombre }));
+  const vendedorOptions = (vendedores ?? []).map(v => ({ value: v.id, label: v.nombre }));
+
+  const counts = {
+    total: allEntregas?.length ?? 0,
+    borrador: allEntregas?.filter(e => (e as any).status === 'borrador').length ?? 0,
+    surtido: allEntregas?.filter(e => (e as any).status === 'surtido').length ?? 0,
+    asignado: allEntregas?.filter(e => (e as any).status === 'asignado').length ?? 0,
+    cargado: allEntregas?.filter(e => (e as any).status === 'cargado').length ?? 0,
+    en_ruta: allEntregas?.filter(e => (e as any).status === 'en_ruta').length ?? 0,
+    hecho: allEntregas?.filter(e => (e as any).status === 'hecho').length ?? 0,
+  };
+
+  // Filter locally by selected tab
+  const filtered = useMemo(() => {
+    const list = allEntregas ?? [];
+    if (statusFilter === 'todos') return list;
+    return list.filter((e: any) => e.status === statusFilter);
+  }, [allEntregas, statusFilter]);
+
+  // borrador, surtido, asignado can be bulk-processed
+  const selectableIds = useMemo(() =>
+    new Set(filtered.filter((e: any) => ['borrador', 'surtido', 'asignado'].includes(e.status)).map((e: any) => e.id)),
+    [filtered]
+  );
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedIds.size === selectableIds.size && selectableIds.size > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(selectableIds));
+    }
+  };
+
+  const selectedEntregas = filtered.filter((e: any) => selectedIds.has(e.id));
+
+  // Determine what bulk actions are available based on selected statuses
+  const selectedStatuses = useMemo(() => {
+    const statuses = new Set<string>();
+    selectedEntregas.forEach((e: any) => statuses.add(e.status));
+    return statuses;
+  }, [selectedEntregas]);
+
+  const allSurtido = selectedStatuses.size > 0 && [...selectedStatuses].every(s => s === 'surtido');
+  const allAsignado = selectedStatuses.size > 0 && [...selectedStatuses].every(s => s === 'asignado');
+  const hasBorrador = selectedStatuses.has('borrador');
+
+  // Bulk surtir + asignar
+  const surtirAsignarMut = useMutation({
+    mutationFn: async () => {
+      if (selectedEntregas.length === 0) throw new Error('Selecciona al menos una entrega');
+      if (!almacenId) throw new Error('Selecciona un almacén origen');
+
+      const today = todayLocal();
+
+      for (const entrega of selectedEntregas) {
+        const eid = (entrega as any).id;
+        const estatus = (entrega as any).status;
+
+        // If borrador → surtir (deduct stock atomically via RPC, mark lines, set surtido)
+        if (estatus === 'borrador') {
+          const { data: lineas } = await supabase
+            .from('entrega_lineas')
+            .select('id, producto_id, cantidad_pedida, hecho')
+            .eq('entrega_id', eid);
+
+          const pendientes = (lineas ?? []).filter((l: any) => !l.hecho);
+
+          // Use atomic RPC for each line — this correctly:
+          //  • locks stock_almacen row (FOR UPDATE) preventing race conditions
+          //  • deducts from stock_almacen (per-warehouse stock used by Ubicaciones view)
+          //  • inserts movimiento in kardex
+          //  • updates entrega_lineas (cantidad_entregada, almacen_origen_id, hecho)
+          //  • validates stock against vender_sin_stock flag
+          for (const l of pendientes) {
+            const { error: rpcError } = await supabase.rpc('surtir_linea_entrega', {
+              p_linea_id: l.id,
+              p_producto_id: l.producto_id,
+              p_almacen_origen_id: almacenId,
+              p_cantidad_surtida: l.cantidad_pedida,
+              p_entrega_id: eid,
+              p_empresa_id: empresa!.id,
+              p_user_id: user?.id,
+            });
+            if (rpcError) throw new Error(rpcError.message);
+          }
+
+          // Update status
+          if (vendedorRutaId) {
+            await supabase.from('entregas').update({
+              status: 'asignado',
+              almacen_id: almacenId,
+              vendedor_ruta_id: vendedorRutaId,
+              fecha_asignacion: new Date().toISOString(),
+            } as any).eq('id', eid);
+          } else {
+            await supabase.from('entregas').update({ status: 'surtido', almacen_id: almacenId } as any).eq('id', eid);
+          }
+        }
+
+        // If already surtido and vendedor selected → assign
+        if (estatus === 'surtido' && vendedorRutaId) {
+          await supabase.from('entregas').update({
+            status: 'asignado',
+            vendedor_ruta_id: vendedorRutaId,
+            fecha_asignacion: new Date().toISOString(),
+          } as any).eq('id', eid);
+        }
+      }
+    },
+    onSuccess: () => {
+      const action = vendedorRutaId ? 'surtidas y asignadas' : 'surtidas';
+      toast.success(`${selectedEntregas.length} entrega(s) ${action}`);
+      qc.invalidateQueries({ queryKey: ['entregas-list'] });
+      qc.invalidateQueries({ queryKey: ['productos'] });
+      qc.invalidateQueries({ queryKey: ['movimientos'] });
+      qc.invalidateQueries({ queryKey: ['stock-almacen'] });
+      qc.invalidateQueries({ queryKey: ['inventario'] });
+      qc.invalidateQueries({ queryKey: ['kardex-ubicacion'] });
+      setSelectedIds(new Set());
+      setShowSurtirDialog(false);
+      setAlmacenId('');
+      setVendedorRutaId('');
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  // Helper: get vendedor's almacen_id from profiles
+  const getVendedorAlmacen = async (vendId: string) => {
+    const { data } = await supabase.from('profiles').select('almacen_id').eq('id', vendId).maybeSingle();
+    return data?.almacen_id ?? null;
+  };
+
+  // Helper: upsert stock_almacen
+  const upsertStockAlmacen = async (empresaId: string, almacenId: string, productoId: string, qty: number) => {
+    const { data: existing } = await supabase.from('stock_almacen')
+      .select('id, cantidad').eq('almacen_id', almacenId).eq('producto_id', productoId).maybeSingle();
+    if (existing) {
+      await supabase.from('stock_almacen').update({ cantidad: existing.cantidad + qty, updated_at: new Date().toISOString() } as any).eq('id', existing.id);
+    } else {
+      await supabase.from('stock_almacen').insert({ empresa_id: empresaId, almacen_id: almacenId, producto_id: productoId, cantidad: qty } as any);
+    }
+  };
+
+  // Bulk asignar
+  const bulkAsignarMut = useMutation({
+    mutationFn: async ({ cargarTambien }: { cargarTambien: boolean }) => {
+      if (!vendedorRutaId) throw new Error('Selecciona un repartidor');
+      const today = todayLocal();
+      const almDestinoId = await getVendedorAlmacen(vendedorRutaId);
+      if (cargarTambien && !almDestinoId) throw new Error('El vendedor no tiene almacén asignado');
+
+      for (const entrega of selectedEntregas) {
+        const eid = (entrega as any).id;
+        await supabase.from('entregas').update({
+          status: 'asignado',
+          vendedor_ruta_id: vendedorRutaId,
+          fecha_asignacion: new Date().toISOString(),
+        } as any).eq('id', eid);
+        if (cargarTambien && almDestinoId) {
+          const { data: lineas } = await supabase.from('entrega_lineas').select('id, producto_id, cantidad_entregada, hecho, almacen_origen_id').eq('entrega_id', eid);
+          for (const l of (lineas ?? []).filter(l => l.hecho && l.cantidad_entregada > 0)) {
+            await upsertStockAlmacen(empresa!.id, almDestinoId, l.producto_id, l.cantidad_entregada);
+            await supabase.from('movimientos_inventario').insert({ empresa_id: empresa!.id, tipo: 'entrada', producto_id: l.producto_id, cantidad: l.cantidad_entregada, almacen_origen_id: (l as any).almacen_origen_id ?? null, almacen_destino_id: almDestinoId, referencia_tipo: 'entrega', referencia_id: eid, user_id: user?.id, fecha: today, notas: 'Carga masiva a ubicación' } as any);
+          }
+          await supabase.from('entregas').update({ status: 'cargado', fecha_carga: new Date().toISOString() } as any).eq('id', eid);
+        }
+      }
+    },
+    onSuccess: (_, vars) => {
+      toast.success(`${selectedEntregas.length} entrega(s) ${vars.cargarTambien ? 'asignadas y cargadas' : 'asignadas a ruta'}`);
+      qc.invalidateQueries({ queryKey: ['entregas-list'] });
+      qc.invalidateQueries({ queryKey: ['stock-almacen'] });
+      setSelectedIds(new Set()); setShowAsignarDialog(false); setVendedorRutaId('');
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const bulkCargarMut = useMutation({
+    mutationFn: async () => {
+      const today = todayLocal();
+      for (const entrega of selectedEntregas) {
+        const eid = (entrega as any).id;
+        const vendId = (entrega as any).vendedor_ruta_id || (entrega as any).vendedor_id;
+        if (!vendId) continue;
+        const almDestinoId = await getVendedorAlmacen(vendId);
+        if (!almDestinoId) continue;
+        const { data: lineas } = await supabase.from('entrega_lineas').select('id, producto_id, cantidad_entregada, hecho, almacen_origen_id').eq('entrega_id', eid);
+        for (const l of (lineas ?? []).filter(l => l.hecho && l.cantidad_entregada > 0)) {
+          await upsertStockAlmacen(empresa!.id, almDestinoId, l.producto_id, l.cantidad_entregada);
+          await supabase.from('movimientos_inventario').insert({ empresa_id: empresa!.id, tipo: 'entrada', producto_id: l.producto_id, cantidad: l.cantidad_entregada, almacen_origen_id: (l as any).almacen_origen_id ?? null, almacen_destino_id: almDestinoId, referencia_tipo: 'entrega', referencia_id: eid, user_id: user?.id, fecha: today, notas: 'Carga masiva a ubicación' } as any);
+        }
+        await supabase.from('entregas').update({ status: 'cargado', fecha_carga: new Date().toISOString() } as any).eq('id', eid);
+      }
+    },
+    onSuccess: () => {
+      toast.success(`${selectedEntregas.length} entrega(s) cargadas`);
+      qc.invalidateQueries({ queryKey: ['entregas-list'] });
+      qc.invalidateQueries({ queryKey: ['stock-almacen'] });
+      setSelectedIds(new Set());
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const handleBulkCargar = () => bulkCargarMut.mutate();
+
+  return (
+    <div className="p-4 space-y-4 min-h-full">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
+          <Truck className="h-5 w-5" /> Entregas
+        </h1>
+      </div>
+
+      {/* Status Tabs */}
+      <div className="flex border-b border-border gap-0 overflow-x-auto">
+        {[
+          { key: 'todos', label: 'Todos', count: counts.total },
+          { key: 'borrador', label: 'Borrador', count: counts.borrador },
+          { key: 'surtido', label: 'Surtidos', count: counts.surtido },
+          { key: 'asignado', label: 'Asignados', count: counts.asignado },
+          { key: 'cargado', label: 'Cargados', count: counts.cargado },
+          { key: 'en_ruta', label: 'En ruta', count: counts.en_ruta },
+          { key: 'hecho', label: 'Entregadas', count: counts.hecho },
+        ].map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setStatusFilter(tab.key)}
+            className={cn(
+              "px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors",
+              statusFilter === tab.key
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+            )}
+          >
+            {tab.label}
+            <span className="ml-1.5 text-xs text-muted-foreground">({tab.count})</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Filters + Bulk action */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Buscar por folio..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <div className="min-w-[180px]">
+          <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">Vendedor</label>
+          <SearchableSelect
+            options={[{ value: 'todos', label: 'Todos' }, ...(vendedores ?? []).map(v => ({ value: v.id, label: v.nombre }))]}
+            value={vendedorFilter}
+            onChange={setVendedorFilter}
+            placeholder="Vendedor..."
+          />
+        </div>
+
+        {/* Surtir rápido — only when borrador selected */}
+        {selectedIds.size > 0 && hasBorrador && (
+          <Button onClick={() => setShowSurtirDialog(true)} className="gap-1.5">
+            <Zap className="h-4 w-4" />
+            Surtir rápido ({selectedIds.size})
+          </Button>
+        )}
+
+        {/* Asignar ruta — only when all selected are surtido */}
+        {selectedIds.size > 0 && allSurtido && (
+          <>
+            <Button onClick={() => { setVendedorRutaId(''); setShowAsignarDialog(true); }} variant="outline" className="gap-1.5">
+              <Package className="h-4 w-4" />
+              Asignar ruta ({selectedIds.size})
+            </Button>
+            <Button onClick={() => { setVendedorRutaId(''); setShowAsignarDialog(true); }} className="gap-1.5">
+              <Zap className="h-4 w-4" />
+              Asignar y cargar ({selectedIds.size})
+            </Button>
+          </>
+        )}
+
+        {/* Cargar camión — only when all selected are asignado */}
+        {selectedIds.size > 0 && allAsignado && (
+          <Button onClick={handleBulkCargar} className="gap-1.5" disabled={bulkCargarMut.isPending}>
+            <Truck className="h-4 w-4" />
+            Cargar camión ({selectedIds.size})
+          </Button>
+        )}
+      </div>
+
+      {/* Table */}
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10 text-center">
+                <Checkbox
+                  checked={selectableIds.size > 0 && selectedIds.size === selectableIds.size}
+                  onCheckedChange={toggleAll}
+                />
+              </TableHead>
+              <TableHead className="text-[11px]">Folio</TableHead>
+              <TableHead className="text-[11px]">Pedido origen</TableHead>
+              <TableHead className="text-[11px]">Cliente</TableHead>
+              <TableHead className="text-[11px]">Vendedor</TableHead>
+              <TableHead className="text-[11px]">Almacén origen</TableHead>
+              <TableHead className="text-[11px]">Almacén destino</TableHead>
+              <TableHead className="text-[11px]">Ruta asignada</TableHead>
+              <TableHead className="text-[11px]">Fecha</TableHead>
+              <TableHead className="text-[11px] text-center">Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading && (
+              <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">Cargando...</TableCell></TableRow>
+            )}
+            {!isLoading && filtered.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-12">
+                  <Package className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  No hay entregas
+                </TableCell>
+              </TableRow>
+            )}
+            {filtered.map((e: any) => {
+              const badge = STATUS_BADGE[e.status] ?? STATUS_BADGE.borrador;
+              const canSelect = selectableIds.has(e.id);
+
+              // Derive unique origin warehouses from lines (real source of stock)
+              const lineOrigins = new Map<string, string>();
+              for (const l of (e.entrega_lineas ?? [])) {
+                const id = l?.almacen_origen_id;
+                const nombre = l?.almacenes?.nombre;
+                if (id && nombre) lineOrigins.set(id, nombre);
+              }
+              const originNames = Array.from(lineOrigins.values());
+              const headerOriginName = e.almacenes?.nombre as string | undefined;
+
+              let originLabel: string;
+              let originTitle: string | undefined;
+              if (originNames.length === 0) {
+                originLabel = headerOriginName ?? '—';
+              } else if (originNames.length === 1) {
+                originLabel = originNames[0];
+              } else {
+                originLabel = `${originNames[0]} +${originNames.length - 1}`;
+                originTitle = originNames.join(', ');
+              }
+
+              // Destino = almacén-ruta del vendedor asignado (vendedor_ruta_id) o, si no hay, del vendedor original
+              const destinoNombre =
+                e.vendedor_ruta?.almacen_destino?.nombre ??
+                e.vendedores?.almacen_destino?.nombre ??
+                null;
+
+              return (
+                <TableRow
+                  key={e.id}
+                  className={cn(
+                    "cursor-pointer hover:bg-accent/50 transition-colors",
+                    selectedIds.has(e.id) && "bg-primary/5"
+                  )}
+                >
+                  <TableCell className="text-center py-2" onClick={e2 => e2.stopPropagation()}>
+                    {canSelect && (
+                      <Checkbox
+                        checked={selectedIds.has(e.id)}
+                        onCheckedChange={() => toggleSelect(e.id)}
+                      />
+                    )}
+                  </TableCell>
+                  <TableCell
+                    className="font-mono text-[11px] font-bold py-2"
+                    onClick={() => navigate(`/logistica/entregas/${e.id}`)}
+                  >{e.folio ?? '—'}</TableCell>
+                  <TableCell
+                    className="text-[12px] text-muted-foreground py-2"
+                    onClick={() => navigate(`/logistica/entregas/${e.id}`)}
+                  >{e.ventas?.folio ?? '—'}</TableCell>
+                  <TableCell
+                    className="text-[12px] font-medium py-2"
+                    onClick={() => navigate(`/logistica/entregas/${e.id}`)}
+                  >{e.clientes?.nombre ?? '—'}</TableCell>
+                  <TableCell
+                    className="text-[12px] text-muted-foreground py-2"
+                    onClick={() => navigate(`/logistica/entregas/${e.id}`)}
+                  >{e.vendedores?.nombre ?? '—'}</TableCell>
+                  <TableCell
+                    className="text-[12px] text-muted-foreground py-2"
+                    onClick={() => navigate(`/logistica/entregas/${e.id}`)}
+                    title={originTitle}
+                  >{originLabel}</TableCell>
+                  <TableCell
+                    className="text-[12px] text-muted-foreground py-2"
+                    onClick={() => navigate(`/logistica/entregas/${e.id}`)}
+                  >{destinoNombre ?? '—'}</TableCell>
+                  <TableCell
+                    className="text-[12px] text-muted-foreground py-2"
+                    onClick={() => navigate(`/logistica/entregas/${e.id}`)}
+                  >{e.vendedor_ruta?.nombre ?? '—'}</TableCell>
+                  <TableCell
+                    className="text-[12px] text-muted-foreground py-2"
+                    onClick={() => navigate(`/logistica/entregas/${e.id}`)}
+                  >{fmtDate(e.fecha)}</TableCell>
+                  <TableCell
+                    className="text-center py-2"
+                    onClick={() => navigate(`/logistica/entregas/${e.id}`)}
+                  >
+                    <Badge variant={badge.variant} className={`text-[10px] ${badge.className ?? ''}`}>{badge.label}</Badge>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* ─── Dialog: Surtir rápido ─── */}
+      <Dialog open={showSurtirDialog} onOpenChange={setShowSurtirDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5 text-primary" />
+              Surtir rápido
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Se surtirán <span className="font-bold text-foreground">{selectedIds.size}</span> entrega(s),
+              descontando stock del almacén seleccionado.
+            </p>
+
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
+                Almacén origen *
+              </label>
+              <ModalSelect
+                options={almacenOptions}
+                value={almacenId}
+                onChange={setAlmacenId}
+                placeholder="Seleccionar almacén..."
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
+                Asignar vendedor de ruta (opcional)
+              </label>
+              <ModalSelect
+                options={vendedorOptions}
+                value={vendedorRutaId}
+                onChange={setVendedorRutaId}
+                placeholder="Sin asignar..."
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Si seleccionas un vendedor, las entregas pasarán a <strong>asignado</strong> directamente.
+              </p>
+            </div>
+
+            {/* Summary */}
+            <div className="bg-card rounded-lg p-3 space-y-1 max-h-32 overflow-y-auto">
+              {selectedEntregas.map((e: any) => (
+                <div key={e.id} className="flex items-center justify-between text-[12px]">
+                  <span className="font-mono font-bold">{e.folio}</span>
+                  <span className="text-muted-foreground">{e.clientes?.nombre ?? '—'}</span>
+                  <Badge variant="secondary" className="text-[10px]">{e.status}</Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSurtirDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => surtirAsignarMut.mutate()}
+              disabled={!almacenId || surtirAsignarMut.isPending}
+            >
+              {surtirAsignarMut.isPending ? 'Procesando...' : vendedorRutaId ? 'Surtir y asignar' : 'Surtir'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Dialog: Asignar ruta ─── */}
+      <Dialog open={showAsignarDialog} onOpenChange={setShowAsignarDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-primary" />
+              Asignar ruta
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Selecciona el repartidor para <span className="font-bold text-foreground">{selectedIds.size}</span> entrega(s).
+            </p>
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
+                Vendedor de ruta *
+              </label>
+              <ModalSelect
+                options={vendedorOptions}
+                value={vendedorRutaId}
+                onChange={setVendedorRutaId}
+                placeholder="Seleccionar repartidor..."
+              />
+            </div>
+            <div className="bg-card rounded-lg p-3 space-y-1 max-h-32 overflow-y-auto">
+              {selectedEntregas.map((e: any) => (
+                <div key={e.id} className="flex items-center justify-between text-[12px]">
+                  <span className="font-mono font-bold">{e.folio}</span>
+                  <span className="text-muted-foreground">{e.clientes?.nombre ?? '—'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-4 border-t">
+            <Button variant="ghost" onClick={() => setShowAsignarDialog(false)} disabled={bulkAsignarMut.isPending} className="text-destructive mr-auto">
+              Cancelar
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => bulkAsignarMut.mutate({ cargarTambien: false })}
+              disabled={!vendedorRutaId || bulkAsignarMut.isPending}
+              className="gap-1.5"
+            >
+              <Package className="h-3.5 w-3.5" />
+              Asignar
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => bulkAsignarMut.mutate({ cargarTambien: true })}
+              disabled={!vendedorRutaId || bulkAsignarMut.isPending}
+              className="gap-1.5"
+            >
+              <Zap className="h-3.5 w-3.5" />
+              Asignar y cargar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

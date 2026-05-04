@@ -1,0 +1,1443 @@
+import { useState, useEffect } from 'react';
+import { Package } from 'lucide-react';
+import HelpButton from '@/components/HelpButton';
+import { HELP } from '@/lib/helpContent';
+import SearchableSelect from '@/components/SearchableSelect';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { useDescargasListDesktop, useDescargaDetalle, useDescargaLineas, useDescargaCalculos, DescargaLinea } from '@/hooks/useDescargaRuta';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { PackageCheck, CheckCircle2, XCircle, Clock, Eye, AlertTriangle, DollarSign, Plus, ArrowLeft, ShoppingCart, RotateCcw, CreditCard, Receipt, TrendingDown, FileText } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
+import { cn, fmtDate , todayLocal } from '@/lib/utils';
+import { generarLiquidacionPdf, type LiquidacionPdfParams } from '@/lib/liquidacionPdf';
+import { loadLogoBase64 } from '@/lib/pdfStyleOdoo';
+import { buildLiquidacionTicketHTML } from '@/lib/liquidacionTicketHtml';
+import { toPng } from 'html-to-image';
+import { useCurrency } from '@/hooks/useCurrency';
+
+const STATUS_MAP: Record<string, { label: string; icon: React.ElementType; color: string }> = {
+  pendiente: { label: 'Pendiente', icon: Clock, color: 'bg-amber-100 text-amber-700' },
+  aprobada: { label: 'Aprobada', icon: CheckCircle2, color: 'bg-green-100 text-green-700' },
+  rechazada: { label: 'Rechazada', icon: XCircle, color: 'bg-destructive/10 text-destructive' },
+};
+
+const MOTIVO_LABELS: Record<string, string> = {
+  error_entrega: 'Error de entrega',
+  merma: 'Merma',
+  danado: 'Dañado',
+  dañado: 'Dañado',
+  faltante: 'Faltante',
+  sobrante: 'Sobrante',
+  no_vendido: 'No vendido',
+  vencido: 'Vencido',
+  caducado: 'Caducado',
+  cambio: 'Cambio',
+  error_pedido: 'Error pedido',
+  otro: 'Otro',
+};
+
+const ACCION_LABELS: Record<string, string> = {
+  reposicion: 'Reposición',
+  nota_credito: 'Nota crédito',
+  devolucion_dinero: 'Dev. dinero',
+  descuento_venta: 'Desc. venta',
+};
+
+const MOTIVOS = [
+  { value: 'error_entrega', label: 'Error de entrega' },
+  { value: 'merma', label: 'Merma' },
+  { value: 'danado', label: 'Dañado' },
+  { value: 'faltante', label: 'Faltante' },
+  { value: 'sobrante', label: 'Sobrante' },
+  { value: 'otro', label: 'Otro' },
+];
+
+/* ─── Section Card helper ─── */
+function SectionCard({ title, icon: Icon, children, className }: { title: string; icon: React.ElementType; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cn("border-t border-border", className)}>
+      <div className="px-5 py-4">
+        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-3">
+          <Icon className="h-4 w-4" /> {title}
+        </h3>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Detail / Approve panel — Full activity breakdown ─── */
+
+function DescargaDetalle({ descarga, onClose }: { descarga: any; onClose: () => void }) {
+  const { user, empresa, profile } = useAuth();
+  const { symbol: cs, fmt } = useCurrency();
+  const qc = useQueryClient();
+  const { data: lineas } = useDescargaLineas(descarga.id);
+  const [notasSupervisor, setNotasSupervisor] = useState('');
+  const [incluirStock, setIncluirStock] = useState(false);
+
+  const fInicio = descarga.fecha_inicio || descarga.fecha;
+  const fFin = descarga.fecha_fin || descarga.fecha;
+
+  // All ventas (including cancelled)
+  const { data: ventasDia } = useQuery({
+    queryKey: ['descarga-ventas-full', descarga.vendedor_id, descarga.empresa_id, fInicio, fFin],
+    queryFn: async () => {
+      let q = supabase
+        .from('ventas')
+        .select('id, folio, total, condicion_pago, status, clientes(nombre), venta_lineas(producto_id, cantidad, precio_unitario, total, productos(nombre, codigo))')
+        .eq('empresa_id', descarga.empresa_id)
+        .gte('fecha', fInicio)
+        .lte('fecha', fFin)
+        .order('created_at', { ascending: true });
+      if (descarga.vendedor_id) q = q.eq('vendedor_id', descarga.vendedor_id);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Devoluciones
+  const { data: devoluciones } = useQuery({
+    queryKey: ['descarga-devoluciones', descarga.vendedor_id, descarga.empresa_id, fInicio, fFin],
+    queryFn: async () => {
+      let q = supabase
+        .from('devoluciones')
+        .select('id, fecha, tipo, notas, clientes(nombre), devolucion_lineas(producto_id, cantidad, motivo, accion, monto_credito, productos!devolucion_lineas_producto_id_fkey(nombre, codigo))')
+        .eq('empresa_id', descarga.empresa_id)
+        .gte('fecha', fInicio)
+        .lte('fecha', fFin);
+      if (descarga.vendedor_id) q = q.eq('vendedor_id', descarga.vendedor_id);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Cobros recibidos — vendedor_id now IS profiles.id, so look up user_id directly
+  const { data: vendedorProfile } = useQuery({
+    queryKey: ['vendedor-profile', descarga.vendedor_id],
+    enabled: !!descarga.vendedor_id,
+    queryFn: async () => {
+      const { data } = await supabase.from('profiles').select('user_id').eq('id', descarga.vendedor_id).maybeSingle();
+      return data;
+    },
+  });
+
+  const { data: cobros } = useQuery({
+    queryKey: ['descarga-cobros', descarga.vendedor_id, descarga.empresa_id, fInicio, fFin, vendedorProfile?.user_id],
+    enabled: !!vendedorProfile?.user_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cobros')
+        .select('id, monto, metodo_pago, fecha, cliente_id, clientes(nombre), referencia')
+        .eq('empresa_id', descarga.empresa_id)
+        .eq('user_id', vendedorProfile!.user_id)
+        .neq('status', 'cancelado')
+        .gte('fecha', fInicio)
+        .lte('fecha', fFin)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Gastos
+  const { data: gastos } = useQuery({
+    queryKey: ['descarga-gastos-full', descarga.vendedor_id, descarga.empresa_id, fInicio, fFin],
+    queryFn: async () => {
+      let q = supabase
+        .from('gastos')
+        .select('id, monto, concepto, fecha, notas')
+        .eq('empresa_id', descarga.empresa_id)
+        .gte('fecha', fInicio)
+        .lte('fecha', fFin);
+      if (descarga.vendedor_id) q = q.eq('vendedor_id', descarga.vendedor_id);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // --- Stock del almacén asignado al vendedor ---
+  const { data: vendedorAlmacen } = useQuery({
+    queryKey: ['vendedor-almacen', descarga.vendedor_id],
+    enabled: !!descarga.vendedor_id && incluirStock,
+    queryFn: async () => {
+      const { data } = await supabase.from('profiles').select('almacen_id, almacenes(nombre)').eq('id', descarga.vendedor_id).maybeSingle();
+      return data;
+    },
+  });
+
+  const { data: stockAlmacenData } = useQuery({
+    queryKey: ['liq-stock-almacen', descarga.empresa_id, vendedorAlmacen?.almacen_id],
+    enabled: !!vendedorAlmacen?.almacen_id && incluirStock,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('stock_almacen')
+        .select('producto_id, cantidad, productos(nombre, codigo)')
+        .eq('almacen_id', vendedorAlmacen!.almacen_id!)
+        .gt('cantidad', 0)
+        .order('producto_id');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const almacenNombre = (vendedorAlmacen as any)?.almacenes?.nombre || 'Almacén asignado';
+
+  const stockItems = (stockAlmacenData || []).map((s: any) => ({
+    nombre: s.productos?.nombre || '—',
+    codigo: s.productos?.codigo || '',
+    cantidad: Number(s.cantidad) || 0,
+  })).sort((a: any, b: any) => a.nombre.localeCompare(b.nombre));
+
+
+  const ventasActivas = (ventasDia || []).filter((v: any) => v.status !== 'cancelado');
+  const ventasCanceladas = (ventasDia || []).filter((v: any) => v.status === 'cancelado');
+  const ventasContado = ventasActivas.filter((v: any) => v.condicion_pago === 'contado');
+  const ventasCredito = ventasActivas.filter((v: any) => v.condicion_pago === 'credito');
+
+  const totalContado = ventasContado.reduce((s: number, v: any) => s + (Number(v.total) || 0), 0);
+  const totalCredito = ventasCredito.reduce((s: number, v: any) => s + (Number(v.total) || 0), 0);
+  const totalCancelado = ventasCanceladas.reduce((s: number, v: any) => s + (Number(v.total) || 0), 0);
+  const totalVentasGeneral = ventasActivas.reduce((s: number, v: any) => s + (Number(v.total) || 0), 0);
+
+  const totalGastos = (gastos || []).reduce((s: number, g: any) => s + (Number(g.monto) || 0), 0);
+  const totalCobros = (cobros || []).reduce((s: number, c: any) => s + (Number(c.monto) || 0), 0);
+
+  // Cobros by payment method
+  const cobrosPorMetodo: Record<string, number> = {};
+  (cobros || []).forEach((c: any) => {
+    const m = c.metodo_pago || 'efectivo';
+    cobrosPorMetodo[m] = (cobrosPorMetodo[m] || 0) + Number(c.monto);
+  });
+
+  // Abonos por cliente (informativo): suma cobros del periodo agrupados por cliente + saldo actual
+  const abonosPorClienteMap: Record<string, { cliente: string; cliente_id: string | null; abonado: number }> = {};
+  (cobros || []).forEach((c: any) => {
+    const nombre = c.clientes?.nombre ?? '—';
+    const cid = (c as any).cliente_id ?? null;
+    const key = cid || nombre;
+    if (!abonosPorClienteMap[key]) abonosPorClienteMap[key] = { cliente: nombre, cliente_id: cid, abonado: 0 };
+    abonosPorClienteMap[key].abonado += Number(c.monto) || 0;
+  });
+  const abonosClientesList = Object.values(abonosPorClienteMap);
+  const clienteIdsAbonos = abonosClientesList.map(a => a.cliente_id).filter(Boolean) as string[];
+
+  // Saldo pendiente actual de los clientes con abonos (informativo)
+  const { data: saldosClientes } = useQuery({
+    queryKey: ['descarga-saldos-clientes', descarga.empresa_id, clienteIdsAbonos.slice().sort().join(',')],
+    enabled: clienteIdsAbonos.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ventas')
+        .select('cliente_id, saldo_pendiente')
+        .eq('empresa_id', descarga.empresa_id)
+        .in('cliente_id', clienteIdsAbonos)
+        .neq('status', 'cancelado')
+        .gt('saldo_pendiente', 0);
+      if (error) throw error;
+      return data;
+    },
+  });
+  const saldoPorCliente: Record<string, number> = {};
+  (saldosClientes || []).forEach((v: any) => {
+    saldoPorCliente[v.cliente_id] = (saldoPorCliente[v.cliente_id] || 0) + (Number(v.saldo_pendiente) || 0);
+  });
+  const abonosClientes = abonosClientesList
+    .map(a => ({
+      cliente: a.cliente,
+      abonado: a.abonado,
+      saldoPendiente: a.cliente_id ? (saldoPorCliente[a.cliente_id] || 0) : 0,
+    }))
+    .sort((a, b) => a.cliente.localeCompare(b.cliente));
+
+  // Aggregate products sold
+  const productosSold: Record<string, { nombre: string; codigo: string; cantidad: number; total: number }> = {};
+  ventasActivas.forEach((v: any) => {
+    (v.venta_lineas || []).forEach((l: any) => {
+      const pid = l.producto_id;
+      if (!pid) return;
+      if (!productosSold[pid]) {
+        productosSold[pid] = {
+          nombre: l.productos?.nombre || '—',
+          codigo: l.productos?.codigo || '',
+          cantidad: 0,
+          total: 0,
+        };
+      }
+      productosSold[pid].cantidad += Number(l.cantidad) || 0;
+      productosSold[pid].total += Number(l.total) || 0;
+    });
+  });
+  const productosArr = Object.values(productosSold).sort((a, b) => b.total - a.total);
+
+  // Devoluciones summary
+  const devLineas: { nombre: string; codigo: string; cantidad: number; motivo: string; accion: string; monto_credito: number; cliente: string }[] = [];
+  (devoluciones || []).forEach((d: any) => {
+    (d.devolucion_lineas || []).forEach((l: any) => {
+      devLineas.push({
+        nombre: l.productos?.nombre || '—',
+        codigo: l.productos?.codigo || '',
+        cantidad: Number(l.cantidad),
+        motivo: l.motivo || '—',
+        accion: l.accion || 'reposicion',
+        monto_credito: Number(l.monto_credito) || 0,
+        cliente: d.clientes?.nombre || '—',
+      });
+    });
+  });
+  const totalDevUnidades = devLineas.reduce((s, l) => s + l.cantidad, 0);
+  const totalDevCredito = devLineas.reduce((s, l) => s + l.monto_credito, 0);
+
+  const conDiferencias = (lineas || []).filter((l: any) => Number(l.diferencia) !== 0);
+  const isPendiente = descarga.status === 'pendiente';
+  const dif = Number(descarga.diferencia_efectivo);
+
+  // Effective cash expected: cobros efectivo - gastos (NOT ventas contado — a cash sale may be paid via transfer)
+  const efectivoSistema = (cobrosPorMetodo['efectivo'] || 0) - totalGastos;
+
+  const aprobarMutation = useMutation({
+    mutationFn: async (accion: 'aprobada' | 'rechazada') => {
+      if (accion === 'rechazada' && !notasSupervisor.trim()) {
+        throw new Error('Agrega una nota antes de rechazar');
+      }
+      const { error } = await supabase
+        .from('descarga_ruta')
+        .update({
+          status: accion,
+          aprobado_por: profile!.id,
+          fecha_aprobacion: new Date().toISOString(),
+          notas_supervisor: notasSupervisor || null,
+        } as any)
+        .eq('id', descarga.id);
+      if (error) throw error;
+
+      // Deduct from vendedor's almacen via stock_almacen when approving descarga
+      if (accion === 'aprobada') {
+        const { data: descLineas } = await supabase
+          .from('descarga_ruta_lineas')
+          .select('producto_id, cantidad_real')
+          .eq('descarga_id', descarga.id);
+
+        if (descLineas && descarga.vendedor_id) {
+          // Get vendedor's almacen_id
+          const { data: prof } = await supabase.from('profiles').select('almacen_id').eq('id', descarga.vendedor_id).maybeSingle();
+          const almId = prof?.almacen_id;
+          if (almId) {
+            for (const l of descLineas) {
+              if (!l.cantidad_real || l.cantidad_real <= 0) continue;
+              const { data: sa } = await supabase
+                .from('stock_almacen')
+                .select('id, cantidad')
+                .eq('almacen_id', almId)
+                .eq('producto_id', l.producto_id)
+                .maybeSingle();
+              if (sa) {
+                await supabase.from('stock_almacen')
+                  .update({ cantidad: Math.max(0, sa.cantidad - l.cantidad_real), updated_at: new Date().toISOString() } as any)
+                  .eq('id', sa.id);
+              }
+            }
+          }
+        }
+      }
+    },
+    onSuccess: (_, accion) => {
+      toast.success(accion === 'aprobada' ? 'Liquidación aprobada' : 'Liquidación rechazada');
+      qc.invalidateQueries({ queryKey: ['descargas-list'] });
+      onClose();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-card border border-border rounded-lg max-w-5xl w-full max-h-[90vh] overflow-auto">
+        {/* Header */}
+        <div className="p-5 border-b border-border flex items-center justify-between sticky top-0 bg-card z-10">
+          <div>
+            <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+              <PackageCheck className="h-5 w-5" /> Revisión completa de liquidación
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {(descarga as any).vendedores?.nombre ?? 'Sin vendedor'} — {
+                descarga.fecha_inicio && descarga.fecha_fin && descarga.fecha_inicio !== descarga.fecha_fin
+                  ? `${fmtDate(descarga.fecha_inicio)} al ${fmtDate(descarga.fecha_fin)}`
+                  : fmtDate(descarga.fecha)
+              }
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {(() => {
+              const s = STATUS_MAP[descarga.status] || STATUS_MAP.pendiente;
+              return (
+                <span className={cn("inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold", s.color)}>
+                  <s.icon className="h-3 w-3" /> {s.label}
+                </span>
+              );
+            })()}
+            <div className="flex items-center gap-1.5">
+              <input type="checkbox" id="liq-stock" checked={incluirStock} onChange={e => setIncluirStock(e.target.checked)} className="accent-primary" />
+              <label htmlFor="liq-stock" className="text-[10px] cursor-pointer text-muted-foreground">Stock</label>
+            </div>
+            <Button variant="outline" size="sm" className="text-xs gap-1" onClick={async () => {
+              try {
+                const ticketData = {
+                  empresaNombre: empresa?.nombre ?? '',
+                  vendedorNombre: (descarga as any).vendedores?.nombre ?? 'Sin vendedor',
+                  fechaInicio: fInicio, fechaFin: fFin, status: descarga.status,
+                  efectivoEntregado: Number(descarga.efectivo_entregado) || 0,
+                  ventas: ventasActivas.map((v: any) => ({
+                    folio: v.folio ?? '—', cliente: v.clientes?.nombre ?? '—',
+                    condicion: v.condicion_pago, total: Number(v.total) || 0,
+                  })),
+                  cobros: (cobros || []).map((c: any) => ({
+                    cliente: c.clientes?.nombre ?? '—', metodo: c.metodo_pago ?? 'efectivo', monto: Number(c.monto) || 0,
+                  })),
+                  gastos: (gastos || []).map((g: any) => ({ concepto: g.concepto ?? '—', monto: Number(g.monto) || 0 })),
+                  devoluciones: devLineas.map(d => ({ nombre: d.nombre, cantidad: d.cantidad, motivo: d.motivo })),
+                    cuadre: {
+                    totalContado, totalCredito,
+                    cobrosEfectivo: cobrosPorMetodo['efectivo'] || 0,
+                    cobrosTransferencia: cobrosPorMetodo['transferencia'] || 0,
+                    cobrosTarjeta: cobrosPorMetodo['tarjeta'] || 0,
+                    totalGastos, efectivoEsperado: efectivoSistema,
+                    diferencia: Number(descarga.efectivo_entregado) - efectivoSistema,
+                  },
+                  ...(incluirStock && stockItems.length > 0 ? {
+                    stockInicio: { fecha: almacenNombre, lineas: stockItems.map(s => ({ nombre: s.nombre, codigo: s.codigo, cargada: s.cantidad, vendida: 0, devuelta: 0, restante: s.cantidad })) },
+                  } : {}),
+                };
+                const html = buildLiquidacionTicketHTML(ticketData);
+                const container = document.createElement('div');
+                container.style.position = 'fixed';
+                container.style.left = '-9999px';
+                container.style.top = '0';
+                container.innerHTML = html;
+                document.body.appendChild(container);
+                try {
+                  await new Promise(r => requestAnimationFrame(() => setTimeout(r, 200)));
+                  const dataUrl = await toPng(container.firstElementChild as HTMLElement, { cacheBust: true, pixelRatio: 3, backgroundColor: '#ffffff' });
+                  const a = document.createElement('a');
+                  a.href = dataUrl;
+                  a.download = `Ticket-Liquidacion-${(descarga as any).vendedores?.nombre ?? 'vendedor'}-${fInicio}.png`;
+                  a.click();
+                  toast.success('Ticket descargado');
+                } finally {
+                  document.body.removeChild(container);
+                }
+              } catch (e: any) {
+                toast.error('Error: ' + e.message);
+              }
+            }}>
+              <Receipt className="h-3.5 w-3.5" /> Ticket
+            </Button>
+            <Button variant="outline" size="sm" className="text-xs gap-1" onClick={async () => {
+              try {
+                const logo = empresa?.logo_url ? await loadLogoBase64(empresa.logo_url) : null;
+                const blob = await generarLiquidacionPdf({
+                  empresa: {
+                    nombre: empresa?.nombre ?? '', razon_social: empresa?.razon_social, rfc: empresa?.rfc,
+                    direccion: empresa?.direccion, colonia: empresa?.colonia, ciudad: empresa?.ciudad,
+                    estado: empresa?.estado, cp: empresa?.cp, telefono: empresa?.telefono, email: empresa?.email,
+                  },
+                  logoBase64: logo,
+                  vendedorNombre: (descarga as any).vendedores?.nombre ?? 'Sin vendedor',
+                  fecha: descarga.fecha,
+                  fechaInicio: fInicio,
+                  fechaFin: fFin,
+                  status: descarga.status,
+                  efectivoEntregado: Number(descarga.efectivo_entregado) || 0,
+                  notas: descarga.notas,
+                  notasSupervisor: descarga.notas_supervisor,
+                  ventas: ventasActivas.map((v: any) => ({
+                    folio: v.folio ?? '—', cliente: v.clientes?.nombre ?? '—',
+                    condicion: v.condicion_pago, status: v.status, total: Number(v.total) || 0,
+                  })),
+                  ventasCanceladas: ventasCanceladas.map((v: any) => ({
+                    folio: v.folio ?? '—', cliente: v.clientes?.nombre ?? '—', total: Number(v.total) || 0,
+                  })),
+                  productos: productosArr.map(p => ({
+                    codigo: p.codigo, nombre: p.nombre, cantidad: p.cantidad, total: p.total,
+                  })),
+                  cobros: (cobros || []).map((c: any) => ({
+                    cliente: c.clientes?.nombre ?? '—', metodo: c.metodo_pago ?? 'efectivo',
+                    referencia: c.referencia || '', monto: Number(c.monto) || 0,
+                  })),
+                  gastos: (gastos || []).map((g: any) => ({
+                    concepto: g.concepto ?? '—', notas: g.notas || '', monto: Number(g.monto) || 0,
+                  })),
+                  devoluciones: devLineas,
+                  cuadre: {
+                    totalContado, totalCredito,
+                    cobrosEfectivo: cobrosPorMetodo['efectivo'] || 0,
+                    cobrosTransferencia: cobrosPorMetodo['transferencia'] || 0,
+                    cobrosTarjeta: cobrosPorMetodo['tarjeta'] || 0,
+                    totalGastos, efectivoEsperado: efectivoSistema,
+                    diferencia: Number(descarga.efectivo_entregado) - efectivoSistema,
+                  },
+                  ...(incluirStock && stockItems.length > 0 ? {
+                    stockAlmacen: { almacenNombre, lineas: stockItems },
+                  } : {}),
+                  abonosClientes,
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Liquidacion-${(descarga as any).vendedores?.nombre ?? 'vendedor'}-${fInicio}.pdf`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success('Documento generado');
+              } catch (e: any) {
+                toast.error('Error al generar documento: ' + e.message);
+              }
+            }}>
+              <FileText className="h-3.5 w-3.5" /> Documento
+            </Button>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-lg px-2">✕</button>
+          </div>
+        </div>
+
+        {/* ═══ RESUMEN GENERAL ═══ */}
+        <div className="px-5 py-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            <div className="bg-card rounded-lg p-3 text-center">
+              <div className="text-[10px] text-muted-foreground uppercase">Ventas contado</div>
+              <div className="text-lg font-bold text-foreground">{fmt(totalContado)}</div>
+              <div className="text-[10px] text-muted-foreground">{ventasContado.length} ventas</div>
+            </div>
+            <div className="bg-card rounded-lg p-3 text-center">
+              <div className="text-[10px] text-muted-foreground uppercase">Ventas crédito</div>
+              <div className="text-lg font-bold text-foreground">{fmt(totalCredito)}</div>
+              <div className="text-[10px] text-muted-foreground">{ventasCredito.length} ventas</div>
+            </div>
+            <div className="bg-card rounded-lg p-3 text-center">
+              <div className="text-[10px] text-muted-foreground uppercase">Cobros recibidos</div>
+              <div className="text-lg font-bold text-foreground">{fmt(totalCobros)}</div>
+              <div className="text-[10px] text-muted-foreground">{(cobros || []).length} cobros</div>
+            </div>
+            <div className="bg-card rounded-lg p-3 text-center">
+              <div className="text-[10px] text-muted-foreground uppercase">Gastos</div>
+              <div className="text-lg font-bold text-destructive">-{fmt(totalGastos)}</div>
+              <div className="text-[10px] text-muted-foreground">{(gastos || []).length} gastos</div>
+            </div>
+            {ventasCanceladas.length > 0 && (
+              <div className="bg-destructive/5 rounded-lg p-3 text-center border border-destructive/20">
+                <div className="text-[10px] text-muted-foreground uppercase">Canceladas</div>
+                <div className="text-lg font-bold text-destructive">{fmt(totalCancelado)}</div>
+                <div className="text-[10px] text-muted-foreground">{ventasCanceladas.length} ventas</div>
+              </div>
+            )}
+            <div className="bg-card rounded-lg p-3 text-center">
+              <div className="text-[10px] text-muted-foreground uppercase">Devoluciones</div>
+              <div className="text-lg font-bold text-foreground">{totalDevUnidades}</div>
+              <div className="text-[10px] text-muted-foreground">{devLineas.length} líneas</div>
+            </div>
+          </div>
+        </div>
+
+        {/* ═══ CUADRE DE EFECTIVO ═══ */}
+        <SectionCard title="Cuadre de efectivo" icon={DollarSign}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Vendor declared */}
+            <div className="space-y-2">
+              <div className="text-[11px] font-semibold text-muted-foreground uppercase">Declarado por vendedor</div>
+              <div className="bg-card rounded-md p-3">
+                <div className="text-[10px] text-muted-foreground">Efectivo entregado</div>
+                <div className="text-xl font-bold text-foreground">{fmt(Number(descarga.efectivo_entregado))}</div>
+              </div>
+              {descarga.notas && (
+                <div className="bg-card rounded-md p-3">
+                  <div className="text-[10px] text-muted-foreground uppercase mb-1">Observaciones</div>
+                  <p className="text-[13px] text-foreground">{descarga.notas}</p>
+                </div>
+              )}
+            </div>
+            {/* System calculated */}
+            <div className="space-y-2">
+              <div className="text-[11px] font-semibold text-muted-foreground uppercase">Cuadre de efectivo</div>
+              <div className="bg-card rounded-md p-3 space-y-1.5 text-[12px]">
+                <div className="flex justify-between"><span className="text-muted-foreground">+ Cobros en efectivo</span><span className="font-semibold">{fmt((cobrosPorMetodo['efectivo'] || 0))}</span></div>
+                {(cobrosPorMetodo['transferencia'] || 0) > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Cobros transferencia</span><span className="font-semibold">{fmt((cobrosPorMetodo['transferencia'] || 0))}</span></div>}
+                {(cobrosPorMetodo['tarjeta'] || 0) > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Cobros tarjeta</span><span className="font-semibold">{fmt((cobrosPorMetodo['tarjeta'] || 0))}</span></div>}
+                <div className="flex justify-between"><span className="text-muted-foreground">− Gastos</span><span className="font-semibold text-destructive">-{fmt(totalGastos)}</span></div>
+                {(gastos || []).length > 0 && (
+                  <div className="pl-3 space-y-0.5 border-l-2 border-destructive/20 ml-1">
+                    {(gastos || []).map((g: any) => (
+                      <div key={g.id} className="flex justify-between text-[11px]">
+                        <span className="text-muted-foreground/80">{g.concepto}</span>
+                        <span className="text-destructive/80">{fmt(-((Number(g.monto) || 0)))}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="border-t border-border pt-1.5 flex justify-between font-bold">
+                  <span>Efectivo esperado</span>
+                  <span>{fmt(efectivoSistema)}</span>
+                </div>
+              </div>
+              {/* Difference */}
+              {(() => {
+                const d = Number(descarga.efectivo_entregado) - efectivoSistema;
+                return (
+                  <div className={cn(
+                    "rounded-md p-3 text-center",
+                    d > 0 ? "bg-green-50 border border-green-200" : d < 0 ? "bg-destructive/5 border border-destructive/20" : "bg-card"
+                  )}>
+                    <div className="text-[10px] text-muted-foreground uppercase">Diferencia</div>
+                    <div className={cn("text-lg font-bold", d > 0 ? "text-green-600" : d < 0 ? "text-destructive" : "text-foreground")}>
+                      {d > 0 ? '+' : ''}${fmt(d)}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">{d > 0 ? 'Sobra' : d < 0 ? 'Falta' : 'Cuadra'}</div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* ═══ VENTAS DEL PERIODO ═══ */}
+        <SectionCard title={`Ventas del periodo (${ventasActivas.length})`} icon={ShoppingCart}>
+          {ventasActivas.length > 0 ? (
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="text-[10px] text-muted-foreground uppercase border-b border-border">
+                  <th className="text-left py-2">Folio</th>
+                  <th className="text-left py-2">Cliente</th>
+                  <th className="text-left py-2">Pago</th>
+                  <th className="text-left py-2">Estado</th>
+                  <th className="text-right py-2">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ventasActivas.map((v: any) => (
+                  <tr key={v.id} className="border-b border-border/50">
+                    <td className="py-1.5 font-mono text-foreground">{v.folio ?? '—'}</td>
+                    <td className="py-1.5">{v.clientes?.nombre ?? '—'}</td>
+                    <td className="py-1.5">
+                      <span className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded-full font-semibold",
+                        v.condicion_pago === 'contado' ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
+                      )}>{v.condicion_pago}</span>
+                    </td>
+                    <td className="py-1.5 text-[10px] text-muted-foreground">{v.status}</td>
+                    <td className="py-1.5 text-right font-semibold">{fmt(Number(v.total))}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-border font-bold text-[12px]">
+                  <td colSpan={4} className="py-2 text-right text-muted-foreground">Total ventas activas:</td>
+                  <td className="py-2 text-right">{fmt(totalVentasGeneral)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          ) : <p className="text-sm text-muted-foreground">Sin ventas en este periodo</p>}
+
+          {/* Cancelled sales */}
+          {ventasCanceladas.length > 0 && (
+            <div className="mt-4">
+              <div className="text-[11px] font-semibold text-destructive uppercase mb-2">Ventas canceladas ({ventasCanceladas.length})</div>
+              <div className="space-y-1">
+                {ventasCanceladas.map((v: any) => (
+                  <div key={v.id} className="flex items-center justify-between bg-destructive/5 rounded px-3 py-1.5 text-[12px]">
+                    <span className="font-mono">{v.folio ?? '—'}</span>
+                    <span>{v.clientes?.nombre ?? '—'}</span>
+                    <span className="font-semibold text-destructive line-through">{fmt(Number(v.total))}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </SectionCard>
+
+        {/* ═══ PRODUCTOS VENDIDOS (AGREGADO) ═══ */}
+        <SectionCard title={`Productos vendidos (${productosArr.length})`} icon={PackageCheck}>
+          {productosArr.length > 0 ? (
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="text-[10px] text-muted-foreground uppercase border-b border-border">
+                  <th className="text-left py-2">Producto</th>
+                  <th className="text-left py-2">Código</th>
+                  <th className="text-right py-2">Cantidad</th>
+                  <th className="text-right py-2">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {productosArr.map((p, i) => (
+                  <tr key={i} className="border-b border-border/50">
+                    <td className="py-1.5 font-medium">{p.nombre}</td>
+                    <td className="py-1.5 font-mono text-muted-foreground">{p.codigo}</td>
+                    <td className="py-1.5 text-right">{p.cantidad}</td>
+                    <td className="py-1.5 text-right font-semibold">{fmt(p.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : <p className="text-sm text-muted-foreground">Sin productos vendidos en este periodo</p>}
+        </SectionCard>
+
+        {/* ═══ COBROS RECIBIDOS ═══ */}
+        <SectionCard title={`Cobros recibidos (${(cobros || []).length})`} icon={CreditCard}>
+          {(cobros || []).length > 0 ? (
+            <>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {Object.entries(cobrosPorMetodo).map(([metodo, total]) => (
+                  <div key={metodo} className="bg-card rounded-md px-3 py-2 text-[12px]">
+                    <span className="text-muted-foreground capitalize">{metodo}:</span>{' '}
+                    <span className="font-bold">{fmt(total)}</span>
+                  </div>
+                ))}
+              </div>
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="text-[10px] text-muted-foreground uppercase border-b border-border">
+                    <th className="text-left py-2">Cliente</th>
+                    <th className="text-left py-2">Método</th>
+                    <th className="text-left py-2">Referencia</th>
+                    <th className="text-right py-2">Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(cobros || []).map((c: any) => (
+                    <tr key={c.id} className="border-b border-border/50">
+                      <td className="py-1.5">{c.clientes?.nombre ?? '—'}</td>
+                      <td className="py-1.5 capitalize">{c.metodo_pago}</td>
+                      <td className="py-1.5 text-muted-foreground font-mono">{c.referencia || '—'}</td>
+                      <td className="py-1.5 text-right font-semibold">{fmt(Number(c.monto))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-border font-bold">
+                    <td colSpan={3} className="py-2 text-right text-muted-foreground">Total cobros:</td>
+                    <td className="py-2 text-right">{fmt(totalCobros)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </>
+          ) : <p className="text-sm text-muted-foreground">Sin cobros en este periodo</p>}
+        </SectionCard>
+
+        {/* ═══ GASTOS ═══ */}
+        <SectionCard title={`Gastos (${(gastos || []).length})`} icon={TrendingDown}>
+          {(gastos || []).length > 0 ? (
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="text-[10px] text-muted-foreground uppercase border-b border-border">
+                  <th className="text-left py-2">Concepto</th>
+                  <th className="text-left py-2">Notas</th>
+                  <th className="text-right py-2">Monto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(gastos || []).map((g: any) => (
+                  <tr key={g.id} className="border-b border-border/50">
+                    <td className="py-1.5 font-medium">{g.concepto}</td>
+                    <td className="py-1.5 text-muted-foreground">{g.notas || '—'}</td>
+                    <td className="py-1.5 text-right font-semibold text-destructive">-{fmt(Number(g.monto))}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-border font-bold">
+                  <td colSpan={2} className="py-2 text-right text-muted-foreground">Total gastos:</td>
+                  <td className="py-2 text-right text-destructive">-{fmt(totalGastos)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          ) : <p className="text-sm text-muted-foreground">Sin gastos en este periodo</p>}
+        </SectionCard>
+
+        {/* ═══ DEVOLUCIONES ═══ */}
+        <SectionCard title={`Devoluciones (${totalDevUnidades} uds · ${devLineas.length} líneas)`} icon={RotateCcw}>
+          {devLineas.length > 0 ? (
+            <>
+              {totalDevCredito > 0 && (
+                <div className="flex items-center gap-2 mb-3 text-xs">
+                  <span className="bg-destructive/10 text-destructive px-2 py-1 rounded font-medium">
+                    Crédito total: ${fmt(totalDevCredito)}
+                  </span>
+                </div>
+              )}
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="text-[10px] text-muted-foreground uppercase border-b border-border">
+                    <th className="text-left py-2">Producto</th>
+                    <th className="text-left py-2">Cliente</th>
+                    <th className="text-right py-2">Cant.</th>
+                    <th className="text-left py-2">Motivo</th>
+                    <th className="text-left py-2">Acción</th>
+                    <th className="text-right py-2">Crédito</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {devLineas.map((d, i) => (
+                    <tr key={i} className="border-b border-border/50">
+                      <td className="py-1.5">
+                        <span className="font-medium">{d.nombre}</span>
+                        {d.codigo && <span className="text-muted-foreground font-mono ml-1 text-[10px]">{d.codigo}</span>}
+                      </td>
+                      <td className="py-1.5 text-muted-foreground">{d.cliente}</td>
+                      <td className="py-1.5 text-right font-semibold">{d.cantidad}</td>
+                      <td className="py-1.5">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-card border border-border text-foreground font-medium">
+                          {MOTIVO_LABELS[d.motivo] ?? d.motivo.replace(/_/g, ' ')}
+                        </span>
+                      </td>
+                      <td className="py-1.5">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent text-foreground font-medium">
+                          {ACCION_LABELS[d.accion] ?? d.accion}
+                        </span>
+                      </td>
+                      <td className="py-1.5 text-right font-semibold">
+                        {d.monto_credito > 0 ? <span className="text-destructive">{fmt(d.monto_credito)}</span> : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {totalDevCredito > 0 && (
+                  <tfoot>
+                    <tr className="border-t border-border font-bold text-[12px]">
+                      <td colSpan={5} className="py-2 text-right text-muted-foreground">Total crédito:</td>
+                      <td className="py-2 text-right text-destructive">{fmt(totalDevCredito)}</td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </>
+          ) : <p className="text-sm text-muted-foreground">Sin devoluciones en este periodo</p>}
+        </SectionCard>
+
+        {/* ═══ STOCK EN ALMACÉN ═══ */}
+        {incluirStock && stockItems.length > 0 && (
+          <SectionCard title={`Stock — ${almacenNombre}`} icon={Package}>
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="text-[10px] text-muted-foreground uppercase border-b border-border">
+                  <th className="text-left py-1.5">Producto</th>
+                  <th className="text-right py-1.5">Existencia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stockItems.map((p: any, i: number) => (
+                  <tr key={i} className="border-b border-border/50">
+                    <td className="py-1">{p.nombre} <span className="text-muted-foreground font-mono text-[10px]">{p.codigo}</span></td>
+                    <td className="py-1 text-right font-semibold">{p.cantidad}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </SectionCard>
+        )}
+        {incluirStock && stockItems.length === 0 && (
+          <SectionCard title="Stock" icon={Package}>
+            <p className="text-sm text-muted-foreground italic">No se encontró stock en el almacén asignado.</p>
+          </SectionCard>
+        )}
+
+        {(lineas || []).length > 0 && (
+          <SectionCard title="Cuadre de productos (carga)" icon={PackageCheck}>
+            <div className="space-y-1">
+              {(lineas || []).map((l: any) => {
+                const d = Number(l.diferencia);
+                return (
+                  <div key={l.id} className={cn(
+                    "flex items-center justify-between rounded px-3 py-1.5 text-[12px]",
+                    d !== 0 ? "bg-amber-50 border border-amber-200" : "bg-card"
+                  )}>
+                    <span className="font-medium">{(l as any).productos?.nombre}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-muted-foreground">Esp: {Number(l.cantidad_esperada)}</span>
+                      <span className="font-bold">Real: {Number(l.cantidad_real)}</span>
+                      {d !== 0 && (
+                        <span className={cn("font-bold", d > 0 ? "text-green-600" : "text-destructive")}>
+                          {d > 0 ? '+' : ''}{d}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </SectionCard>
+        )}
+
+        {/* ═══ ADMIN ACTIONS ═══ */}
+        {isPendiente && (
+          <div className="p-5 border-t border-border space-y-3">
+            <div>
+              <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Notas del administrador</label>
+              <textarea
+                value={notasSupervisor}
+                onChange={e => setNotasSupervisor(e.target.value)}
+                placeholder="Observaciones sobre esta liquidación..."
+                className="w-full border border-input bg-background rounded-md px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={() => aprobarMutation.mutate('aprobada')} disabled={aprobarMutation.isPending} className="flex-1">
+                <CheckCircle2 className="h-4 w-4 mr-1" /> Aprobar liquidación
+              </Button>
+              <Button variant="outline" onClick={() => aprobarMutation.mutate('rechazada')} disabled={aprobarMutation.isPending}
+                className="flex-1 border-destructive text-destructive hover:bg-destructive/10">
+                <XCircle className="h-4 w-4 mr-1" /> Rechazar con nota
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {descarga.notas_supervisor && !isPendiente && (
+          <div className="px-5 py-3 border-t border-border">
+            <div className="text-[11px] text-muted-foreground uppercase font-semibold mb-1">Notas del administrador</div>
+            <p className="text-[13px] text-foreground">{descarga.notas_supervisor}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── New Descarga Form (Desktop) ─── */
+
+function NuevaDescargaForm({ onClose }: { onClose: () => void }) {
+  const { user, empresa } = useAuth();
+  const { symbol: cs, fmt } = useCurrency();
+  const qc = useQueryClient();
+  const [vendedorId, setVendedorId] = useState<string>('');
+  const [efectivoEntregado, setEfectivoEntregado] = useState('');
+  const [notas, setNotas] = useState('');
+  const [fechaInicio, setFechaInicio] = useState(() => todayLocal());
+  const [fechaFin, setFechaFin] = useState(() => todayLocal());
+
+  // All active users
+  const { data: usuarios } = useQuery({
+    queryKey: ['usuarios-liquidar', empresa?.id],
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from('profiles')
+        .select('id, user_id, nombre')
+        .eq('empresa_id', empresa!.id)
+        .eq('estado', 'activo')
+        .order('nombre');
+      return (data ?? []) as { id: string; user_id: string; nombre: string }[];
+    },
+  });
+
+  const usuarioOpts = (usuarios || []).map(u => ({ value: u.id, label: u.nombre }));
+  const selectedProfile = (usuarios || []).find(u => u.id === vendedorId);
+  const selectedUserId = selectedProfile?.user_id ?? vendedorId;
+  // Now vendedor_id in ventas directly references profiles.id
+  const vendedorRealId = vendedorId;
+
+  // Calculate expected cash for the period
+  const canCalc = !!empresa?.id && !!vendedorId && !!fechaInicio && !!fechaFin;
+
+  // Check for existing liquidación overlapping this date range for this vendedor
+  const { data: existingLiq } = useQuery({
+    queryKey: ['liq-overlap-check', empresa?.id, vendedorId, fechaInicio, fechaFin],
+    enabled: canCalc,
+    queryFn: async () => {
+      // Check if any descarga_ruta overlaps: existing.fecha_inicio <= fechaFin AND existing.fecha_fin >= fechaInicio
+      const { data } = await supabase
+        .from('descarga_ruta')
+        .select('id, fecha, fecha_inicio, fecha_fin, status')
+        .eq('empresa_id', empresa!.id)
+        .eq('vendedor_id', vendedorRealId)
+        .lte('fecha_inicio', fechaFin)
+        .gte('fecha_fin', fechaInicio)
+        .limit(1)
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  const yaLiquidado = !!existingLiq;
+  const { data: ventasPreview } = useQuery({
+    queryKey: ['liquidar-ventas', empresa?.id, vendedorId, fechaInicio, fechaFin],
+    enabled: canCalc,
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from('ventas')
+        .select('id, folio, total, condicion_pago, status, clientes(nombre), venta_lineas(producto_id, cantidad, precio_unitario, total, productos(nombre, codigo))')
+        .eq('empresa_id', empresa!.id)
+        .eq('vendedor_id', vendedorRealId)
+        .neq('status', 'cancelado')
+        .gte('fecha', fechaInicio)
+        .lte('fecha', fechaFin)
+        .order('created_at', { ascending: true });
+      return data ?? [];
+    },
+  });
+
+  const { data: cobrosPreview } = useQuery({
+    queryKey: ['liquidar-cobros', empresa?.id, selectedUserId, fechaInicio, fechaFin],
+    enabled: canCalc && !!selectedUserId,
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from('cobros')
+        .select('id, monto, metodo_pago, fecha, clientes(nombre), referencia')
+        .eq('empresa_id', empresa!.id)
+        .eq('user_id', selectedUserId)
+        .neq('status', 'cancelado')
+        .gte('fecha', fechaInicio)
+        .lte('fecha', fechaFin)
+        .order('created_at', { ascending: true });
+      return data ?? [];
+    },
+  });
+
+  const { data: gastosPreview } = useQuery({
+    queryKey: ['liquidar-gastos', empresa?.id, vendedorId, fechaInicio, fechaFin],
+    enabled: canCalc,
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from('gastos')
+        .select('id, monto, concepto, fecha, notas')
+        .eq('empresa_id', empresa!.id)
+        .eq('vendedor_id', vendedorRealId)
+        .gte('fecha', fechaInicio)
+        .lte('fecha', fechaFin);
+      return data ?? [];
+    },
+  });
+
+  // Computed from detail queries
+  const ventasContadoArr = (ventasPreview || []).filter((v: any) => v.condicion_pago === 'contado');
+  const totalContado = ventasContadoArr.reduce((s: number, v: any) => s + (Number(v.total) || 0), 0);
+  const totalCobros = (cobrosPreview || []).reduce((s: number, c: any) => s + (Number(c.monto) || 0), 0);
+  const cobrosEfectivoTotal = (cobrosPreview || []).filter((c: any) => c.metodo_pago === 'efectivo').reduce((s: number, c: any) => s + (Number(c.monto) || 0), 0);
+  const cobrosTransferenciaTotal = (cobrosPreview || []).filter((c: any) => c.metodo_pago === 'transferencia').reduce((s: number, c: any) => s + (Number(c.monto) || 0), 0);
+  const cobrosTarjetaTotal = (cobrosPreview || []).filter((c: any) => c.metodo_pago === 'tarjeta').reduce((s: number, c: any) => s + (Number(c.monto) || 0), 0);
+  const totalGastos = (gastosPreview || []).reduce((s: number, g: any) => s + (Number(g.monto) || 0), 0);
+  const efectivoEsperado = cobrosEfectivoTotal - totalGastos;
+
+  // Aggregate products
+  const productosSold: Record<string, { nombre: string; codigo: string; cantidad: number; total: number }> = {};
+  (ventasPreview || []).forEach((v: any) => {
+    (v.venta_lineas || []).forEach((l: any) => {
+      const pid = l.producto_id;
+      if (!pid) return;
+      if (!productosSold[pid]) productosSold[pid] = { nombre: l.productos?.nombre || '—', codigo: l.productos?.codigo || '', cantidad: 0, total: 0 };
+      productosSold[pid].cantidad += Number(l.cantidad) || 0;
+      productosSold[pid].total += Number(l.total) || 0;
+    });
+  });
+  const productosArr = Object.values(productosSold).sort((a, b) => b.total - a.total);
+
+  const diferenciaEfectivo = efectivoEntregado !== '' ? Number(efectivoEntregado) - efectivoEsperado : 0;
+  const hayDiferencias = efectivoEntregado !== '' && Number(efectivoEntregado) !== efectivoEsperado;
+
+  const submitMutation = useMutation({
+    mutationFn: async () => {
+      if (!vendedorId) throw new Error('Selecciona un usuario');
+      if (efectivoEntregado === '') throw new Error('Ingresa el efectivo entregado');
+
+      const efectivoReal = Number(efectivoEntregado);
+
+      const insertData: any = {
+        empresa_id: empresa!.id,
+        user_id: user!.id,
+        vendedor_id: vendedorRealId,
+        efectivo_esperado: efectivoEsperado,
+        efectivo_entregado: efectivoReal,
+        diferencia_efectivo: efectivoReal - efectivoEsperado,
+        notas: notas || null,
+        fecha_inicio: fechaInicio || null,
+        fecha_fin: fechaFin || null,
+      };
+
+      const { error } = await supabase
+        .from('descarga_ruta')
+        .insert(insertData)
+        .select()
+        .single();
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success(hayDiferencias ? 'Liquidación enviada para aprobación' : 'Liquidación completada');
+      qc.invalidateQueries({ queryKey: ['descargas-list'] });
+      onClose();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={onClose}><ArrowLeft className="h-4 w-4" /></Button>
+        <h2 className="text-lg font-bold text-foreground">Nueva liquidación de ruta</h2>
+      </div>
+
+      {/* Step 1: Select user and period */}
+      <div className="bg-card border border-border rounded-lg p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-foreground mb-1">1. Usuario y periodo</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl">
+          <div>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Usuario a liquidar</label>
+            <SearchableSelect
+              options={usuarioOpts}
+              value={vendedorId}
+              onChange={val => { setVendedorId(val); setEfectivoEntregado(''); }}
+              placeholder="Selecciona usuario..."
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Desde</label>
+            <Input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Hasta</label>
+            <Input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Warning: already liquidated */}
+      {canCalc && yaLiquidado && (
+        <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4 flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-destructive">Este periodo ya fue liquidado</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Ya existe una liquidación ({existingLiq?.status}) para este vendedor que cubre las fechas seleccionadas.
+              No se puede crear otra liquidación para el mismo periodo.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: Cash reconciliation */}
+      {canCalc && !yaLiquidado && (
+        <div className="bg-card border border-border rounded-lg p-5 space-y-3">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <DollarSign className="h-4 w-4" /> 2. Cuadre de efectivo
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[12px]">
+            <div className="bg-card rounded-md p-3 text-center">
+              <div className="text-muted-foreground">Ventas contado</div>
+              <div className="font-bold text-foreground">{fmt(totalContado)}</div>
+            </div>
+            <div className="bg-card rounded-md p-3 text-center">
+              <div className="text-muted-foreground">Cobros efectivo</div>
+              <div className="font-bold text-foreground">{fmt(cobrosEfectivoTotal)}</div>
+            </div>
+            {cobrosTransferenciaTotal > 0 && (
+              <div className="bg-card rounded-md p-3 text-center">
+                <div className="text-muted-foreground">Cobros transferencia</div>
+                <div className="font-bold text-foreground">{fmt(cobrosTransferenciaTotal)}</div>
+              </div>
+            )}
+            {cobrosTarjetaTotal > 0 && (
+              <div className="bg-card rounded-md p-3 text-center">
+                <div className="text-muted-foreground">Cobros tarjeta</div>
+                <div className="font-bold text-foreground">{fmt(cobrosTarjetaTotal)}</div>
+              </div>
+            )}
+            <div className="bg-card rounded-md p-3 text-center">
+              <div className="text-muted-foreground">Gastos</div>
+              <div className="font-bold text-destructive">-{fmt(totalGastos)}</div>
+            </div>
+            <div className="bg-primary/5 rounded-md p-3 text-center">
+              <div className="text-muted-foreground">Efectivo esperado</div>
+              <div className="font-bold text-primary">{fmt(efectivoEsperado)}</div>
+            </div>
+          </div>
+          <div className="max-w-xs">
+            <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Efectivo entregado</label>
+            <Input
+              type="number"
+              value={efectivoEntregado}
+              onChange={e => setEfectivoEntregado(e.target.value)}
+              placeholder={efectivoEsperado.toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+            />
+          </div>
+          {diferenciaEfectivo !== 0 && (
+            <div className={cn(
+              "flex items-center gap-2 p-2 rounded-md text-[12px] font-semibold max-w-xs",
+              diferenciaEfectivo > 0 ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400" : "bg-destructive/10 text-destructive"
+            )}>
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Diferencia: {diferenciaEfectivo > 0 ? '+' : ''}${fmt(diferenciaEfectivo)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ DETALLE: Ventas del periodo ═══ */}
+      {canCalc && (
+        <SectionCard title={`Ventas del periodo (${(ventasPreview || []).length})`} icon={ShoppingCart} className="bg-card border border-border rounded-lg">
+          {(ventasPreview || []).length > 0 ? (
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="text-[10px] text-muted-foreground uppercase border-b border-border">
+                  <th className="text-left py-2">Folio</th>
+                  <th className="text-left py-2">Cliente</th>
+                  <th className="text-left py-2">Pago</th>
+                  <th className="text-right py-2">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(ventasPreview || []).map((v: any) => (
+                  <tr key={v.id} className="border-b border-border/50">
+                    <td className="py-1.5 font-mono text-foreground">{v.folio ?? '—'}</td>
+                    <td className="py-1.5">{v.clientes?.nombre ?? '—'}</td>
+                    <td className="py-1.5">
+                      <span className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded-full font-semibold",
+                        v.condicion_pago === 'contado' ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
+                      )}>{v.condicion_pago}</span>
+                    </td>
+                    <td className="py-1.5 text-right font-semibold">{fmt(Number(v.total))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : <p className="text-sm text-muted-foreground">Sin ventas en este periodo</p>}
+        </SectionCard>
+      )}
+
+      {/* ═══ DETALLE: Productos vendidos ═══ */}
+      {canCalc && productosArr.length > 0 && (
+        <SectionCard title={`Productos vendidos (${productosArr.length})`} icon={PackageCheck} className="bg-card border border-border rounded-lg">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="text-[10px] text-muted-foreground uppercase border-b border-border">
+                <th className="text-left py-2">Producto</th>
+                <th className="text-left py-2">Código</th>
+                <th className="text-right py-2">Cantidad</th>
+                <th className="text-right py-2">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productosArr.map((p, i) => (
+                <tr key={i} className="border-b border-border/50">
+                  <td className="py-1.5 font-medium">{p.nombre}</td>
+                  <td className="py-1.5 font-mono text-muted-foreground">{p.codigo}</td>
+                  <td className="py-1.5 text-right">{p.cantidad}</td>
+                  <td className="py-1.5 text-right font-semibold">{fmt(p.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </SectionCard>
+      )}
+
+      {/* ═══ DETALLE: Cobros ═══ */}
+      {canCalc && (
+        <SectionCard title={`Cobros recibidos (${(cobrosPreview || []).length})`} icon={CreditCard} className="bg-card border border-border rounded-lg">
+          {(cobrosPreview || []).length > 0 ? (
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="text-[10px] text-muted-foreground uppercase border-b border-border">
+                  <th className="text-left py-2">Cliente</th>
+                  <th className="text-left py-2">Método</th>
+                  <th className="text-left py-2">Referencia</th>
+                  <th className="text-right py-2">Monto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(cobrosPreview || []).map((c: any) => (
+                  <tr key={c.id} className="border-b border-border/50">
+                    <td className="py-1.5">{c.clientes?.nombre ?? '—'}</td>
+                    <td className="py-1.5 capitalize">{c.metodo_pago}</td>
+                    <td className="py-1.5 text-muted-foreground font-mono">{c.referencia || '—'}</td>
+                    <td className="py-1.5 text-right font-semibold">{fmt(Number(c.monto))}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-border font-bold">
+                  <td colSpan={3} className="py-2 text-right text-muted-foreground">Total cobros:</td>
+                  <td className="py-2 text-right">{fmt(totalCobros)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          ) : <p className="text-sm text-muted-foreground">Sin cobros en este periodo</p>}
+        </SectionCard>
+      )}
+
+      {/* ═══ DETALLE: Gastos ═══ */}
+      {canCalc && (
+        <SectionCard title={`Gastos (${(gastosPreview || []).length})`} icon={TrendingDown} className="bg-card border border-border rounded-lg">
+          {(gastosPreview || []).length > 0 ? (
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="text-[10px] text-muted-foreground uppercase border-b border-border">
+                  <th className="text-left py-2">Concepto</th>
+                  <th className="text-left py-2">Notas</th>
+                  <th className="text-right py-2">Monto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(gastosPreview || []).map((g: any) => (
+                  <tr key={g.id} className="border-b border-border/50">
+                    <td className="py-1.5 font-medium">{g.concepto}</td>
+                    <td className="py-1.5 text-muted-foreground">{g.notas || '—'}</td>
+                    <td className="py-1.5 text-right font-semibold text-destructive">-{fmt(Number(g.monto))}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-border font-bold">
+                  <td colSpan={2} className="py-2 text-right text-muted-foreground">Total gastos:</td>
+                  <td className="py-2 text-right text-destructive">-{fmt(totalGastos)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          ) : <p className="text-sm text-muted-foreground">Sin gastos en este periodo</p>}
+        </SectionCard>
+      )}
+
+      {/* Notes & submit */}
+      <div className="bg-card border border-border rounded-lg p-5">
+        <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Notas generales</label>
+        <textarea
+          value={notas}
+          onChange={e => setNotas(e.target.value)}
+          placeholder="Observaciones sobre la liquidación..."
+          className="input-odoo min-h-[60px] text-[13px] w-full"
+        />
+      </div>
+
+      <Button
+        onClick={() => submitMutation.mutate()}
+        disabled={submitMutation.isPending || efectivoEntregado === '' || !vendedorId || yaLiquidado}
+        className="w-full sm:w-auto"
+      >
+        <PackageCheck className="h-4 w-4 mr-2" />
+        {hayDiferencias ? 'Enviar para aprobación' : 'Completar liquidación'}
+      </Button>
+    </div>
+  );
+}
+
+/* ─── Main Page ─── */
+
+export default function DescargasPage() {
+  const { symbol: cs, fmt } = useCurrency();
+  const { data: descargas, isLoading } = useDescargasListDesktop();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [showNew, setShowNew] = useState(false);
+  const { data: descargaDetalle } = useDescargaDetalle(selectedId);
+
+  const filtered = (descargas || []).filter((d: any) =>
+    filterStatus === 'all' || d.status === filterStatus
+  );
+
+  const selectedDescarga = descargaDetalle ?? descargas?.find((d: any) => d.id === selectedId);
+
+  if (showNew) {
+    return (
+      <div className="p-4">
+        <NuevaDescargaForm onClose={() => setShowNew(false)} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
+          <PackageCheck className="h-5 w-5" /> Liquidar Ruta
+          <HelpButton title={HELP.descargas.title} sections={HELP.descargas.sections} />
+        </h1>
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1">
+            {['all', 'pendiente', 'aprobada', 'rechazada'].map(s => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(s)}
+                className={cn(
+                  "px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors",
+                  filterStatus === s ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {s === 'all' ? 'Todas' : STATUS_MAP[s]?.label || s}
+              </button>
+            ))}
+          </div>
+          <Button size="sm" onClick={() => setShowNew(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> Nueva liquidación
+          </Button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="text-sm text-muted-foreground">Cargando...</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12">
+          <PackageCheck className="h-10 w-10 mx-auto text-muted-foreground/30 mb-3" />
+          <p className="text-sm text-muted-foreground">No hay liquidaciones</p>
+          <Button size="sm" variant="outline" className="mt-3" onClick={() => setShowNew(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> Crear primera liquidación
+          </Button>
+        </div>
+      ) : (
+        <div className="bg-card border border-border rounded-lg overflow-hidden">
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="bg-card text-[11px] text-muted-foreground uppercase border-b border-border">
+                <th className="text-left py-2.5 px-4">Fecha / Periodo</th>
+                <th className="text-left py-2.5 px-4">Vendedor</th>
+                <th className="text-left py-2.5 px-4">Tipo</th>
+                <th className="text-right py-2.5 px-4">Esperado</th>
+                <th className="text-right py-2.5 px-4">Entregado</th>
+                <th className="text-right py-2.5 px-4">Diferencia</th>
+                <th className="text-center py-2.5 px-4">Status</th>
+                <th className="text-center py-2.5 px-4"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((d: any) => {
+                const s = STATUS_MAP[d.status] || STATUS_MAP.pendiente;
+                const dif = Number(d.diferencia_efectivo);
+                const hasRange = d.fecha_inicio && d.fecha_fin && d.fecha_inicio !== d.fecha_fin;
+                const tipoLabel = d.carga_id ? 'Carga' : hasRange ? 'Periodo' : 'Efectivo';
+                return (
+                  <tr key={d.id} className="border-b border-border/50 hover:bg-card transition-colors">
+                    <td className="py-2.5 px-4">
+                      {hasRange ? `${fmtDate(d.fecha_inicio)} → ${fmtDate(d.fecha_fin)}` : fmtDate(d.fecha)}
+                    </td>
+                    <td className="py-2.5 px-4 font-medium">{(d as any).vendedores?.nombre ?? '—'}</td>
+                    <td className="py-2.5 px-4">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-card border border-border font-medium">{tipoLabel}</span>
+                    </td>
+                    <td className="py-2.5 px-4 text-right">{fmt(Number(d.efectivo_esperado))}</td>
+                    <td className="py-2.5 px-4 text-right font-semibold">{fmt(Number(d.efectivo_entregado))}</td>
+                    <td className={cn(
+                      "py-2.5 px-4 text-right font-bold",
+                      dif > 0 ? "text-green-600" : dif < 0 ? "text-destructive" : ""
+                    )}>
+                      {dif > 0 ? '+' : ''}${fmt(dif)}
+                    </td>
+                    <td className="py-2.5 px-4 text-center">
+                      <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold", s.color)}>
+                        <s.icon className="h-3 w-3" /> {s.label}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-4 text-center">
+                      <Button variant="ghost" size="sm" onClick={() => setSelectedId(d.id)}>
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {selectedDescarga && (
+        <DescargaDetalle descarga={selectedDescarga} onClose={() => setSelectedId(null)} />
+      )}
+    </div>
+  );
+}

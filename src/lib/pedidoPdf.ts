@@ -1,0 +1,268 @@
+/**
+ * Pedido PDF — Matches the HTML invoice design EXACTLY
+ */
+import {
+  createDoc, ML, MR, C, fmtCurrency, fmtDate,
+  drawDocHeader, drawInfoGrid, drawCleanTable, drawTotalsBlock,
+  drawImporteConLetra, drawNotes, drawSignatures, drawFooter,
+  checkPageBreak, numberToWords,
+  type EmpresaInfo,
+} from './pdfStyleOdoo';
+import { getCurrencyConfig } from '@/lib/currency';
+
+interface PedidoPdfPromo {
+  descripcion: string;
+  descuento: number;
+  producto_id?: string;
+}
+
+interface PedidoPdfParams {
+  empresa: EmpresaInfo;
+  logoBase64?: string | null;
+  pedido: {
+    folio: string;
+    fecha: string;
+    status: string;
+    condicion_pago: string;
+    subtotal: number;
+    descuento_total: number;
+    iva_total: number;
+    ieps_total: number;
+    total: number;
+    saldo_pendiente?: number;
+    notas?: string | null;
+  };
+  cliente: {
+    nombre: string;
+    codigo?: string | null;
+    telefono?: string | null;
+    direccion?: string | null;
+    rfc?: string | null;
+    email?: string | null;
+    cp?: string | null;
+    colonia?: string | null;
+  };
+  vendedor?: string;
+  almacen?: string;
+  lineas: {
+    codigo: string;
+    nombre: string;
+    cantidad: number;
+    unidad?: string;
+    precio_unitario: number;
+    descuento_pct: number;
+    iva_pct: number;
+    ieps_pct: number;
+    total: number;
+    producto_id?: string;
+    precio_sugerido_publico?: number;
+  }[];
+  entregas: {
+    folio: string;
+    status: string;
+    fecha?: string;
+    repartidor?: string;
+    lineas: { codigo: string; nombre: string; cantidad_pedida: number; cantidad_entregada: number }[];
+  }[];
+  pagos: {
+    fecha: string;
+    metodo_pago: string;
+    monto: number;
+    referencia?: string;
+  }[];
+  promociones?: PedidoPdfPromo[];
+}
+
+const STATUS_MAP: Record<string, { label: string; color: 'green' | 'red' | 'neutral' }> = {
+  borrador: { label: 'Borrador', color: 'neutral' },
+  confirmado: { label: 'Confirmada', color: 'green' },
+  entregado: { label: 'Entregada', color: 'green' },
+  facturado: { label: 'Facturada', color: 'green' },
+  cancelado: { label: 'Cancelada', color: 'red' },
+  pagado: { label: 'Pagada', color: 'green' },
+};
+
+const ENTREGA_STATUS: Record<string, string> = {
+  borrador: 'Borrador', surtido: 'Surtido', asignado: 'Asignado',
+  cargado: 'Cargado', en_ruta: 'En ruta', hecho: 'Entregado', cancelado: 'Cancelado',
+};
+
+export async function generarPedidoPdf(params: PedidoPdfParams): Promise<Blob> {
+  const { empresa, logoBase64, pedido, cliente, vendedor, almacen, lineas, entregas, pagos, promociones } = params;
+  const doc = await createDoc();
+  const pageW = doc.internal.pageSize.getWidth();
+  const rightX = pageW - MR;
+  const cc = getCurrencyConfig(empresa.moneda);
+  const s = cc.symbol;
+
+  const statusInfo = STATUS_MAP[pedido.status] || { label: pedido.status.charAt(0).toUpperCase() + pedido.status.slice(1), color: 'neutral' as const };
+  const pagoLabel = pedido.condicion_pago === 'credito' ? 'Crédito' : pedido.condicion_pago === 'contado' ? 'Contado' : 'Por definir';
+
+  // ── HEADER with status chip ──
+  let y = drawDocHeader(doc, empresa, 'ORDEN DE VENTA', pedido.folio, logoBase64, statusInfo.label, statusInfo.color);
+
+  // ── INFO GRID — Client left, Document info right ──
+  const leftRows: [string, string][] = [
+    ['_name', cliente.nombre],
+    ...(cliente.rfc ? [['RFC:', cliente.rfc] as [string, string]] : []),
+    ...(cliente.direccion ? [['', cliente.direccion] as [string, string]] : []),
+    ...(cliente.colonia ? [['', cliente.colonia] as [string, string]] : []),
+    ...(cliente.cp ? [['C.P.', cliente.cp] as [string, string]] : []),
+    ...(cliente.email || cliente.telefono ? [['', [cliente.email, cliente.telefono].filter(Boolean).join(' · ')] as [string, string]] : []),
+  ];
+
+  const rightRows: [string, string][] = [
+    ['Fecha de venta:', fmtDate(pedido.fecha)],
+    ['Condiciones de pago:', pagoLabel],
+    ...(vendedor ? [['Vendedor:', vendedor] as [string, string]] : []),
+    ...(almacen ? [['Almacén:', almacen] as [string, string]] : []),
+    ['Moneda:', `${cc.code} - ${cc.name}`],
+  ];
+
+  y = drawInfoGrid(doc, y, 'Cliente', leftRows, 'Información de la venta', rightRows);
+
+  // ── PRODUCTS TABLE (with inline promo rows) ──
+  const showSugerido = lineas.some(l => (l.precio_sugerido_publico ?? 0) > 0);
+  const tableRows: any[][] = [];
+  for (const l of lineas) {
+    tableRows.push([
+      { content: l.codigo, styles: { textColor: C.sublabel, fontStyle: 'normal', fontSize: 7 } },
+      l.nombre,
+      { content: String(l.cantidad), styles: { halign: 'center' } },
+      l.unidad || 'Pieza',
+      { content: `${s}${fmtCurrency(l.precio_unitario)}`, styles: { halign: 'right' } },
+      l.descuento_pct > 0
+        ? { content: `${l.descuento_pct}%`, styles: { halign: 'center', textColor: C.red } }
+        : { content: '—', styles: { halign: 'center', textColor: C.sublabel } },
+      { content: l.iva_pct > 0 ? `${l.iva_pct}%` : '—', styles: { halign: 'center', textColor: l.iva_pct > 0 ? C.text : C.sublabel } },
+      { content: l.ieps_pct > 0 ? `${l.ieps_pct}%` : '—', styles: { halign: 'center', textColor: l.ieps_pct > 0 ? C.text : C.sublabel } },
+      ...(showSugerido ? [
+        (l.precio_sugerido_publico ?? 0) > 0
+          ? { content: `${s}${fmtCurrency(l.precio_sugerido_publico!)}`, styles: { halign: 'right', fontStyle: 'bold' as const } }
+          : { content: '—', styles: { halign: 'center', textColor: C.sublabel } },
+      ] : []),
+      { content: `${s}${fmtCurrency(l.total)}`, styles: { halign: 'right', fontStyle: 'bold' } },
+    ]);
+    // Insert promo sub-rows for this product
+    const linePromos = (promociones ?? []).filter(p => p.producto_id && p.producto_id === l.producto_id);
+    for (const lp of linePromos) {
+      tableRows.push([
+        '',
+        { content: `🏷️ ${lp.descripcion}`, colSpan: showSugerido ? 7 : 6, styles: { textColor: [30, 130, 76], fontStyle: 'italic', fontSize: 7 } },
+        '',
+        { content: `-${s}${fmtCurrency(lp.descuento)}`, styles: { halign: 'right', textColor: [30, 130, 76], fontStyle: 'bold', fontSize: 7 } },
+      ]);
+    }
+  }
+  y = await drawCleanTable(doc, y,
+    ['Código', 'Producto', 'Cant.', 'Unidad', 'P. Unit.', 'Desc.', 'IVA', 'IEPS', ...(showSugerido ? ['Sug. público'] : []), 'Importe'],
+    tableRows,
+    {
+      0: { cellWidth: 20 },
+      2: { cellWidth: 14, halign: 'center' },
+      3: { cellWidth: 18 },
+      4: { cellWidth: 22, halign: 'right' },
+      5: { cellWidth: 14, halign: 'center' },
+      6: { cellWidth: 14, halign: 'center' },
+      7: { cellWidth: 14, halign: 'center' },
+      ...(showSugerido ? { 8: { cellWidth: 22, halign: 'right' as const }, 9: { cellWidth: 22, halign: 'right' as const } } : { 8: { cellWidth: 24, halign: 'right' as const } }),
+    },
+  );
+
+  // ── AHORRO TOTAL PROMOS (inline per product above) ──
+  if (promociones && promociones.length > 0) {
+    const totalAhorro = promociones.reduce((sum, p) => sum + p.descuento, 0);
+    if (totalAhorro > 0) {
+      y = checkPageBreak(doc, y);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 130, 76);
+      doc.text(`Ahorro total por promociones: ${s}${fmtCurrency(totalAhorro)}`, ML, y);
+      y += 6;
+      doc.setTextColor(...C.text);
+    }
+  }
+
+  // ── TOTALS ──
+  const subtotalBruto = lineas.reduce((s, l) => s + (l.precio_unitario * l.cantidad), 0);
+  const totalRows: { label: string; value: string; bold?: boolean; red?: boolean; separator?: boolean }[] = [];
+
+  if (pedido.descuento_total > 0) {
+    totalRows.push({ label: 'Subtotal bruto:', value: `${s}${fmtCurrency(subtotalBruto)}` });
+    totalRows.push({ label: 'Descuentos:', value: `-${s}${fmtCurrency(pedido.descuento_total)}`, red: true });
+    totalRows.push({ label: 'Subtotal neto:', value: `${s}${fmtCurrency(pedido.subtotal)}`, separator: true });
+  } else {
+    totalRows.push({ label: 'Subtotal:', value: `${s}${fmtCurrency(pedido.subtotal)}` });
+  }
+
+  if (pedido.iva_total > 0) totalRows.push({ label: 'IVA 16%:', value: `${s}${fmtCurrency(pedido.iva_total)}` });
+  if (pedido.ieps_total > 0) totalRows.push({ label: 'IEPS:', value: `${s}${fmtCurrency(pedido.ieps_total)}` });
+  totalRows.push({ label: 'Total:', value: `${s}${fmtCurrency(pedido.total)}`, bold: true });
+  if ((pedido.saldo_pendiente ?? 0) > 0) {
+    totalRows.push({ label: 'Saldo pendiente:', value: `${s}${fmtCurrency(pedido.saldo_pendiente!)}`, bold: true, red: true });
+  }
+
+  y = drawTotalsBlock(doc, y, totalRows);
+
+  // ── IMPORTE CON LETRA ──
+  const words = numberToWords(pedido.total, cc.wordPlural, cc.code);
+  y = drawImporteConLetra(doc, y, words);
+
+  // ── NOTAS ──
+  if (pedido.notas) {
+    y = drawNotes(doc, y, pedido.notas, 'Notas y condiciones');
+  }
+
+  // ── ENTREGAS ──
+  if (entregas.length > 0) {
+    y = checkPageBreak(doc, y);
+    y = await drawCleanTable(doc, y,
+      ['Folio', 'Estado', 'Repartidor', 'Productos'],
+      entregas.map(e => [
+        { content: e.folio, styles: { fontStyle: 'bold' } },
+        ENTREGA_STATUS[e.status] ?? e.status,
+        e.repartidor ?? '—',
+        e.lineas.map(l => `${l.cantidad_entregada}/${l.cantidad_pedida} ${l.codigo}`).join(', '),
+      ]),
+      {
+        0: { cellWidth: 24 },
+        1: { cellWidth: 24 },
+        2: { cellWidth: 32 },
+      },
+    );
+  }
+
+  // ── PAGOS ──
+  if (pagos.length > 0) {
+    y = checkPageBreak(doc, y);
+    const totalPagado = pagos.reduce((s, p) => s + p.monto, 0);
+
+    y = await drawCleanTable(doc, y,
+      ['Fecha', 'Método', 'Referencia', 'Monto'],
+      pagos.map(p => [
+        fmtDate(p.fecha),
+        p.metodo_pago,
+        p.referencia || '—',
+        { content: `${s}${fmtCurrency(p.monto)}`, styles: { halign: 'right', fontStyle: 'bold' } },
+      ]),
+      { 3: { halign: 'right' } },
+    );
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...C.text);
+    doc.text(`Total pagado: ${s}${fmtCurrency(totalPagado)}`, rightX, y - 3, { align: 'right' });
+    y += 7;
+  }
+
+  // ── SIGNATURES ──
+  y = drawSignatures(doc, y,
+    { title: 'Autorizado por', name: vendedor ? `${vendedor} — Ventas` : undefined },
+    { title: 'Recibido y aceptado por', name: cliente.nombre },
+  );
+
+  // ── FOOTER ──
+  drawFooter(doc, empresa);
+
+  return doc.output('blob');
+}

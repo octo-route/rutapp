@@ -1,0 +1,616 @@
+import { useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import { fetchAllPages } from '@/lib/supabasePaginate';
+import { useAuth } from '@/contexts/AuthContext';
+import { CATALOG_STALE_TIME } from '@/hooks/useBootstrapPrefetch';
+import { pickColumns, PRODUCTO_COLUMNS, TARIFA_COLUMNS, TARIFA_LINEA_COLUMNS, PRODUCTO_PROVEEDOR_COLUMNS } from '@/lib/allowlist';
+import type { Producto, Tarifa, TarifaLinea, Marca, Proveedor, Clasificacion, Lista, Unidad, TasaIva, TasaIeps, Almacen, UnidadSat } from '@/types';
+
+const CATALOG_STALE = CATALOG_STALE_TIME;
+
+/** Realtime listener — invalidates productos cache on any server-side change */
+export function useProductosRealtime() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    const channel = supabase
+      .channel('productos-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, () => {
+        qc.invalidateQueries({ queryKey: ['productos'] });
+        qc.invalidateQueries({ queryKey: ['productos-page'] });
+        qc.invalidateQueries({ queryKey: ['productos-select'] });
+        qc.invalidateQueries({ queryKey: ['pos-productos'] });
+        qc.invalidateQueries({ queryKey: ['inventario-dashboard'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_almacen' }, () => {
+        qc.invalidateQueries({ queryKey: ['stock-almacen'] });
+        qc.invalidateQueries({ queryKey: ['stock-almacen-origen'] });
+        qc.invalidateQueries({ queryKey: ['productos'] });
+        qc.invalidateQueries({ queryKey: ['productos-page'] });
+        qc.invalidateQueries({ queryKey: ['inventario-dashboard'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' }, () => {
+        qc.invalidateQueries({ queryKey: ['ventas'] });
+        qc.invalidateQueries({ queryKey: ['ventas-list'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'almacenes' }, () => {
+        qc.invalidateQueries({ queryKey: ['almacenes'] });
+        qc.invalidateQueries({ queryKey: ['inventario-dashboard'] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [qc]);
+}
+
+/** Paginated products for list views */
+export function useProductosPaginated(search?: string, statusFilter?: string, page = 1, pageSize = 80, clasificacionFilter?: string, marcaFilter?: string) {
+  const { empresa } = useAuth();
+  return useQuery({
+    queryKey: ['productos-page', empresa?.id, search, statusFilter, page, pageSize, clasificacionFilter, marcaFilter],
+    staleTime: CATALOG_STALE,
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      let q = supabase.from('productos')
+        .select('id, codigo, nombre, precio_principal, costo, cantidad, status, imagen_url, tiene_iva, iva_pct, tiene_ieps, ieps_pct, min, marca_id, marcas(nombre), clasificacion_id, clasificaciones(nombre), proveedor_id, proveedores(nombre), unidad_venta_id, unidades_venta:unidad_venta_id(abreviatura), unidad_compra_id, unidades_compra:unidad_compra_id(abreviatura), factor_conversion, calculo_costo, lista_id, listas(nombre)', { count: 'exact' })
+        .eq('empresa_id', empresa!.id)
+        .order('nombre', { ascending: true })
+        .range((page - 1) * pageSize, page * pageSize - 1);
+      if (search) q = q.or(`nombre.ilike.%${search}%,codigo.ilike.%${search}%`);
+      if (statusFilter && statusFilter !== 'todos') {
+        const arr = statusFilter.split(',');
+        if (arr.length > 1) q = q.in('status', arr as any);
+        else q = q.eq('status', statusFilter as Producto['status']);
+      }
+      if (clasificacionFilter && clasificacionFilter !== 'todos') {
+        const arr = clasificacionFilter.split(',');
+        if (arr.length > 1) q = q.in('clasificacion_id', arr as any);
+        else q = q.eq('clasificacion_id', clasificacionFilter);
+      }
+      if (marcaFilter && marcaFilter !== 'todos') {
+        const arr = marcaFilter.split(',');
+        if (arr.length > 1) q = q.in('marca_id', arr as any);
+        else q = q.eq('marca_id', marcaFilter);
+      }
+      const { data, error, count } = await q;
+      if (error) throw error;
+      return { rows: (data ?? []) as unknown as Producto[], total: count ?? 0 };
+    },
+  });
+}
+
+/** All products (for lookups — not for list pages) */
+export function useProductos(search?: string, statusFilter?: string) {
+  const { empresa } = useAuth();
+  return useQuery({
+    queryKey: ['productos', empresa?.id, search, statusFilter],
+    staleTime: CATALOG_STALE,
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      return fetchAllPages((from, to) => {
+        let q = supabase.from('productos')
+          .select('id, codigo, nombre, nombre_compra, nombre_venta, nombre_ticket, precio_principal, costo, cantidad, status, imagen_url, tiene_iva, iva_pct, tiene_ieps, ieps_pct, min, marca_id, marcas(nombre), clasificacion_id, clasificaciones(nombre), proveedor_id, proveedores(nombre), unidad_venta_id, unidades_venta:unidad_venta_id(abreviatura), unidad_compra_id, unidades_compra:unidad_compra_id(abreviatura), factor_conversion, calculo_costo, lista_id, listas(nombre)')
+          .eq('empresa_id', empresa!.id)
+          .order('nombre', { ascending: true })
+          .range(from, to);
+        if (search) q = q.or(`nombre.ilike.%${search}%,codigo.ilike.%${search}%`);
+        if (statusFilter && statusFilter !== 'todos') q = q.eq('status', statusFilter as Producto['status']);
+        return q;
+      }) as Promise<Producto[]>;
+    },
+  });
+}
+
+export function useProducto(id?: string) {
+  return useQuery({
+    queryKey: ['producto', id],
+    staleTime: CATALOG_STALE,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('productos').select('*, marcas(nombre)').eq('id', id!).single();
+      if (error) throw error;
+      return data as Producto;
+    },
+    enabled: !!id,
+  });
+}
+
+export function useSaveProducto() {
+  const qc = useQueryClient();
+  const { empresa } = useAuth();
+  return useMutation({
+    mutationFn: async (producto: Partial<Producto> & { id?: string }) => {
+      const clean = pickColumns(producto, PRODUCTO_COLUMNS);
+      delete (clean as any).id;
+      if (producto.id) {
+        const { data, error } = await supabase.from('productos').update(clean as any).eq('id', producto.id).select('id').single();
+        if (error) { console.error('Supabase update error:', error); throw error; }
+        return data;
+      } else {
+        if (!empresa?.id) throw new Error('Sin empresa');
+        (clean as any).empresa_id = empresa.id;
+        const { data, error } = await supabase.from('productos').insert(clean as any).select('id').single();
+        if (error) throw error;
+        return data;
+      }
+    },
+    onMutate: async (producto) => {
+      if (!producto.id) return;
+      await qc.cancelQueries({ queryKey: ['productos'] });
+      const prev = qc.getQueriesData<any[]>({ queryKey: ['productos'] });
+      qc.setQueriesData<any[]>({ queryKey: ['productos'] }, (old) =>
+        old?.map(p => p.id === producto.id ? { ...p, ...producto } : p)
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) ctx.prev.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['productos'] });
+      qc.invalidateQueries({ queryKey: ['productos-page'] });
+      qc.invalidateQueries({ queryKey: ['productos-select'] });
+      qc.invalidateQueries({ queryKey: ['pos-productos'] });
+      qc.invalidateQueries({ queryKey: ['producto'] });
+      qc.invalidateQueries({ queryKey: ['marcas'] });
+      qc.invalidateQueries({ queryKey: ['clasificaciones'] });
+    },
+  });
+}
+
+export function useDeleteProducto() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('productos').update({ status: 'inactivo' }).eq('id', id);
+      if (error) throw error;
+    },
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: ['productos'] });
+      const prev = qc.getQueriesData<any[]>({ queryKey: ['productos'] });
+      qc.setQueriesData<any[]>({ queryKey: ['productos'] }, (old) =>
+        old?.filter(p => p.id !== id)
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) ctx.prev.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['productos'] });
+      qc.invalidateQueries({ queryKey: ['productos-page'] });
+      qc.invalidateQueries({ queryKey: ['productos-select'] });
+      qc.invalidateQueries({ queryKey: ['pos-productos'] });
+      qc.invalidateQueries({ queryKey: ['producto'] });
+      qc.invalidateQueries({ queryKey: ['marcas'] });
+      qc.invalidateQueries({ queryKey: ['clasificaciones'] });
+    },
+  });
+}
+
+// Tarifas
+export function useTarifas() {
+  const { empresa } = useAuth();
+  return useQuery({
+    queryKey: ['tarifas', empresa?.id],
+    staleTime: CATALOG_STALE,
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('tarifas')
+        .select('id, nombre, tipo, activa, descripcion, vigencia_inicio, vigencia_fin, created_at, tarifa_lineas(id)')
+        .eq('empresa_id', empresa!.id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data as (Tarifa & { tarifa_lineas: { id: string }[] })[];
+    },
+  });
+}
+
+export function useTarifa(id?: string) {
+  return useQuery({
+    queryKey: ['tarifa', id],
+    staleTime: CATALOG_STALE,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('tarifas').select('*, tarifa_lineas(*)').eq('id', id!).single();
+      if (error) throw error;
+      return data as Tarifa;
+    },
+    enabled: !!id,
+  });
+}
+
+export function useSaveTarifa() {
+  const qc = useQueryClient();
+  const { empresa } = useAuth();
+  return useMutation({
+    mutationFn: async (tarifa: Partial<Tarifa> & { id?: string }) => {
+      const clean = pickColumns(tarifa, TARIFA_COLUMNS);
+      delete (clean as any).id;
+      if (tarifa.id) {
+        const { data, error } = await supabase.from('tarifas').update(clean as any).eq('id', tarifa.id).select('id').single();
+        if (error) throw error;
+        return data;
+      } else {
+        if (!empresa?.id) throw new Error('Sin empresa');
+        (clean as any).empresa_id = empresa.id;
+        const { data, error } = await supabase.from('tarifas').insert(clean as any).select('id').single();
+        if (error) throw error;
+        return data;
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['tarifas'] });
+      qc.invalidateQueries({ queryKey: ['tarifa'] });
+      qc.invalidateQueries({ queryKey: ['tarifas-select'] });
+    },
+  });
+}
+
+export function useSaveTarifaLinea() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (linea: Partial<TarifaLinea> & { id?: string }) => {
+      const clean = pickColumns(linea, TARIFA_LINEA_COLUMNS);
+      delete (clean as any).id;
+      if (linea.id) {
+        const { data, error } = await supabase.from('tarifa_lineas').update(clean as any).eq('id', linea.id).select('id').single();
+        if (error) throw error;
+        return data;
+      } else {
+        const { data, error } = await supabase.from('tarifa_lineas').insert(clean as any).select('id').single();
+        if (error) throw error;
+        return data;
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['tarifa'] });
+      qc.invalidateQueries({ queryKey: ['tarifas'] });
+      qc.invalidateQueries({ queryKey: ['tarifa-lineas-producto'] });
+    },
+  });
+}
+
+export function useDeleteTarifaLinea() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('tarifa_lineas').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['tarifa'] });
+      qc.invalidateQueries({ queryKey: ['tarifas'] });
+      qc.invalidateQueries({ queryKey: ['tarifa-lineas-producto'] });
+    },
+  });
+}
+
+// Catalogs — all with 5 min staleTime and explicit columns
+export function useMarcas() {
+  const { empresa } = useAuth();
+  return useQuery({ queryKey: ['marcas', empresa?.id], staleTime: CATALOG_STALE, enabled: !!empresa?.id, queryFn: async () => { const { data } = await supabase.from('marcas').select('id, nombre').eq('empresa_id', empresa!.id).eq('activo', true).order('nombre'); return data as Marca[]; }});
+}
+export function useProveedores() {
+  const { empresa } = useAuth();
+  return useQuery({ queryKey: ['proveedores', empresa?.id], staleTime: CATALOG_STALE, enabled: !!empresa?.id, queryFn: async () => { const { data } = await supabase.from('proveedores').select('id, nombre, dias_credito, condicion_pago').eq('empresa_id', empresa!.id).neq('status', 'baja').order('nombre'); return data as (Proveedor & { dias_credito?: number; condicion_pago?: string })[]; }});
+}
+export function useClasificaciones() {
+  const { empresa } = useAuth();
+  return useQuery({ queryKey: ['clasificaciones', empresa?.id], staleTime: CATALOG_STALE, enabled: !!empresa?.id, queryFn: async () => { const { data } = await supabase.from('clasificaciones').select('id, nombre').eq('empresa_id', empresa!.id).eq('activo', true).order('nombre'); return data as Clasificacion[]; }});
+}
+export function useListas() {
+  const { empresa } = useAuth();
+  return useQuery({ queryKey: ['listas', empresa?.id], staleTime: CATALOG_STALE, enabled: !!empresa?.id, queryFn: async () => { const { data } = await supabase.from('listas').select('id, nombre').eq('empresa_id', empresa!.id).eq('activo', true).order('nombre'); return data as Lista[]; }});
+}
+export function useUnidades() {
+  const { empresa } = useAuth();
+  return useQuery({ queryKey: ['unidades', empresa?.id], staleTime: CATALOG_STALE, enabled: !!empresa?.id, queryFn: async () => { const { data } = await supabase.from('unidades').select('id, nombre, abreviatura').eq('empresa_id', empresa!.id).eq('activo', true).order('nombre'); return data as Unidad[]; }});
+}
+export function useTasasIva() {
+  const { empresa } = useAuth();
+  return useQuery({ queryKey: ['tasas_iva', empresa?.id], staleTime: CATALOG_STALE, enabled: !!empresa?.id, queryFn: async () => { const { data } = await supabase.from('tasas_iva').select('id, nombre, porcentaje').eq('empresa_id', empresa!.id).order('nombre'); return data as TasaIva[]; }});
+}
+export function useTasasIeps() {
+  const { empresa } = useAuth();
+  return useQuery({ queryKey: ['tasas_ieps', empresa?.id], staleTime: CATALOG_STALE, enabled: !!empresa?.id, queryFn: async () => { const { data } = await supabase.from('tasas_ieps').select('id, nombre, porcentaje').eq('empresa_id', empresa!.id).order('nombre'); return data as TasaIeps[]; }});
+}
+export function useAlmacenes() {
+  const { empresa } = useAuth();
+  return useQuery({ queryKey: ['almacenes', empresa?.id], staleTime: CATALOG_STALE, enabled: !!empresa?.id, queryFn: async () => { const { data } = await supabase.from('almacenes').select('id, nombre').eq('empresa_id', empresa!.id).eq('activo', true).order('nombre'); return data as Almacen[]; }});
+}
+export function useUnidadesSat() {
+  return useQuery({ queryKey: ['unidades_sat'], staleTime: CATALOG_STALE, queryFn: async () => { const { data } = await supabase.from('unidades_sat').select('id, clave, nombre').order('nombre'); return data as UnidadSat[]; }});
+}
+export function useProductosForSelect() {
+  const { empresa } = useAuth();
+  return useQuery({
+    queryKey: ['productos-select', empresa?.id, 'nombres-contextuales'],
+    staleTime: CATALOG_STALE,
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      const { data } = await supabase.from('productos')
+        .select('id, codigo, nombre, nombre_compra, nombre_venta, nombre_ticket, precio_principal, costo, cantidad, clasificacion_id, unidad_venta_id, unidad_compra_id, factor_conversion, tiene_iva, tiene_ieps, tasa_iva_id, tasa_ieps_id, iva_pct, ieps_pct, ieps_tipo, costo_incluye_impuestos, es_granel, unidad_granel, vender_sin_stock, usa_listas_precio, unidades_venta:unidades!productos_unidad_venta_id_fkey(nombre, abreviatura), unidades_compra:unidades!productos_unidad_compra_id_fkey(nombre, abreviatura)')
+        .eq('empresa_id', empresa!.id)
+        .eq('status', 'activo').order('nombre');
+      return data ?? [];
+    },
+  });
+}
+export function useTarifasForSelect() {
+  const { empresa } = useAuth();
+  return useQuery({
+    queryKey: ['tarifas-select', empresa?.id],
+    staleTime: CATALOG_STALE,
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      const { data } = await supabase.from('tarifas').select('id, nombre, tipo, activa').eq('empresa_id', empresa!.id).eq('activa', true).order('nombre');
+      return data ?? [];
+    },
+  });
+}
+
+export function useTarifaLineasForProducto(productoId?: string, clasificacionId?: string | null) {
+  return useQuery({
+    queryKey: ['tarifa-lineas-producto', productoId, clasificacionId],
+    staleTime: CATALOG_STALE,
+    queryFn: async () => {
+      const filters: string[] = ['aplica_a.eq.todos'];
+      if (productoId) filters.push(`producto_ids.cs.{${productoId}}`);
+      if (clasificacionId) filters.push(`clasificacion_ids.cs.{${clasificacionId}}`);
+
+      const { data, error } = await supabase
+        .from('tarifa_lineas')
+        .select('*, tarifas(id, nombre, activa), lista_precios(id, nombre, es_principal)')
+        .or(filters.join(','))
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return data as (TarifaLinea & { tarifas: { id: string; nombre: string; activa: boolean } })[];
+    },
+    enabled: !!productoId,
+  });
+}
+
+/* ── Producto Proveedores ── */
+export function useProductoProveedores(productoId?: string) {
+  return useQuery({
+    queryKey: ['producto_proveedores', productoId],
+    staleTime: CATALOG_STALE,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('producto_proveedores')
+        .select('id, producto_id, proveedor_id, es_principal, precio_compra, tiempo_entrega_dias, notas, proveedores(nombre)')
+        .eq('producto_id', productoId!)
+        .order('es_principal', { ascending: false });
+      if (error) throw error;
+      return data as any[];
+    },
+    enabled: !!productoId,
+  });
+}
+
+export function useSaveProductoProveedor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (row: { id?: string; producto_id: string; proveedor_id: string; es_principal?: boolean; precio_compra?: number; tiempo_entrega_dias?: number; notas?: string }) => {
+      if (row.es_principal) {
+        await supabase.from('producto_proveedores').update({ es_principal: false }).eq('producto_id', row.producto_id);
+      }
+      const clean = pickColumns(row, PRODUCTO_PROVEEDOR_COLUMNS);
+      delete (clean as any).id;
+      if (row.id) {
+        const { error } = await supabase.from('producto_proveedores').update(clean as any).eq('id', row.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('producto_proveedores').insert(clean as any);
+        if (error) throw error;
+      }
+    },
+    onSettled: (_d, _e, v) => { qc.invalidateQueries({ queryKey: ['producto_proveedores', v.producto_id] }); },
+  });
+}
+
+export function useDeleteProductoProveedor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, producto_id }: { id: string; producto_id: string }) => {
+      const { error } = await supabase.from('producto_proveedores').delete().eq('id', id);
+      if (error) throw error;
+      return producto_id;
+    },
+    onSettled: (_d, _e, v) => { qc.invalidateQueries({ queryKey: ['producto_proveedores', v.producto_id] }); },
+  });
+}
+
+/* ── Lista de Precios (within tarifa) ── */
+export interface ListaPrecio {
+  id: string;
+  tarifa_id: string;
+  empresa_id: string;
+  nombre: string;
+  es_principal: boolean;
+  activa: boolean;
+  created_at: string;
+  share_token?: string;
+  share_activo?: boolean;
+}
+
+export interface ListaPrecioLinea {
+  id: string;
+  lista_precio_id: string;
+  producto_id: string;
+  precio: number;
+  created_at: string;
+  productos?: { codigo: string; nombre: string };
+}
+
+export function useAllListasPrecios(empresaId?: string) {
+  return useQuery({
+    queryKey: ['lista_precios_all', empresaId],
+    staleTime: CATALOG_STALE,
+    enabled: !!empresaId,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('lista_precios')
+        .select('id, tarifa_id, empresa_id, nombre, es_principal, activa, created_at, share_token, share_activo')
+        .eq('empresa_id', empresaId!)
+        .order('nombre');
+      if (error) { console.error('Error fetching lista_precios:', error); throw error; }
+      return data as ListaPrecio[];
+    },
+  });
+}
+
+export function useListasPrecioByTarifa(tarifaId?: string) {
+  return useQuery({
+    queryKey: ['lista_precios', tarifaId],
+    staleTime: CATALOG_STALE,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('lista_precios')
+        .select('id, tarifa_id, empresa_id, nombre, es_principal, activa, created_at, share_token, share_activo')
+        .eq('tarifa_id', tarifaId!)
+        .order('es_principal', { ascending: false })
+        .order('nombre');
+      if (error) throw error;
+      return data as ListaPrecio[];
+    },
+    enabled: !!tarifaId,
+  });
+}
+
+export function useListasPrecioForSelect(tarifaId?: string) {
+  return useQuery({
+    queryKey: ['lista_precios_select', tarifaId],
+    staleTime: CATALOG_STALE,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('lista_precios')
+        .select('id, nombre, es_principal')
+        .eq('tarifa_id', tarifaId!)
+        .eq('activa', true)
+        .order('es_principal', { ascending: false })
+        .order('nombre');
+      if (error) throw error;
+      return data as { id: string; nombre: string; es_principal: boolean }[];
+    },
+    enabled: !!tarifaId,
+  });
+}
+
+export function useSaveListaPrecio() {
+  const qc = useQueryClient();
+  const { empresa } = useAuth();
+  return useMutation({
+    mutationFn: async (lp: { id?: string; tarifa_id?: string; nombre: string; es_principal?: boolean; activa?: boolean }) => {
+      const { id, ...rest } = lp;
+      if (id) {
+        if (rest.es_principal && rest.tarifa_id) {
+          await supabase.from('lista_precios').update({ es_principal: false }).eq('tarifa_id', rest.tarifa_id);
+        }
+        const { data, error } = await supabase.from('lista_precios').update(rest).eq('id', id).select('id').single();
+        if (error) throw error;
+        return data;
+      } else {
+        if (!empresa?.id) throw new Error('Sin empresa');
+        
+        let tarifaId = rest.tarifa_id;
+        if (!tarifaId) {
+          const { data: tarifa, error: tErr } = await supabase.from('tarifas')
+            .insert({ empresa_id: empresa.id, nombre: rest.nombre, tipo: 'general', activa: true })
+            .select('id').single();
+          if (tErr) throw tErr;
+          tarifaId = tarifa.id;
+        }
+
+        if (rest.es_principal) {
+          await supabase.from('lista_precios').update({ es_principal: false }).eq('tarifa_id', tarifaId);
+        }
+        const { data, error } = await supabase.from('lista_precios')
+          .insert({ ...rest, tarifa_id: tarifaId, empresa_id: empresa.id })
+          .select('id').single();
+        if (error) throw error;
+        return data;
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['lista_precios'] });
+      qc.invalidateQueries({ queryKey: ['lista_precios_select'] });
+      qc.invalidateQueries({ queryKey: ['lista_precios_all'] });
+    },
+  });
+}
+
+export function useDeleteListaPrecio() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('lista_precios').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['lista_precios'] });
+      qc.invalidateQueries({ queryKey: ['lista_precios_select'] });
+      qc.invalidateQueries({ queryKey: ['lista_precios_all'] });
+    },
+  });
+}
+
+export function useListaPrecioLineas(listaPrecioId?: string) {
+  return useQuery({
+    queryKey: ['lista_precios_lineas', listaPrecioId],
+    staleTime: CATALOG_STALE,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('lista_precios_lineas')
+        .select('id, lista_precio_id, producto_id, precio, created_at, productos(codigo, nombre)')
+        .eq('lista_precio_id', listaPrecioId!)
+        .order('created_at');
+      if (error) throw error;
+      return data as ListaPrecioLinea[];
+    },
+    enabled: !!listaPrecioId,
+  });
+}
+
+export function useListaPrecioLineasForProducto(productoId?: string) {
+  return useQuery({
+    queryKey: ['lista_precios_lineas_producto', productoId],
+    staleTime: CATALOG_STALE,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('lista_precios_lineas')
+        .select('id, lista_precio_id, producto_id, precio, lista_precios(id, nombre, tarifa_id, es_principal, tarifas(id, nombre))')
+        .eq('producto_id', productoId!);
+      if (error) throw error;
+      return data as any[];
+    },
+    enabled: !!productoId,
+  });
+}
+
+export function useSaveListaPrecioLinea() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (row: { id?: string; lista_precio_id: string; producto_id: string; precio: number }) => {
+      const { id, ...rest } = row;
+      if (id) {
+        const { error } = await supabase.from('lista_precios_lineas').update({ precio: rest.precio }).eq('id', id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('lista_precios_lineas').upsert(rest, { onConflict: 'lista_precio_id,producto_id' });
+        if (error) throw error;
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['lista_precios_lineas'] });
+      qc.invalidateQueries({ queryKey: ['lista_precios_lineas_producto'] });
+    },
+  });
+}
+
+export function useDeleteListaPrecioLinea() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('lista_precios_lineas').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['lista_precios_lineas'] });
+      qc.invalidateQueries({ queryKey: ['lista_precios_lineas_producto'] });
+    },
+  });
+}

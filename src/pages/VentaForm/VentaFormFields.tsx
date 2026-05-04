@@ -1,0 +1,161 @@
+import { useIsMobile } from '@/hooks/use-mobile';
+import { OdooDatePicker } from '@/components/OdooDatePicker';
+import { useCurrency } from '@/hooks/useCurrency';
+import SearchableSelect from '@/components/SearchableSelect';
+import { cn, fmtDate } from '@/lib/utils';
+import { Percent, DollarSign } from 'lucide-react';
+
+interface Props {
+  form: Record<string, any>;
+  readOnly: boolean;
+  isNew: boolean;
+  clienteOptions: { value: string; label: string }[];
+  tarifaOptions: { value: string; label: string }[];
+  almacenOptions: { value: string; label: string }[];
+  clienteNombre?: string;
+  totalPagado: number;
+  saldoPendiente: number;
+  set: (field: string, val: any) => void;
+  onClienteChange: (cId: string) => void;
+}
+
+export function VentaFormFields({ form, readOnly, isNew, clienteOptions, almacenOptions, clienteNombre, totalPagado, saldoPendiente, set, onClienteChange }: Props) {
+  const isMobile = useIsMobile();
+  const { fmt } = useCurrency();
+
+  const condicionBtns = [
+    { value: 'contado', label: 'Contado' },
+    { value: 'credito', label: 'Crédito' },
+    { value: 'por_definir', label: 'Por definir' },
+  ];
+
+  const renderTipo = () => readOnly
+    ? <div className="text-[13px] py-1.5 px-1 text-foreground">{form.tipo === 'pedido' ? 'Pedido' : 'Venta directa'}</div>
+    : (
+      <div className="flex gap-1">
+        {['pedido', 'venta_directa'].map(t => (
+          <button key={t} onClick={() => { set('tipo', t); set('condicion_pago', t === 'pedido' ? 'por_definir' : 'contado'); if (t === 'venta_directa') set('entrega_inmediata', true); }}
+            className={cn("flex-1 py-1.5 text-[12px] font-medium rounded border transition-colors", form.tipo === t ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-input hover:bg-secondary")}>
+            {t === 'pedido' ? 'Pedido' : 'Venta directa'}
+          </button>
+        ))}
+      </div>
+    );
+
+  const renderCondicion = () => readOnly
+    ? <div className="text-[13px] py-1.5 px-1 text-foreground capitalize">{form.condicion_pago}</div>
+    : (
+      <div className="flex gap-1">
+        {condicionBtns.map(o => (
+          <button key={o.value} onClick={() => set('condicion_pago', o.value)}
+            className={cn("flex-1 py-1.5 text-[12px] font-medium rounded border transition-colors", form.condicion_pago === o.value ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-input hover:bg-secondary")}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    );
+
+  const renderCliente = () => readOnly
+    ? <div className="text-[13px] py-1.5 px-1 text-foreground">{clienteNombre || '—'}</div>
+    : <SearchableSelect options={clienteOptions} value={form.cliente_id ?? ''} onChange={onClienteChange} placeholder="Buscar cliente..." />;
+
+  const renderAlmacen = () => readOnly
+    ? <div className="text-[13px] py-1.5 px-1 text-foreground">{almacenOptions.find(a => a.value === form.almacen_id)?.label || 'Sin almacén'}</div>
+    : <SearchableSelect options={almacenOptions} value={form.almacen_id ?? ''} onChange={val => set('almacen_id', val || null)} placeholder="Buscar almacén..." />;
+
+  const renderEntrega = () => (
+    <>
+      <label className="label-odoo">Entrega</label>
+      {form.tipo === 'venta_directa'
+        ? <div className="text-xs text-muted-foreground py-1.5 px-1">{isMobile ? 'Inmediata' : 'Entrega inmediata'}</div>
+        : form.entrega_inmediata
+          ? <div className="text-xs text-muted-foreground py-1.5 px-1">{isMobile ? 'Inmediata' : 'Entrega inmediata'}</div>
+          : readOnly ? <div className="text-[13px] py-1.5 px-1 text-foreground">{form.fecha_entrega || '—'}</div>
+          : <OdooDatePicker value={form.fecha_entrega} onChange={v => set('fecha_entrega', v)} placeholder="Fecha entrega" />
+      }
+    </>
+  );
+
+  const renderSaldo = () => !isNew && form.status !== 'borrador' && (
+    <div className="bg-card border border-border rounded-md p-2.5 space-y-0.5 text-[13px]">
+      <div className="flex justify-between"><span className="text-muted-foreground">Total</span><span className="font-medium">{fmt(form.total ?? 0)}</span></div>
+      <div className="flex justify-between"><span className="text-muted-foreground">Pagado</span><span className="font-medium">{fmt(totalPagado)}</span></div>
+      <div className="flex justify-between border-t border-border pt-0.5"><span className="font-medium">Saldo</span><span className={cn("font-semibold", saldoPendiente > 0 ? "text-destructive" : "text-foreground")}>{fmt(saldoPendiente)}</span></div>
+    </div>
+  );
+
+  const extraTipo = form.descuento_extra_tipo || 'porcentaje';
+  const renderDescuentoExtra = () => (
+    <div>
+      <label className="label-odoo">Descuento extra</label>
+      {readOnly ? (
+        <div className="text-[13px] py-1.5 px-1 text-foreground">
+          {(form.descuento_extra ?? 0) > 0
+            ? `${form.descuento_extra} ${extraTipo === 'porcentaje' ? '%' : '$'}`
+            : '—'}
+        </div>
+      ) : (
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={form.descuento_extra ?? 0}
+            onChange={e => set('descuento_extra', Number(e.target.value) || 0)}
+            className="flex-1 input-odoo text-[13px] py-1.5 w-20"
+            placeholder="0"
+          />
+          <button
+            type="button"
+            onClick={() => set('descuento_extra_tipo', extraTipo === 'porcentaje' ? 'monto' : 'porcentaje')}
+            className={cn(
+              "shrink-0 flex items-center justify-center w-8 h-8 rounded border transition-colors",
+              "bg-card text-foreground border-input hover:bg-secondary"
+            )}
+            title={extraTipo === 'porcentaje' ? 'Cambiar a monto fijo' : 'Cambiar a porcentaje'}
+          >
+            {extraTipo === 'porcentaje' ? <Percent className="h-3.5 w-3.5" /> : <DollarSign className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <div className="space-y-3">
+        <div><label className="label-odoo">Tipo</label>{renderTipo()}</div>
+        <div><label className="label-odoo label-required">Cliente</label>{renderCliente()}</div>
+        <div><label className="label-odoo">Condición de pago</label>{renderCondicion()}</div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="label-odoo">Fecha</label>{readOnly ? <div className="text-[13px] py-1.5 px-1 text-foreground">{fmtDate(form.fecha)}</div> : <OdooDatePicker value={form.fecha} onChange={v => set('fecha', v)} />}</div>
+          <div>{renderEntrega()}</div>
+        </div>
+        <div><label className="label-odoo">Folio</label><div className="text-[13px] text-muted-foreground py-1.5 px-1">{form.folio || (isNew ? 'Al guardar' : '—')}</div></div>
+        <div><label className="label-odoo label-required">Almacén</label>{renderAlmacen()}</div>
+        {renderDescuentoExtra()}
+        {renderSaldo()}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-3 gap-4">
+      <div className="space-y-3">
+        <div><label className="label-odoo">Tipo</label>{renderTipo()}</div>
+        <div><label className="label-odoo label-required">Cliente</label>{renderCliente()}</div>
+        <div><label className="label-odoo">Condición de pago</label>{renderCondicion()}</div>
+      </div>
+      <div className="space-y-3">
+        <div><label className="label-odoo">Fecha</label>{readOnly ? <div className="text-[13px] py-1.5 px-1 text-foreground">{fmtDate(form.fecha)}</div> : <OdooDatePicker value={form.fecha} onChange={v => set('fecha', v)} />}</div>
+        <div>{renderEntrega()}</div>
+        <div><label className="label-odoo">Folio</label><div className="text-[13px] text-muted-foreground py-1.5 px-1">{form.folio || (isNew ? 'Se asigna al guardar' : '—')}</div></div>
+      </div>
+      <div className="space-y-3">
+        <div><label className="label-odoo label-required">Almacén</label>{renderAlmacen()}</div>
+        {renderDescuentoExtra()}
+        {renderSaldo()}
+      </div>
+    </div>
+  );
+}

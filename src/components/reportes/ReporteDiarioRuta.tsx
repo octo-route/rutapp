@@ -1,0 +1,979 @@
+import { useState, useRef } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { useQuery } from '@tanstack/react-query';
+import { Printer, FileText, ShoppingCart, CreditCard, TrendingDown, XCircle, MapPin, RotateCcw, Package, Download } from 'lucide-react';
+import { generarReporteDiarioPdf } from '@/lib/reporteDiarioPdf';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import SearchableSelect from '@/components/SearchableSelect';
+import { cn , todayLocal } from '@/lib/utils';
+import { useCurrency } from '@/hooks/useCurrency';
+
+
+export default function ReporteDiarioRuta() {
+  const { fmt } = useCurrency();
+  const { empresa } = useAuth();
+  const today = todayLocal();
+  const [fechaInicio, setFechaInicio] = useState(today);
+  const [fechaFin, setFechaFin] = useState(today);
+  const [usuarioId, setUsuarioId] = useState<string>('');
+  const [incluirStock, setIncluirStock] = useState(false);
+  const printRef = useRef<HTMLDivElement>(null);
+
+  const { data: usuarios } = useQuery<any[]>({
+    queryKey: ['usuarios-list-report', empresa?.id],
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      const { data } = await (supabase as any).from('profiles').select('id, user_id, nombre').eq('empresa_id', empresa!.id).eq('estado', 'activo').order('nombre');
+      return data ?? [];
+    },
+  });
+
+  const usuarioOpts = [
+    { value: 'all', label: '🌐 Todos los usuarios (Master)' },
+    ...(usuarios || []).map((u: any) => ({ value: u.id, label: u.nombre })),
+  ];
+  const isAll = usuarioId === 'all';
+  const selectedProfile = (usuarios || []).find((u: any) => u.id === usuarioId);
+  const selectedUserId = selectedProfile?.user_id ?? usuarioId;
+  const selectedVendedorId = usuarioId; // profile.id IS the vendedor_id
+  // Para queries por user_id (cobros, visitas) cuando "todos": lista de user_ids de la empresa
+  const allUserIds = (usuarios || []).map((u: any) => u.user_id).filter(Boolean);
+
+  const enabled = !!empresa?.id && !!usuarioId && !!fechaInicio && !!fechaFin;
+
+  // --- Ventas ---
+  const { data: ventas } = useQuery<any[]>({
+    queryKey: ['rpt-diario-ventas', empresa?.id, selectedVendedorId, fechaInicio, fechaFin],
+    enabled,
+    queryFn: async () => {
+      let q = (supabase as any).from('ventas')
+        .select('id, folio, total, condicion_pago, status, fecha, cliente_id, vendedor_id, profiles:vendedor_id(nombre), clientes(nombre), venta_lineas(producto_id, cantidad, precio_unitario, total, productos(nombre, codigo))')
+        .eq('empresa_id', empresa!.id)
+        .gte('fecha', fechaInicio).lte('fecha', fechaFin)
+        .order('created_at');
+      if (!isAll) q = q.eq('vendedor_id', selectedVendedorId);
+      const { data } = await q;
+      return data ?? [];
+    },
+  });
+
+  // --- Cobros (incluye aplicaciones para detectar abonos a crédito previo) ---
+  const { data: cobros } = useQuery<any[]>({
+    queryKey: ['rpt-diario-cobros', empresa?.id, usuarioId, fechaInicio, fechaFin],
+    enabled,
+    queryFn: async () => {
+      let q = (supabase as any).from('cobros')
+        .select('id, monto, metodo_pago, referencia, fecha, user_id, clientes(nombre), cobro_aplicaciones(monto_aplicado, ventas(id, folio, fecha, condicion_pago))')
+        .eq('empresa_id', empresa!.id)
+        .neq('status', 'cancelado')
+        .gte('fecha', fechaInicio).lte('fecha', fechaFin)
+        .order('created_at');
+      if (!isAll) q = q.eq('user_id', selectedUserId);
+      const { data } = await q;
+      return data ?? [];
+    },
+  });
+
+  // --- Gastos ---
+  const { data: gastos } = useQuery<any[]>({
+    queryKey: ['rpt-diario-gastos', empresa?.id, selectedVendedorId, fechaInicio, fechaFin],
+    enabled,
+    queryFn: async () => {
+      let q = (supabase as any).from('gastos')
+        .select('id, monto, concepto, notas, vendedor_id, profiles:vendedor_id(nombre)')
+        .eq('empresa_id', empresa!.id)
+        .gte('fecha', fechaInicio).lte('fecha', fechaFin)
+        .order('created_at');
+      if (!isAll) q = q.eq('vendedor_id', selectedVendedorId);
+      const { data } = await q;
+      return data ?? [];
+    },
+  });
+
+  // --- Devoluciones ---
+  const { data: devoluciones } = useQuery<any[]>({
+    queryKey: ['rpt-diario-devs', empresa?.id, selectedVendedorId, fechaInicio, fechaFin],
+    enabled,
+    queryFn: async () => {
+      let q = (supabase as any).from('devoluciones')
+        .select('id, tipo, vendedor_id, profiles:vendedor_id(nombre), clientes(nombre), devolucion_lineas(producto_id, cantidad, motivo, accion, monto_credito, productos!devolucion_lineas_producto_id_fkey(nombre, codigo))')
+        .eq('empresa_id', empresa!.id)
+        .gte('fecha', fechaInicio).lte('fecha', fechaFin);
+      if (!isAll) q = q.eq('vendedor_id', selectedVendedorId);
+      const { data } = await q;
+      return data ?? [];
+    },
+  });
+
+  // --- Visitas ---
+  const { data: visitas } = useQuery<any[]>({
+    queryKey: ['rpt-diario-visitas', empresa?.id, usuarioId, fechaInicio, fechaFin],
+    enabled,
+    queryFn: async () => {
+      let q = (supabase as any).from('visitas')
+        .select('id, tipo, motivo, notas, user_id, clientes(nombre)')
+        .eq('empresa_id', empresa!.id)
+        .gte('fecha', fechaInicio).lte('fecha', fechaFin)
+        .order('created_at');
+      if (!isAll) q = q.eq('user_id', selectedUserId);
+      const { data } = await q;
+      return data ?? [];
+    },
+  });
+
+  // --- Stock del almacén asignado al vendedor ---
+  const { data: rptVendedorAlmacen } = useQuery<any>({
+    queryKey: ['rpt-vendedor-almacen', usuarioId],
+    enabled: enabled && incluirStock && !isAll,
+    queryFn: async () => {
+      const { data } = await (supabase as any).from('profiles').select('almacen_id, almacenes(nombre)').eq('id', usuarioId).maybeSingle();
+      return data;
+    },
+  });
+
+  const { data: rptStockAlmacen } = useQuery<any[]>({
+    queryKey: ['rpt-stock-almacen', empresa?.id, rptVendedorAlmacen?.almacen_id],
+    enabled: !!rptVendedorAlmacen?.almacen_id && incluirStock,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from('stock_almacen')
+        .select('producto_id, cantidad, productos(nombre, codigo)')
+        .eq('almacen_id', rptVendedorAlmacen!.almacen_id!)
+        .gt('cantidad', 0)
+        .order('producto_id');
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  // --- Computed data ---
+  const ventasActivas = (ventas || []).filter((v: any) => v.status !== 'cancelado');
+  const ventasCanceladas = (ventas || []).filter((v: any) => v.status === 'cancelado');
+  const ventasContado = ventasActivas.filter((v: any) => v.condicion_pago === 'contado');
+  const ventasCredito = ventasActivas.filter((v: any) => v.condicion_pago === 'credito');
+
+  const totalContado = ventasContado.reduce((s: number, v: any) => s + (Number(v.total) || 0), 0);
+  const totalCredito = ventasCredito.reduce((s: number, v: any) => s + (Number(v.total) || 0), 0);
+  const totalVentas = ventasActivas.reduce((s: number, v: any) => s + (Number(v.total) || 0), 0);
+  const totalCancelado = ventasCanceladas.reduce((s: number, v: any) => s + (Number(v.total) || 0), 0);
+  const totalCobros = (cobros || []).reduce((s: number, c: any) => s + (Number(c.monto) || 0), 0);
+  const totalGastos = (gastos || []).reduce((s: number, g: any) => s + (Number(g.monto) || 0), 0);
+
+  const clientesVisitados = new Set([
+    ...ventasActivas.map((v: any) => v.cliente_id).filter(Boolean),
+    ...(visitas || []).map((v: any) => v.clientes?.nombre).filter(Boolean),
+  ]);
+  const visitasSinCompra = (visitas || []).filter((v: any) => v.tipo === 'sin_compra');
+
+  // Products sold aggregate
+  const prodMap: Record<string, { nombre: string; codigo: string; cantidad: number; total: number }> = {};
+  ventasActivas.forEach((v: any) => {
+    (v.venta_lineas || []).forEach((l: any) => {
+      const pid = l.producto_id;
+      if (!pid) return;
+      if (!prodMap[pid]) prodMap[pid] = { nombre: l.productos?.nombre || '—', codigo: l.productos?.codigo || '', cantidad: 0, total: 0 };
+      prodMap[pid].cantidad += Number(l.cantidad) || 0;
+      prodMap[pid].total += Number(l.total) || 0;
+    });
+  });
+  const productosArr = Object.values(prodMap).sort((a, b) => b.total - a.total);
+
+  // Cobros by method
+  const cobrosPorMetodo: Record<string, number> = {};
+  (cobros || []).forEach((c: any) => {
+    const m = c.metodo_pago || 'efectivo';
+    cobrosPorMetodo[m] = (cobrosPorMetodo[m] || 0) + Number(c.monto);
+  });
+
+  // Dev lines
+  const ACCION_LABELS: Record<string, string> = { reposicion: 'Reposición', nota_credito: 'Nota crédito', descuento_venta: 'Desc. venta', devolucion_dinero: 'Dev. dinero' };
+  const devLineas: { nombre: string; codigo: string; cantidad: number; motivo: string; accion: string; monto_credito: number; cliente: string }[] = [];
+  (devoluciones || []).forEach((d: any) => {
+    (d.devolucion_lineas || []).forEach((l: any) => {
+      devLineas.push({
+        nombre: l.productos?.nombre || '—',
+        codigo: l.productos?.codigo || '',
+        cantidad: Number(l.cantidad),
+        motivo: l.motivo || '—',
+        accion: l.accion || 'reposicion',
+        monto_credito: Number(l.monto_credito) || 0,
+        cliente: (d as any).clientes?.nombre || '—',
+      });
+    });
+  });
+  const totalDevUnidades = devLineas.reduce((s, d) => s + d.cantidad, 0);
+  const totalDevCredito = devLineas.reduce((s, d) => s + d.monto_credito, 0);
+
+  // === Abonos a CRÉDITO PREVIO (ventas con fecha < inicio del rango) ===
+  // Detalla quién abonó a una venta a crédito anterior, monto aplicado, folio y fecha de la venta original.
+  type AbonoPrevio = {
+    cliente: string;
+    cobro_id: string;
+    metodo_pago: string;
+    referencia: string | null;
+    venta_folio: string;
+    venta_fecha: string;
+    monto_aplicado: number;
+    dias_atraso: number;
+  };
+  const abonosCreditoPrevio: AbonoPrevio[] = [];
+  (cobros || []).forEach((c: any) => {
+    (c.cobro_aplicaciones || []).forEach((ap: any) => {
+      const v = ap.ventas;
+      if (!v?.fecha) return;
+      // Sólo si la venta original es anterior al rango del reporte
+      if (v.fecha >= fechaInicio) return;
+      const dias = Math.max(0, Math.floor((new Date(c.fecha).getTime() - new Date(v.fecha).getTime()) / 86400000));
+      abonosCreditoPrevio.push({
+        cliente: c.clientes?.nombre || '—',
+        cobro_id: c.id,
+        metodo_pago: c.metodo_pago || 'efectivo',
+        referencia: c.referencia || null,
+        venta_folio: v.folio || '—',
+        venta_fecha: v.fecha,
+        monto_aplicado: Number(ap.monto_aplicado) || 0,
+        dias_atraso: dias,
+      });
+    });
+  });
+  abonosCreditoPrevio.sort((a, b) => b.dias_atraso - a.dias_atraso);
+  const totalAbonosPrevios = abonosCreditoPrevio.reduce((s, a) => s + a.monto_aplicado, 0);
+  const clientesQueAbonaron = new Set(abonosCreditoPrevio.map(a => a.cliente)).size;
+
+  const rptAlmacenNombre = rptVendedorAlmacen?.almacenes?.nombre || 'Almacén asignado';
+  const stockItems = (rptStockAlmacen || []).map((s: any) => ({
+    nombre: s.productos?.nombre || '—',
+    codigo: s.productos?.codigo || '',
+    cantidad: Number(s.cantidad) || 0,
+  })).sort((a: any, b: any) => a.nombre.localeCompare(b.nombre));
+
+  const usuarioNombre = isAll
+    ? `Todos los usuarios (${(usuarios || []).length})`
+    : (usuarios?.find((u: any) => u.id === usuarioId)?.nombre ?? '');
+  const fechaLabel = fechaInicio === fechaFin ? fechaInicio : `${fechaInicio} al ${fechaFin}`;
+
+  const handleDownloadPdf = async () => {
+    try {
+      toast.loading('Generando PDF...', { id: 'pdf-diario' });
+      const blob = await generarReporteDiarioPdf({
+        empresa: {
+          nombre: empresa?.nombre,
+          razon_social: (empresa as any)?.razon_social,
+          rfc: empresa?.rfc,
+          direccion: empresa?.direccion,
+          colonia: (empresa as any)?.colonia,
+          ciudad: empresa?.ciudad,
+          estado: empresa?.estado,
+          cp: empresa?.cp,
+          telefono: empresa?.telefono,
+          moneda: empresa?.moneda,
+        },
+        usuarioNombre,
+        fechaLabel,
+        totals: {
+          totalVentas, totalContado, totalCredito, totalCancelado,
+          totalCobros, totalGastos, totalDevUnidades, totalDevCredito,
+          clientesVisitados: clientesVisitados.size,
+          visitasSinCompra: visitasSinCompra.length,
+          cobrosPorMetodo,
+          countVentas: ventasActivas.length,
+          countContado: ventasContado.length,
+          countCredito: ventasCredito.length,
+          countCobros: (cobros || []).length,
+          countGastos: (gastos || []).length,
+          countDevoluciones: (devoluciones || []).length,
+        },
+        ventasActivas: ventasActivas.map((v: any) => ({
+          folio: v.folio, cliente: v.clientes?.nombre, condicion_pago: v.condicion_pago, total: Number(v.total) || 0,
+        })),
+        ventasCanceladas: ventasCanceladas.map((v: any) => ({
+          folio: v.folio, cliente: v.clientes?.nombre, total: Number(v.total) || 0,
+        })),
+        productos: productosArr,
+        cobros: (cobros || []).map((c: any) => ({
+          cliente: c.clientes?.nombre, metodo_pago: c.metodo_pago, referencia: c.referencia, monto: Number(c.monto) || 0,
+        })),
+        gastos: (gastos || []).map((g: any) => ({
+          concepto: g.concepto, notas: g.notas, monto: Number(g.monto) || 0,
+        })),
+        devoluciones: devLineas,
+        visitasSinCompra: visitasSinCompra.map((v: any) => ({
+          cliente: v.clientes?.nombre, motivo: v.motivo, notas: v.notas,
+        })),
+        abonosCreditoPrevio: abonosCreditoPrevio.length > 0
+          ? { items: abonosCreditoPrevio, totalMonto: totalAbonosPrevios, clientesUnicos: clientesQueAbonaron }
+          : undefined,
+        stock: incluirStock && stockItems.length > 0
+          ? { items: stockItems, almacenNombre: rptAlmacenNombre }
+          : undefined,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Reporte_${usuarioNombre.replace(/\s+/g, '_')}_${fechaLabel.replace(/\s+/g, '_')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('PDF descargado', { id: 'pdf-diario' });
+    } catch (err: any) {
+      console.error('[ReporteDiarioRuta] PDF error:', err);
+      toast.error(err?.message || 'Error al generar PDF', { id: 'pdf-diario' });
+    }
+  };
+
+  const handlePrint = () => {
+    const win = window.open('', '_blank');
+    if (!win) return;
+
+    // --- Build sections ---
+    const sec = (title: string, html: string) => html ? `<div class="section"><h2>${title}</h2>${html}</div>` : '';
+
+    const tableRow = (cells: string[], tag = 'td') => `<tr>${cells.map(c => `<${tag}>${c}</${tag}>`).join('')}</tr>`;
+
+    const makeTable = (headers: string[], rows: string[][], footer?: string[]) => {
+      const aligns = headers.map(h => /total|monto|cant|precio|exist/i.test(h) ? 'right' : 'left');
+      const hRow = headers.map((h, i) => `<th style="text-align:${aligns[i]}">${h}</th>`).join('');
+      const bRows = rows.map(r => '<tr>' + r.map((c, i) => `<td style="text-align:${aligns[i]}">${c}</td>`).join('') + '</tr>').join('');
+      const fRow = footer ? '<tfoot><tr>' + footer.map((c, i) => `<td style="text-align:${aligns[i]}">${c}</td>`).join('') + '</tr></tfoot>' : '';
+      return `<table><thead><tr>${hRow}</tr></thead><tbody>${bRows}</tbody>${fRow}</table>`;
+    };
+
+    // Summary grid
+    const kpi = (label: string, value: string, sub?: string) =>
+      `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div>${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
+
+    const summaryHtml = `<div class="kpi-grid">
+      ${kpi('Ventas totales', `${fmt(totalVentas)}`, `${ventasActivas.length} ventas`)}
+      ${kpi('Contado', `${fmt(totalContado)}`, `${ventasContado.length}`)}
+      ${kpi('Crédito', `${fmt(totalCredito)}`, `${ventasCredito.length}`)}
+      ${kpi('Cobros', `${fmt(totalCobros)}`, `${(cobros || []).length}`)}
+      ${kpi('Gastos', `- ${fmt(totalGastos)}`, `${(gastos || []).length}`)}
+      ${kpi('Devoluciones', `${totalDevUnidades} uds`, `${(devoluciones || []).length} registros`)}
+      ${kpi('Clientes visitados', `${clientesVisitados.size}`)}
+    </div>`;
+
+    // Stock
+    const stockHtml = incluirStock && stockItems.length > 0
+      ? sec(`Stock — ${rptAlmacenNombre}`, makeTable(
+          ['Código', 'Producto', 'Existencia'],
+          stockItems.map((p: any) => [p.codigo, p.nombre, String(p.cantidad)])
+        ))
+      : '';
+
+    // Ventas
+    const ventasHtml = ventasActivas.length > 0
+      ? sec(`Ventas (${ventasActivas.length})`, makeTable(
+          ['Folio', 'Cliente', 'Pago', 'Total'],
+          ventasActivas.map((v: any) => [v.folio ?? '—', v.clientes?.nombre ?? '—', v.condicion_pago, `${fmt(Number(v.total))}`]),
+          ['', '', 'Total', `${fmt(totalVentas)}`]
+        ))
+      : '';
+
+    // Canceladas
+    const cancelHtml = ventasCanceladas.length > 0
+      ? sec(`Canceladas (${ventasCanceladas.length})`, makeTable(
+          ['Folio', 'Cliente', 'Total'],
+          ventasCanceladas.map((v: any) => [v.folio ?? '—', v.clientes?.nombre ?? '—', `${fmt(Number(v.total))}`]),
+          ['', 'Total cancelado', `${fmt(totalCancelado)}`]
+        ))
+      : '';
+
+    // Productos vendidos
+    const prodsHtml = productosArr.length > 0
+      ? sec(`Productos vendidos (${productosArr.length})`, makeTable(
+          ['Código', 'Producto', 'Cantidad', 'Total'],
+          productosArr.map(p => [p.codigo, p.nombre, String(p.cantidad), `${fmt(p.total)}`])
+        ))
+      : '';
+
+    // Cobros
+    const cobrosMetodoHtml = Object.entries(cobrosPorMetodo).map(([m, t]) => `<span class="chip">${m}: ${fmt(t)}</span>`).join(' ');
+    const cobrosHtml = (cobros || []).length > 0
+      ? sec(`Cobros (${(cobros || []).length})`, `<div class="chips">${cobrosMetodoHtml}</div>` + makeTable(
+          ['Cliente', 'Método', 'Referencia', 'Monto'],
+          (cobros || []).map((c: any) => [c.clientes?.nombre ?? '—', c.metodo_pago, c.referencia || '—', `${fmt(Number(c.monto))}`]),
+          ['', '', 'Total cobros', `${fmt(totalCobros)}`]
+        ))
+      : '';
+
+    // Gastos
+    const gastosHtml = (gastos || []).length > 0
+      ? sec(`Gastos (${(gastos || []).length})`, makeTable(
+          ['Concepto', 'Notas', 'Monto'],
+          (gastos || []).map((g: any) => [g.concepto, g.notas || '—', `- ${fmt(Number(g.monto))}`]),
+          ['', 'Total gastos', `- ${fmt(totalGastos)}`]
+        ))
+      : '';
+
+    // Devoluciones
+    const devsHtml = devLineas.length > 0
+      ? sec(`Devoluciones (${totalDevUnidades} uds — ${(devoluciones || []).length} registros)`, makeTable(
+          ['Producto', 'Cliente', 'Motivo', 'Acción', 'Cant.'],
+          devLineas.map(d => [`${d.nombre} ${d.codigo}`, d.cliente, d.motivo.replace(/_/g, ' '), ACCION_LABELS[d.accion] || d.accion, String(d.cantidad)]),
+          totalDevCredito > 0 ? ['', '', '', 'Total crédito', `${fmt(totalDevCredito)}`] : undefined
+        ))
+      : '';
+
+    // Visitas sin compra
+    const visitasHtml = visitasSinCompra.length > 0
+      ? sec(`Visitas sin compra (${visitasSinCompra.length})`, makeTable(
+          ['Cliente', 'Motivo', 'Notas'],
+          visitasSinCompra.map((v: any) => [v.clientes?.nombre ?? '—', v.motivo || '—', v.notas || '—'])
+        ))
+      : '';
+
+    // Abonos a crédito previo
+    const abonosHtml = abonosCreditoPrevio.length > 0
+      ? sec(`Abonos a crédito previo (${abonosCreditoPrevio.length}) — ${clientesQueAbonaron} cliente(s)`, makeTable(
+          ['Cliente', 'Venta', 'F. Venta', 'Días', 'Método', 'Ref.', 'Monto'],
+          abonosCreditoPrevio.map(a => [a.cliente, a.venta_folio, a.venta_fecha, String(a.dias_atraso), a.metodo_pago, a.referencia || '—', `${fmt(a.monto_aplicado)}`]),
+          ['', '', '', '', '', 'Total abonos', `${fmt(totalAbonosPrevios)}`]
+        ))
+      : '';
+
+    // Resumen final
+    const resumenRow = (label: string, value: string) => `<tr><td class="res-label">${label}</td><td class="res-value">${value}</td></tr>`;
+    const resumenHtml = `<div class="section"><h2>Resumen del período</h2><table class="resumen">
+      ${resumenRow('Ventas (contado)', `${fmt(totalContado)}`)}
+      ${resumenRow('Ventas (crédito)', `${fmt(totalCredito)}`)}
+      ${resumenRow('Cobros recibidos', `${fmt(totalCobros)}`)}
+      ${resumenRow('Gastos', `- ${fmt(totalGastos)}`)}
+      ${resumenRow('Canceladas', `${fmt(totalCancelado)}`)}
+      ${resumenRow('Clientes visitados', `${clientesVisitados.size}`)}
+      ${resumenRow('Visitas sin compra', `${visitasSinCompra.length}`)}
+      ${resumenRow('Devoluciones', `${totalDevUnidades} uds`)}
+      ${totalDevCredito > 0 ? resumenRow('Crédito por devol.', `- ${fmt(totalDevCredito)}`) : ''}
+      ${totalAbonosPrevios > 0 ? resumenRow('Abonos a crédito previo', `${fmt(totalAbonosPrevios)} (${clientesQueAbonaron} cli)`) : ''}
+      <tr class="res-total"><td>Efectivo esperado</td><td>${fmt((cobrosPorMetodo['efectivo'] || 0) - totalGastos)}</td></tr>
+    </table></div>`;
+
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Reporte - ${usuarioNombre} - ${fechaLabel}</title>
+    <style>
+      @page { size: letter; margin: 15mm 12mm; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; font-size: 10px; color: #1a1a1a; line-height: 1.5; }
+
+      /* Header */
+      .doc-header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 16px; border-bottom: 2px solid #e0e0e0; margin-bottom: 20px; }
+      .company-name { font-size: 14px; font-weight: 700; color: #1a1a1a; }
+      .company-detail { font-size: 9px; color: #777; line-height: 1.6; }
+      .doc-title { font-size: 20px; font-weight: 700; color: #1a1a1a; text-align: right; }
+      .doc-meta { font-size: 10px; color: #777; text-align: right; margin-top: 4px; }
+
+      /* KPI grid */
+      .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+      .kpi { border: 1px solid #e0e0e0; border-radius: 3px; padding: 10px 12px; text-align: center; }
+      .kpi-label { font-size: 8px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; font-weight: 600; margin-bottom: 4px; }
+      .kpi-value { font-size: 16px; font-weight: 700; color: #1a1a1a; }
+      .kpi-sub { font-size: 8px; color: #aaa; margin-top: 2px; }
+
+      /* Sections */
+      .section { margin-bottom: 22px; }
+      .section h2 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #333; border-bottom: 2px solid #e0e0e0; padding-bottom: 6px; margin-bottom: 10px; }
+
+      /* Tables */
+      table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+      thead th { font-weight: 700; font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; color: #555; background: #f7f7f7; border-bottom: 2px solid #e0e0e0; padding: 7px 10px; }
+      tbody td { padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 10px; vertical-align: top; }
+      tbody tr:last-child td { border-bottom: none; }
+      tfoot td { border-top: 2px solid #e0e0e0; font-weight: 700; padding: 8px 10px; font-size: 10px; background: #fafafa; }
+
+      /* Chips */
+      .chips { margin-bottom: 10px; }
+      .chip { display: inline-block; font-size: 9px; background: #f0f0f0; border-radius: 3px; padding: 3px 8px; margin-right: 6px; color: #555; font-weight: 600; }
+
+      /* Resumen */
+      table.resumen { width: 320px; }
+      table.resumen td { padding: 4px 0; border: none; font-size: 11px; }
+      table.resumen .res-label { color: #777; font-weight: 500; }
+      table.resumen .res-value { text-align: right; font-weight: 600; }
+      table.resumen .res-total td { border-top: 2px solid #1a1a1a; font-weight: 700; font-size: 12px; padding-top: 8px; margin-top: 4px; }
+
+      /* Footer */
+      .doc-footer { margin-top: 32px; padding-top: 10px; border-top: 1px solid #e0e0e0; font-size: 8px; color: #aaa; text-align: center; }
+
+      @media print { body { padding: 0; } }
+    </style></head><body>
+      <div class="doc-header">
+        <div>
+          <div class="company-name">${empresa?.razon_social || empresa?.nombre || ''}</div>
+          ${empresa?.rfc ? `<div class="company-detail">${empresa.rfc}</div>` : ''}
+          ${empresa?.direccion ? `<div class="company-detail">${[empresa.direccion, empresa.colonia, empresa.ciudad, empresa.estado, empresa.cp].filter(Boolean).join(', ')}</div>` : ''}
+          ${empresa?.telefono ? `<div class="company-detail">Tel: ${empresa.telefono}</div>` : ''}
+        </div>
+        <div>
+          <div class="doc-title">Reporte de Ruta</div>
+          <div class="doc-meta">${usuarioNombre}</div>
+          <div class="doc-meta">${fechaLabel}</div>
+        </div>
+      </div>
+      ${summaryHtml}
+      ${stockHtml}
+      ${ventasHtml}
+      ${cancelHtml}
+      ${prodsHtml}
+      ${cobrosHtml}
+      ${gastosHtml}
+      ${devsHtml}
+      ${visitasHtml}
+      ${abonosHtml}
+      ${resumenHtml}
+      <div class="doc-footer">Este documento es una representación impresa. Generado por Rutapp · ${new Date().toLocaleString('es-MX')}</div>
+    </body></html>`);
+    win.document.close();
+    setTimeout(() => win.print(), 300);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Controls */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-40">
+          <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Fecha inicio</label>
+          <Input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} />
+        </div>
+        <div className="w-40">
+          <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Fecha fin</label>
+          <Input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} />
+        </div>
+        <div className="w-56">
+          <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Usuario</label>
+          <SearchableSelect
+            options={usuarioOpts}
+            value={usuarioId}
+            onChange={val => setUsuarioId(val)}
+            placeholder="Selecciona usuario..."
+          />
+        </div>
+        <div className="flex items-center gap-2 pb-1">
+          <Switch id="incluir-stock" checked={incluirStock} onCheckedChange={setIncluirStock} />
+          <Label htmlFor="incluir-stock" className="text-xs cursor-pointer">Incluir stock en almacén</Label>
+        </div>
+        {enabled && (
+          <>
+            <Button variant="outline" size="sm" onClick={handlePrint}>
+              <Printer className="h-3.5 w-3.5 mr-1" /> Imprimir
+            </Button>
+            <Button variant="default" size="sm" onClick={handleDownloadPdf}>
+              <Download className="h-3.5 w-3.5 mr-1" /> Descargar PDF
+            </Button>
+          </>
+        )}
+      </div>
+
+      {!enabled && (
+        <div className="text-center py-12">
+          <FileText className="h-10 w-10 mx-auto text-muted-foreground/30 mb-3" />
+          <p className="text-sm text-muted-foreground">Selecciona un usuario y rango de fechas para generar el reporte</p>
+        </div>
+      )}
+
+      {enabled && (
+        <div ref={printRef} className="bg-card border border-border rounded-lg p-5 space-y-4">
+          {/* Header */}
+          <div>
+            <h1 className="text-base font-bold text-foreground">Reporte de ruta</h1>
+            <p className="text-xs text-muted-foreground">{usuarioNombre} — {fechaLabel} — {empresa?.nombre}</p>
+          </div>
+
+          {/* Summary cards */}
+          <div className="summary-grid grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+            <div className="bg-card rounded-lg p-3 text-center">
+              <div className="text-[9px] text-muted-foreground uppercase">Ventas totales</div>
+              <div className="text-lg font-bold text-foreground">{fmt(totalVentas)}</div>
+              <div className="text-[9px] text-muted-foreground">{ventasActivas.length} ventas</div>
+            </div>
+            <div className="bg-card rounded-lg p-3 text-center">
+              <div className="text-[9px] text-muted-foreground uppercase">Contado</div>
+              <div className="text-lg font-bold text-foreground">{fmt(totalContado)}</div>
+              <div className="text-[9px] text-muted-foreground">{ventasContado.length}</div>
+            </div>
+            <div className="bg-card rounded-lg p-3 text-center">
+              <div className="text-[9px] text-muted-foreground uppercase">Crédito</div>
+              <div className="text-lg font-bold text-foreground">{fmt(totalCredito)}</div>
+              <div className="text-[9px] text-muted-foreground">{ventasCredito.length}</div>
+            </div>
+            <div className="bg-card rounded-lg p-3 text-center">
+              <div className="text-[9px] text-muted-foreground uppercase">Cobros</div>
+              <div className="text-lg font-bold text-foreground">{fmt(totalCobros)}</div>
+              <div className="text-[9px] text-muted-foreground">{(cobros || []).length}</div>
+            </div>
+            <div className="bg-card rounded-lg p-3 text-center">
+              <div className="text-[9px] text-muted-foreground uppercase">Gastos</div>
+              <div className="text-lg font-bold text-destructive">-{fmt(totalGastos)}</div>
+              <div className="text-[9px] text-muted-foreground">{(gastos || []).length}</div>
+            </div>
+            <div className="bg-card rounded-lg p-3 text-center">
+              <div className="text-[9px] text-muted-foreground uppercase">Devoluciones</div>
+              <div className="text-lg font-bold text-foreground">{totalDevUnidades} uds</div>
+              <div className="text-[9px] text-muted-foreground">{(devoluciones || []).length} devol.</div>
+            </div>
+            <div className="bg-card rounded-lg p-3 text-center">
+              <div className="text-[9px] text-muted-foreground uppercase">Clientes visitados</div>
+              <div className="text-lg font-bold text-foreground">{clientesVisitados.size}</div>
+            </div>
+            {totalAbonosPrevios > 0 && (
+              <div className="bg-accent border border-border rounded-lg p-3 text-center">
+                <div className="text-[9px] text-muted-foreground uppercase font-semibold">Abonos crédito previo</div>
+                <div className="text-lg font-bold text-foreground">{fmt(totalAbonosPrevios)}</div>
+                <div className="text-[9px] text-muted-foreground">{clientesQueAbonaron} cliente(s) · {abonosCreditoPrevio.length} abono(s)</div>
+              </div>
+            )}
+          </div>
+
+          {/* Stock en almacén */}
+          {incluirStock && stockItems.length > 0 && (
+            <div>
+              <h2 className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5 mb-2 border-b border-border pb-1">
+                <Package className="h-3.5 w-3.5" /> Stock — {rptAlmacenNombre}
+              </h2>
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-[9px] text-muted-foreground uppercase border-b border-border">
+                    <th className="text-left py-1.5">Código</th>
+                    <th className="text-left py-1.5">Producto</th>
+                    <th className="text-right py-1.5">Existencia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockItems.map((p: any, i: number) => (
+                    <tr key={i} className="border-b border-border/50">
+                      <td className="py-1 font-mono text-muted-foreground">{p.codigo}</td>
+                      <td className="py-1">{p.nombre}</td>
+                      <td className="py-1 text-right font-semibold">{p.cantidad}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {incluirStock && stockItems.length === 0 && (
+            <div className="text-[11px] text-muted-foreground italic py-2">
+              No se encontró stock en el almacén asignado a este usuario.
+            </div>
+          )}
+
+          {/* Ventas activas */}
+          <div>
+            <h2 className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5 mb-2 border-b border-border pb-1">
+              <ShoppingCart className="h-3.5 w-3.5" /> Ventas ({ventasActivas.length})
+            </h2>
+            {ventasActivas.length > 0 ? (
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-[9px] text-muted-foreground uppercase border-b border-border">
+                    <th className="text-left py-1.5">Folio</th>
+                    <th className="text-left py-1.5">Cliente</th>
+                    <th className="text-left py-1.5">Pago</th>
+                    <th className="text-right py-1.5">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ventasActivas.map((v: any) => (
+                    <tr key={v.id} className="border-b border-border/50">
+                      <td className="py-1 font-mono">{v.folio ?? '—'}</td>
+                      <td className="py-1">{v.clientes?.nombre ?? '—'}</td>
+                      <td className="py-1">
+                        <span className={cn("text-[9px] px-1.5 py-0.5 rounded-full font-semibold",
+                          v.condicion_pago === 'contado' ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
+                        )}>{v.condicion_pago}</span>
+                      </td>
+                      <td className="py-1 text-right font-semibold">{fmt(Number(v.total))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-border font-bold">
+                    <td colSpan={3} className="py-1.5 text-right text-muted-foreground text-[10px]">Total:</td>
+                    <td className="py-1.5 text-right">{fmt(totalVentas)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            ) : <p className="text-[11px] text-muted-foreground">Sin ventas</p>}
+          </div>
+
+          {/* Canceladas */}
+          {ventasCanceladas.length > 0 && (
+            <div>
+              <h2 className="text-xs font-bold text-destructive uppercase flex items-center gap-1.5 mb-2 border-b border-destructive/30 pb-1">
+                <XCircle className="h-3.5 w-3.5" /> Canceladas ({ventasCanceladas.length})
+              </h2>
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-[9px] text-muted-foreground uppercase border-b border-border">
+                    <th className="text-left py-1.5">Folio</th>
+                    <th className="text-left py-1.5">Cliente</th>
+                    <th className="text-right py-1.5">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ventasCanceladas.map((v: any) => (
+                    <tr key={v.id} className="border-b border-border/50">
+                      <td className="py-1 font-mono">{v.folio ?? '—'}</td>
+                      <td className="py-1">{v.clientes?.nombre ?? '—'}</td>
+                      <td className="py-1 text-right font-semibold text-destructive line-through">{fmt(Number(v.total))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-border font-bold">
+                    <td colSpan={2} className="py-1.5 text-right text-muted-foreground text-[10px]">Total cancelado:</td>
+                    <td className="py-1.5 text-right text-destructive">{fmt(totalCancelado)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          {/* Productos vendidos */}
+          {productosArr.length > 0 && (
+            <div>
+              <h2 className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5 mb-2 border-b border-border pb-1">
+                Productos vendidos ({productosArr.length})
+              </h2>
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-[9px] text-muted-foreground uppercase border-b border-border">
+                    <th className="text-left py-1.5">Código</th>
+                    <th className="text-left py-1.5">Producto</th>
+                    <th className="text-right py-1.5">Cant.</th>
+                    <th className="text-right py-1.5">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productosArr.map((p, i) => (
+                    <tr key={i} className="border-b border-border/50">
+                      <td className="py-1 font-mono text-muted-foreground">{p.codigo}</td>
+                      <td className="py-1">{p.nombre}</td>
+                      <td className="py-1 text-right">{p.cantidad}</td>
+                      <td className="py-1 text-right font-semibold">{fmt(p.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Cobros */}
+          {(cobros || []).length > 0 && (
+            <div>
+              <h2 className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5 mb-2 border-b border-border pb-1">
+                <CreditCard className="h-3.5 w-3.5" /> Cobros ({(cobros || []).length})
+              </h2>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {Object.entries(cobrosPorMetodo).map(([m, t]) => (
+                  <span key={m} className="text-[10px] bg-card rounded px-2 py-1">
+                    <span className="text-muted-foreground capitalize">{m}:</span> <span className="font-bold">{fmt(t)}</span>
+                  </span>
+                ))}
+              </div>
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-[9px] text-muted-foreground uppercase border-b border-border">
+                    <th className="text-left py-1.5">Cliente</th>
+                    <th className="text-left py-1.5">Método</th>
+                    <th className="text-left py-1.5">Referencia</th>
+                    <th className="text-right py-1.5">Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(cobros || []).map((c: any) => (
+                    <tr key={c.id} className="border-b border-border/50">
+                      <td className="py-1">{c.clientes?.nombre ?? '—'}</td>
+                      <td className="py-1 capitalize">{c.metodo_pago}</td>
+                      <td className="py-1 text-muted-foreground font-mono">{c.referencia || '—'}</td>
+                      <td className="py-1 text-right font-semibold">{fmt(Number(c.monto))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-border font-bold">
+                    <td colSpan={3} className="py-1.5 text-right text-muted-foreground text-[10px]">Total cobros:</td>
+                    <td className="py-1.5 text-right">{fmt(totalCobros)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          {/* Gastos */}
+          {(gastos || []).length > 0 && (
+            <div>
+              <h2 className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5 mb-2 border-b border-border pb-1">
+                <TrendingDown className="h-3.5 w-3.5" /> Gastos ({(gastos || []).length})
+              </h2>
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-[9px] text-muted-foreground uppercase border-b border-border">
+                    <th className="text-left py-1.5">Concepto</th>
+                    <th className="text-left py-1.5">Notas</th>
+                    <th className="text-right py-1.5">Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(gastos || []).map((g: any) => (
+                    <tr key={g.id} className="border-b border-border/50">
+                      <td className="py-1">{g.concepto}</td>
+                      <td className="py-1 text-muted-foreground">{g.notas || '—'}</td>
+                      <td className="py-1 text-right font-semibold text-destructive">-{fmt(Number(g.monto))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-border font-bold">
+                    <td colSpan={2} className="py-1.5 text-right text-muted-foreground text-[10px]">Total gastos:</td>
+                    <td className="py-1.5 text-right text-destructive">-{fmt(totalGastos)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          {/* Devoluciones */}
+          {devLineas.length > 0 && (
+            <div>
+              <h2 className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5 mb-2 border-b border-border pb-1">
+                <RotateCcw className="h-3.5 w-3.5" /> Devoluciones ({totalDevUnidades} uds en {(devoluciones || []).length} registros)
+              </h2>
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-[9px] text-muted-foreground uppercase border-b border-border">
+                    <th className="text-left py-1.5">Producto</th>
+                    <th className="text-left py-1.5">Cliente</th>
+                    <th className="text-left py-1.5">Motivo</th>
+                    <th className="text-left py-1.5">Acción</th>
+                    <th className="text-right py-1.5">Cant.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {devLineas.map((d, i) => (
+                    <tr key={i} className="border-b border-border/50">
+                      <td className="py-1">{d.nombre} <span className="text-muted-foreground font-mono">{d.codigo}</span></td>
+                      <td className="py-1">{d.cliente}</td>
+                      <td className="py-1 text-muted-foreground capitalize">{d.motivo.replace(/_/g, ' ')}</td>
+                      <td className="py-1">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold bg-accent text-foreground">
+                          {ACCION_LABELS[d.accion] || d.accion}
+                        </span>
+                      </td>
+                      <td className="py-1 text-right font-semibold">{d.cantidad}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                {totalDevCredito > 0 && (
+                  <tfoot>
+                    <tr className="border-t border-border font-bold">
+                      <td colSpan={4} className="py-1.5 text-right text-muted-foreground text-[10px]">Total crédito/descuento:</td>
+                      <td className="py-1.5 text-right text-destructive">{fmt(totalDevCredito)}</td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )}
+
+          {/* Visitas sin compra */}
+          {visitasSinCompra.length > 0 && (
+            <div>
+              <h2 className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5 mb-2 border-b border-border pb-1">
+                <MapPin className="h-3.5 w-3.5" /> Visitas sin compra ({visitasSinCompra.length})
+              </h2>
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-[9px] text-muted-foreground uppercase border-b border-border">
+                    <th className="text-left py-1.5">Cliente</th>
+                    <th className="text-left py-1.5">Motivo</th>
+                    <th className="text-left py-1.5">Notas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visitasSinCompra.map((v: any, i: number) => (
+                    <tr key={i} className="border-b border-border/50">
+                      <td className="py-1">{v.clientes?.nombre ?? '—'}</td>
+                      <td className="py-1 text-muted-foreground">{v.motivo || '—'}</td>
+                      <td className="py-1 text-muted-foreground">{v.notas || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Abonos a crédito previo */}
+          {abonosCreditoPrevio.length > 0 && (
+            <div>
+              <h2 className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1.5 mb-2 border-b border-border pb-1">
+                <CreditCard className="h-3.5 w-3.5" /> Abonos a crédito previo ({abonosCreditoPrevio.length}) — {clientesQueAbonaron} cliente(s)
+              </h2>
+              <p className="text-[10px] text-muted-foreground mb-2">
+                Clientes con ventas a crédito anteriores al rango que abonaron en este período.
+              </p>
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-[9px] text-muted-foreground uppercase border-b border-border">
+                    <th className="text-left py-1.5">Cliente</th>
+                    <th className="text-left py-1.5">Venta</th>
+                    <th className="text-left py-1.5">F. Venta</th>
+                    <th className="text-right py-1.5">Días</th>
+                    <th className="text-left py-1.5">Método</th>
+                    <th className="text-left py-1.5">Ref.</th>
+                    <th className="text-right py-1.5">Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {abonosCreditoPrevio.map((a, i) => (
+                    <tr key={i} className="border-b border-border/50">
+                      <td className="py-1">{a.cliente}</td>
+                      <td className="py-1 font-mono">{a.venta_folio}</td>
+                      <td className="py-1 text-muted-foreground">{a.venta_fecha}</td>
+                      <td className="py-1 text-right font-semibold">{a.dias_atraso}</td>
+                      <td className="py-1 capitalize">{a.metodo_pago}</td>
+                      <td className="py-1 text-muted-foreground font-mono">{a.referencia || '—'}</td>
+                      <td className="py-1 text-right font-semibold">{fmt(a.monto_aplicado)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-border font-bold">
+                    <td colSpan={6} className="py-1.5 text-right text-muted-foreground text-[10px]">Total abonos:</td>
+                    <td className="py-1.5 text-right">{fmt(totalAbonosPrevios)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          <div className="border-t border-border pt-3 mt-4">
+            <h2 className="text-xs font-bold text-muted-foreground uppercase mb-2">Resumen del período</h2>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-[12px] max-w-md">
+              <span className="text-muted-foreground">Ventas (contado):</span><span className="text-right font-semibold">{fmt(totalContado)}</span>
+              <span className="text-muted-foreground">Ventas (crédito):</span><span className="text-right font-semibold">{fmt(totalCredito)}</span>
+              <span className="text-muted-foreground">Cobros recibidos:</span><span className="text-right font-semibold">{fmt(totalCobros)}</span>
+              <span className="text-muted-foreground">Gastos:</span><span className="text-right font-semibold text-destructive">-{fmt(totalGastos)}</span>
+              <span className="text-muted-foreground">Canceladas:</span><span className="text-right font-semibold text-destructive">{fmt(totalCancelado)}</span>
+              <span className="text-muted-foreground">Clientes visitados:</span><span className="text-right font-semibold">{clientesVisitados.size}</span>
+              <span className="text-muted-foreground">Visitas sin compra:</span><span className="text-right font-semibold">{visitasSinCompra.length}</span>
+              <span className="text-muted-foreground">Devoluciones:</span><span className="text-right font-semibold">{totalDevUnidades} uds</span>
+              {totalDevCredito > 0 && (
+                <><span className="text-muted-foreground">Crédito por devol.:</span><span className="text-right font-semibold text-destructive">-{fmt(totalDevCredito)}</span></>
+              )}
+              {totalAbonosPrevios > 0 && (
+                <><span className="text-muted-foreground">Abonos crédito previo:</span><span className="text-right font-semibold">{fmt(totalAbonosPrevios)}</span></>
+              )}
+              <div className="col-span-2 border-t border-border mt-1 pt-1 flex justify-between font-bold">
+                <span>Efectivo esperado:</span>
+                <span>{fmt((cobrosPorMetodo['efectivo'] || 0) - totalGastos)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

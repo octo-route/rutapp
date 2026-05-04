@@ -1,0 +1,309 @@
+import { useState, useCallback, useMemo } from 'react';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { usePermisos } from '@/hooks/usePermisos';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { OdooStatusbar } from '@/components/OdooStatusbar';
+import { OdooTabs } from '@/components/OdooTabs';
+import { VentaFormHeader } from '@/components/venta/VentaFormHeader';
+import { VentaPagosTab } from '@/components/venta/VentaPagosTab';
+import { VentaEntregasTab } from '@/components/venta/VentaEntregasTab';
+import { VentaDevolucionesTab } from '@/components/venta/VentaDevolucionesTab';
+import { FacturaDrawer } from '@/components/facturacion/FacturaDrawer';
+import { VentaHistorialTab } from '@/components/venta/VentaHistorialTab';
+import { CfdiHistory } from '@/components/facturacion/CfdiHistory';
+import { TableSkeleton } from '@/components/TableSkeleton';
+import DocumentPreviewModal from '@/components/DocumentPreviewModal';
+import { VentaCheckoutModal } from '@/components/venta/VentaCheckoutModal';
+import { toast } from 'sonner';
+import type { StatusVenta } from '@/types';
+import { useVentaForm, VENTA_STEPS_FULL, VENTA_STEPS_INMEDIATA } from './useVentaForm';
+import { VentaFormFields } from './VentaFormFields';
+import { VentaLineasTab } from './VentaLineasTab';
+import { generarVentaPdf } from './VentaPdfHandler';
+import { printTicket, buildTicketDataFromVenta } from '@/lib/printTicketUtil';
+import { fmtDate, todayInTimezone } from '@/lib/utils';
+
+export default function VentaFormPage() {
+  const isMobile = useIsMobile();
+  const { hasPermiso } = usePermisos();
+  const canDeleteCancelada = hasPermiso('ventas', 'eliminar');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutSaving, setCheckoutSaving] = useState(false);
+  const h = useVentaForm();
+  const {
+    id, isNew, form, lineas, setLineas, readOnly, isLoading,
+    profile, user, empresa, navigate, queryClient,
+    clientesList, productosList, tarifasList, almacenesList,
+    entregasExistentes, entregasActivas, hayEntregas, remaining, fullyDelivered, canCreateEntrega, lineDeliverySummary,
+    pagosData, totalPagado, saldoPendiente, totals, promoResults,
+    pdfBlob, setPdfBlob, showPdfModal, setShowPdfModal, showFacturaDrawer, setShowFacturaDrawer,
+    sinImpuestos, setSinImpuestos,
+    saveVenta, crearEntrega, PinDialog,
+    set, handleProductSelect, handleSave: baseSave, handleDelete, handleStatusChange, handleAddPago,
+    addLine, updateLine, removeLine, setCellRef, handleCellKeyDown, navigateCell,
+  } = h;
+
+  // Wrap handleSave: for venta_directa, open checkout modal after save+confirm
+  const handleSave = useCallback(async (autoConfirm = false) => {
+    if (form.tipo === 'venta_directa' && isNew) {
+      // Save + auto-confirm, then open checkout
+      const ventaId = await baseSave(true);
+      if (ventaId) {
+        setShowCheckout(true);
+      }
+    } else {
+      await baseSave(autoConfirm);
+    }
+  }, [form.tipo, isNew, baseSave]);
+
+  // Fetch pending accounts for the selected client (for checkout distribution)
+  const { data: clientePendingVentas } = useQuery({
+    queryKey: ['checkout-pending-ventas', empresa?.id, form.cliente_id],
+    enabled: !!empresa?.id && !!form.cliente_id && showCheckout,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('ventas')
+        .select('id, folio, fecha, total, saldo_pendiente')
+        .eq('empresa_id', empresa!.id)
+        .eq('cliente_id', form.cliente_id!)
+        .gt('saldo_pendiente', 0)
+        .neq('id', form.id ?? '')
+        .in('status', ['confirmado', 'entregado', 'facturado'])
+        .order('fecha');
+      return data ?? [];
+    },
+  });
+
+  const checkoutCuentasPendientes = useMemo(() =>
+    (clientePendingVentas ?? []).map((v: any) => ({
+      id: v.id,
+      folio: v.folio,
+      fecha: v.fecha,
+      total: v.total ?? 0,
+      saldo_pendiente: v.saldo_pendiente ?? 0,
+    })),
+    [clientePendingVentas]
+  );
+
+  const handleCheckoutConfirm = useCallback(async (
+    pagos: { metodo: string; monto: number; referencia: string }[],
+    condicion: 'contado' | 'credito',
+    cuentasAplicadas?: { id: string; monto: number }[],
+  ) => {
+    setCheckoutSaving(true);
+    try {
+      if (condicion === 'credito') {
+        await saveVenta.mutateAsync({ id: form.id, condicion_pago: 'credito' } as any);
+      } else {
+        await saveVenta.mutateAsync({ id: form.id, condicion_pago: 'contado' } as any);
+
+        // Distribute payments: first to current sale, then to pending accounts
+        let saleRemaining = totals.total;
+        const accountApplied = new Map<string, number>();
+        const cuentas = cuentasAplicadas ?? [];
+
+        for (const pago of pagos) {
+          let remaining = pago.monto;
+
+          // Apply to current sale first
+          if (saleRemaining > 0 && remaining > 0) {
+            const apply = Math.min(remaining, saleRemaining);
+            await handleAddPago(apply, pago.metodo, pago.referencia);
+            saleRemaining -= apply;
+            remaining -= apply;
+          }
+
+          // Apply excess to pending accounts
+          for (const cuenta of cuentas) {
+            if (remaining <= 0.01) break;
+            const alreadyApplied = accountApplied.get(cuenta.id) ?? 0;
+            const cuentaRemaining = cuenta.monto - alreadyApplied;
+            if (cuentaRemaining <= 0.01) continue;
+            const apply = Math.min(remaining, cuentaRemaining);
+
+            // Create cobro + aplicación for the pending account
+            const { data: cobroData } = await supabase.from('cobros').insert({
+              empresa_id: empresa!.id,
+              cliente_id: form.cliente_id!,
+              user_id: user!.id,
+              monto: apply,
+              metodo_pago: pago.metodo,
+              referencia: pago.referencia || null,
+              fecha: todayInTimezone(empresa?.zona_horaria),
+            }).select('id').single();
+
+            if (cobroData) {
+              await supabase.from('cobro_aplicaciones').insert({
+                cobro_id: cobroData.id,
+                venta_id: cuenta.id,
+                monto_aplicado: apply,
+              });
+            }
+
+            accountApplied.set(cuenta.id, alreadyApplied + apply);
+            remaining -= apply;
+          }
+        }
+      }
+      setShowCheckout(false);
+      toast.success('Venta cobrada exitosamente');
+      if (queryClient) {
+        queryClient.invalidateQueries({ queryKey: ['venta', form.id] });
+        queryClient.invalidateQueries({ queryKey: ['venta-pagos', form.id] });
+        queryClient.invalidateQueries({ queryKey: ['checkout-pending-ventas'] });
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Error al registrar cobro');
+    } finally {
+      setCheckoutSaving(false);
+    }
+  }, [form.id, form.cliente_id, totals.total, empresa, user, saveVenta, handleAddPago, queryClient]);
+
+  if (!isNew && isLoading) return <div className="p-4 min-h-full"><TableSkeleton rows={6} cols={4} /></div>;
+
+  const clienteOptions = (clientesList ?? []).map(c => ({ value: c.id, label: `${c.codigo ? c.codigo + ' · ' : ''}${c.nombre}` }));
+  const tarifaOptions = (tarifasList ?? []).map(t => ({ value: t.id, label: t.nombre }));
+  const almacenOptions = (almacenesList ?? []).map(a => ({ value: a.id, label: a.nombre }));
+  const clienteNombre = clientesList?.find(c => c.id === form.cliente_id)?.nombre;
+  const steps = form.entrega_inmediata ? VENTA_STEPS_INMEDIATA : VENTA_STEPS_FULL;
+
+  const handleGenerarPdf = async () => {
+    const clienteData = clientesList?.find(c => c.id === form.cliente_id);
+    const almacenName = almacenesList?.find((a: any) => a.id === form.almacen_id)?.nombre;
+    const promos = (promoResults ?? []).filter((r: any) => r.descuento > 0).map((r: any) => ({ descripcion: r.descripcion, descuento: r.descuento }));
+    const vendedorNombre = (form as any).vendedores?.nombre;
+    const blob = await generarVentaPdf({
+      form, empresa, profile, userEmail: user?.email, clienteData, almacenName,
+      lineas, productosList: productosList ?? [], entregasExistentes: entregasExistentes ?? [], pagosData: pagosData ?? [],
+      promociones: promos, vendedorNombre,
+    });
+    setPdfBlob(blob);
+    setShowPdfModal(true);
+  };
+
+  const handlePrintTicket = () => {
+    const clienteData = clientesList?.find(c => c.id === form.cliente_id);
+    const vendedorNombreTicket = (form as any).vendedores?.nombre ?? profile?.nombre ?? '';
+    const td = buildTicketDataFromVenta({
+      empresa,
+      venta: {
+        folio: form.folio,
+        fecha: fmtDate(form.fecha),
+        subtotal: totals.subtotal,
+        iva_total: totals.iva_total,
+        ieps_total: totals.ieps_total,
+        total: totals.total,
+        saldo_pendiente: saldoPendiente,
+        condicion_pago: form.condicion_pago,
+      },
+      clienteNombre: clienteData?.nombre ?? 'Sin cliente',
+      vendedorNombre: vendedorNombreTicket,
+      lineas: lineas.filter(l => l.producto_id).map(l => ({
+        nombre: productosList?.find(p => p.id === l.producto_id)?.nombre ?? l.descripcion ?? '—',
+        cantidad: Number(l.cantidad),
+        precio_unitario: Number(l.precio_unitario),
+        total: Number(l.total ?? 0),
+        iva_monto: Number(l.iva_monto ?? 0),
+        ieps_monto: Number(l.ieps_monto ?? 0),
+        descuento_pct: Number((l as any).descuento_porcentaje ?? (l as any).descuento_pct ?? 0),
+        producto_id: l.producto_id,
+      })),
+      promociones: (promoResults ?? []).filter((r: any) => r.descuento > 0).map((r: any) => ({ descripcion: r.descripcion, descuento: r.descuento, producto_id: r.producto_id })),
+      saldoNuevo: saldoPendiente > 0 ? saldoPendiente : undefined,
+      pagos: (pagosData ?? []).map((p: any) => ({ metodo: (p.cobros as any)?.metodo_pago ?? 'efectivo', monto: Number(p.monto_aplicado ?? 0), fecha: fmtDate((p.cobros as any)?.fecha ?? ''), referencia: (p.cobros as any)?.referencia })),
+    });
+    const ticketAncho = (empresa as any)?.ticket_ancho ?? '58';
+    printTicket(td, { ticketAncho });
+  };
+
+  const onClienteChange = (cId: string) => {
+    set('cliente_id', cId);
+    const c = clientesList?.find(cl => cl.id === cId);
+    const clienteTarifa = c?.tarifa_id || tarifasList?.find(t => t.tipo === 'general')?.id;
+    if (clienteTarifa) set('tarifa_id', clienteTarifa);
+    if (c && (c as any).lista_precio_id) set('lista_precio_id', (c as any).lista_precio_id);
+    else set('lista_precio_id', null);
+    if (c?.requiere_factura) set('requiere_factura', true);
+  };
+
+  return (
+    <div className="min-h-full">
+      <VentaFormHeader
+        isNew={isNew} folio={form.folio} clienteNombre={clienteNombre} status={form.status}
+        entregaInmediata={form.entrega_inmediata} tipo={form.tipo}
+        requiereFactura={(form as any).requiere_factura} readOnly={readOnly}
+        canCreateEntrega={canCreateEntrega} canDeleteCancelada={canDeleteCancelada} hayEntregas={hayEntregas}
+        entregasExistentes={(entregasExistentes ?? []).map(e => ({ id: e.id, folio: e.folio, status: e.status }))}
+        lineasPendientesFactura={lineas.filter(l => l.producto_id && !l.facturado).length}
+        isSaving={saveVenta.isPending} isCreatingEntrega={crearEntrega.isPending}
+        onBack={() => navigate('/ventas')} onSave={handleSave} onDelete={() => setShowDeleteConfirm(true)} onStatusChange={handleStatusChange}
+        onCreateEntrega={async () => {
+          const linesToUse = remaining?.length ? remaining.map(r => ({ producto_id: r.producto_id, unidad_id: lineas.find(l => l.producto_id === r.producto_id)?.unidad_id, cantidad_pedida: r.cantidad_pendiente }))
+            : (lineas ?? []).filter(l => l.producto_id && Number(l.cantidad) > 0).map(l => ({ producto_id: l.producto_id!, unidad_id: l.unidad_id, cantidad_pedida: Number(l.cantidad) }));
+          if (!linesToUse.length) { toast.error('No hay líneas pendientes'); return; }
+          try { const result = await crearEntrega.mutateAsync({ pedidoId: form.id, vendedorId: form.vendedor_id, clienteId: form.cliente_id, almacenId: form.almacen_id, lineas: linesToUse }); toast.success('Entrega creada'); navigate(`/logistica/entregas/${result.id}`); } catch (e: any) { toast.error(e.message); }
+        }}
+        onNavigateEntrega={(eid) => navigate(`/logistica/entregas/${eid}`)}
+        onGenerarPdf={handleGenerarPdf}
+        onPrintTicket={!isNew ? handlePrintTicket : undefined}
+        onFacturar={() => setShowFacturaDrawer(true)}
+      />
+      {!isNew && <div className="px-5 pt-3"><OdooStatusbar steps={steps} current={form.status as string} onStepClick={readOnly ? undefined : (k => handleStatusChange(k as StatusVenta))} /></div>}
+      <div className="p-3 sm:p-5 space-y-4 max-w-[1200px]">
+        <div className="bg-card border border-border rounded-md p-5">
+          {readOnly && <div className="mb-3 text-xs text-muted-foreground bg-muted/60 border border-border px-3 py-2 rounded flex items-center gap-2"><span className="inline-block w-2 h-2 rounded-full bg-muted-foreground/50" />Esta venta está {form.status} y no se puede editar.</div>}
+          <VentaFormFields form={form} readOnly={readOnly} isNew={isNew} clienteOptions={clienteOptions} tarifaOptions={tarifaOptions} almacenOptions={almacenOptions} clienteNombre={clienteNombre} totalPagado={totalPagado} saldoPendiente={saldoPendiente} set={set} onClienteChange={onClienteChange} />
+        </div>
+        <div className="bg-card border border-border rounded-md">
+          <OdooTabs tabs={[
+            { key: 'lineas', label: 'Líneas de venta', content: <VentaLineasTab lineas={lineas} productosList={productosList ?? []} readOnly={readOnly} totals={totals} promoResults={promoResults} onProductSelect={handleProductSelect} onUpdateLine={updateLine} onRemoveLine={removeLine} onAddLine={addLine} setCellRef={setCellRef} onCellKeyDown={handleCellKeyDown} navigateCell={navigateCell} setLineas={setLineas} sinImpuestos={sinImpuestos} setSinImpuestos={setSinImpuestos} readOnlyForm={readOnly} saldoPendiente={saldoPendiente} /> },
+            ...(!isNew ? [{ key: 'pagos', label: `Pagos (${(pagosData ?? []).length})`, content: <VentaPagosTab pagos={(pagosData ?? []) as any} totalPagado={totalPagado} saldoPendiente={saldoPendiente} isMobile={isMobile} onAddPago={handleAddPago} /> }] : []),
+            ...(!isNew && form.tipo === 'pedido' ? [{ key: 'entregas', label: `Entregas (${entregasActivas.length})`, content: <VentaEntregasTab lineas={lineas} productosList={(productosList ?? []).map((p: any) => ({ id: p.id, codigo: p.codigo, nombre: p.nombre }))} entregasExistentes={(entregasExistentes ?? []) as any} entregasActivas={entregasActivas as any} lineDeliverySummary={lineDeliverySummary} canCreateEntrega={canCreateEntrega} fullyDelivered={fullyDelivered} remaining={remaining} isCreatingEntrega={crearEntrega.isPending} isMobile={isMobile} onCreateEntrega={async (items) => { try { const entrega = await crearEntrega.mutateAsync({ pedidoId: form.id, vendedorId: form.vendedor_id ?? undefined, clienteId: form.cliente_id ?? undefined, almacenId: form.almacen_id ?? undefined, lineas: items }); toast.success(`Entrega ${entrega.folio} creada`); } catch (e: any) { toast.error(e.message); } }} /> }] : []),
+            ...(!isNew ? [{ key: 'devoluciones', label: 'Devoluciones', content: <VentaDevolucionesTab ventaId={form.id!} /> }] : []),
+            { key: 'notas', label: 'Notas', content: <div className="p-4">{readOnly ? <p className="text-[13px] text-foreground whitespace-pre-wrap">{form.notas || 'Sin notas'}</p> : <textarea className="input-odoo w-full min-h-[100px]" value={form.notas ?? ''} onChange={e => set('notas', e.target.value)} placeholder="Notas internas de la venta..." />}</div> },
+            ...(!isNew ? [{ key: 'historial', label: 'Historial', content: <VentaHistorialTab ventaId={form.id!} /> }] : []),
+            ...(!isNew && (form as any).requiere_factura ? [{ key: 'facturacion', label: `Facturación (${lineas.filter(l => l.producto_id && l.facturado).length}/${lineas.filter(l => l.producto_id).length})`, content: <div className="p-4"><CfdiHistory ventaId={form.id!} lineas={lineas} productosList={productosList ?? []} />{lineas.every(l => !l.producto_id || l.facturado) && lineas.some(l => l.facturado) && <div className="text-sm font-medium flex items-center gap-2 text-muted-foreground mt-4"><span className="inline-block w-2 h-2 rounded-full bg-primary" />Todas las líneas facturadas</div>}{!lineas.some(l => l.facturado) && <p className="text-muted-foreground text-sm">Sin facturas emitidas aún</p>}</div> }] : []),
+          ]} />
+        </div>
+      </div>
+      <DocumentPreviewModal open={showPdfModal} onClose={() => { setShowPdfModal(false); setPdfBlob(null); }} pdfBlob={pdfBlob} fileName={`${form.folio ?? 'pedido'}.pdf`} empresaId={empresa?.id ?? ''} defaultPhone={clientesList?.find(c => c.id === form.cliente_id)?.telefono ?? ''} caption={`Documento ${form.folio}`} tipo="pedido" referencia_id={form.id} />
+      {showFacturaDrawer && form.id && form.cliente_id && <FacturaDrawer open={showFacturaDrawer} onClose={() => setShowFacturaDrawer(false)} ventaId={form.id} cliente={clientesList?.find(c => c.id === form.cliente_id) as any} lineas={lineas as any} productosList={productosList ?? []} />}
+      <PinDialog />
+
+      {/* Checkout modal for Venta Directa */}
+      {(() => {
+        const cliente = clientesList?.find(c => c.id === form.cliente_id);
+        return (
+          <VentaCheckoutModal
+            open={showCheckout}
+            total={totals.total}
+            clienteNombre={cliente?.nombre ?? 'Sin cliente'}
+            clienteCredito={!!cliente?.credito}
+            clienteDiasCredito={(cliente as any)?.dias_credito ?? 0}
+            clienteLimiteCredito={(cliente as any)?.limite_credito ?? 0}
+            cuentasPendientes={checkoutCuentasPendientes}
+            saving={checkoutSaving}
+            onConfirm={handleCheckoutConfirm}
+            onClose={() => setShowCheckout(false)}
+          />
+        );
+      })()}
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar esta venta?</AlertDialogTitle>
+            <AlertDialogDescription>Esta acción no se puede deshacer. La venta y todas sus líneas serán eliminadas permanentemente.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={handleDelete}>Eliminar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}

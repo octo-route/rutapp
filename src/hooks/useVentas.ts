@@ -1,0 +1,364 @@
+import { useEffect, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { fetchAllPages } from '@/lib/supabasePaginate';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { useDataVisibility } from '@/hooks/useDataVisibility';
+import { pickColumns, VENTA_COLUMNS, VENTA_LINEA_COLUMNS } from '@/lib/allowlist';
+import type { Venta, VentaLinea } from '@/types';
+
+/** Paginated ventas for list views */
+export function useVentasPaginated(search?: string, statusFilter?: string, tipoFilter?: string, page = 1, pageSize = 80, condicionFilter?: string, vendedorFilter?: string, dateFrom?: string, dateTo?: string) {
+  const qc = useQueryClient();
+  const { empresa } = useAuth();
+  const { seeAll, profileId } = useDataVisibility('ventas');
+  const filterOwn = !seeAll && !!profileId;
+
+  useEffect(() => {
+    if (!empresa?.id) return;
+    const channel = supabase
+      .channel('ventas-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas', filter: `empresa_id=eq.${empresa.id}` }, () => {
+        qc.invalidateQueries({ queryKey: ['ventas'] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [qc, empresa?.id]);
+
+  return useQuery({
+    queryKey: ['ventas', empresa?.id, search, statusFilter, tipoFilter, page, pageSize, filterOwn ? profileId : 'all', condicionFilter, vendedorFilter, dateFrom, dateTo],
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      let q = supabase
+        .from('ventas')
+        .select('id, folio, fecha, created_at, total, subtotal, iva_total, descuento_total, descuento_extra, descuento_extra_tipo, saldo_pendiente, status, tipo, condicion_pago, vendedor_id, cliente_id, almacen_id, es_saldo_inicial, origen, clientes(nombre), vendedores:profiles!vendedor_id(nombre), almacenes(nombre)', { count: 'exact' })
+        .eq('empresa_id', empresa!.id)
+        .eq('es_saldo_inicial', false)
+        .order('created_at', { ascending: false })
+        .range((page - 1) * pageSize, page * pageSize - 1);
+      if (filterOwn) q = q.eq('vendedor_id', profileId!);
+      if (search) {
+        const s = search.replace(/[%_,()]/g, '\\$&').replace(/'/g, "''");
+        const [clientesRes, vendedoresRes, almacenesRes] = await Promise.all([
+          supabase.from('clientes').select('id').eq('empresa_id', empresa!.id).ilike('nombre', `%${s}%`).limit(500),
+          supabase.from('profiles').select('id').eq('empresa_id', empresa!.id).ilike('nombre', `%${s}%`).limit(500),
+          supabase.from('almacenes').select('id').eq('empresa_id', empresa!.id).ilike('nombre', `%${s}%`).limit(500),
+        ]);
+        const clienteIds = (clientesRes.data ?? []).map((r: any) => r.id);
+        const vendedorIds = (vendedoresRes.data ?? []).map((r: any) => r.id);
+        const almacenIds = (almacenesRes.data ?? []).map((r: any) => r.id);
+        const orParts: string[] = [`folio.ilike.%${s}%`];
+        if (clienteIds.length) orParts.push(`cliente_id.in.(${clienteIds.join(',')})`);
+        if (vendedorIds.length) orParts.push(`vendedor_id.in.(${vendedorIds.join(',')})`);
+        if (almacenIds.length) orParts.push(`almacen_id.in.(${almacenIds.join(',')})`);
+        q = q.or(orParts.join(','));
+      }
+      if (statusFilter && statusFilter !== 'todos') {
+        const arr = statusFilter.split(',');
+        if (arr.length > 1) q = q.in('status', arr as any);
+        else q = q.eq('status', statusFilter as Venta['status']);
+      }
+      if (tipoFilter && tipoFilter !== 'todos') {
+        const arr = tipoFilter.split(',');
+        if (arr.length > 1) q = q.in('tipo', arr as any);
+        else q = q.eq('tipo', tipoFilter as Venta['tipo']);
+      }
+      if (condicionFilter && condicionFilter !== 'todos') {
+        const arr = condicionFilter.split(',');
+        if (arr.length > 1) q = q.in('condicion_pago', arr as any);
+        else q = q.eq('condicion_pago', condicionFilter as any);
+      }
+      if (vendedorFilter && vendedorFilter !== 'todos') {
+        const arr = vendedorFilter.split(',');
+        if (arr.length > 1) q = q.in('vendedor_id', arr as any);
+        else q = q.eq('vendedor_id', vendedorFilter);
+      }
+      if (dateFrom) q = q.gte('fecha', dateFrom);
+      if (dateTo) q = q.lte('fecha', dateTo);
+      const { data, error, count } = await q;
+      if (error) throw error;
+      return { rows: (data ?? []) as unknown as Venta[], total: count ?? 0 };
+    },
+  });
+}
+
+/** Paginated product lines (venta_lineas) with header data for "Products" view */
+export function useVentaLineasPaginated(
+  search?: string, statusFilter?: string, tipoFilter?: string,
+  page = 1, pageSize = 80, condicionFilter?: string,
+  vendedorFilter?: string, dateFrom?: string, dateTo?: string
+) {
+  const { empresa } = useAuth();
+  const { seeAll, profileId } = useDataVisibility('ventas');
+  const filterOwn = !seeAll && !!profileId;
+
+  return useQuery({
+    queryKey: ['venta-lineas', empresa?.id, search, statusFilter, tipoFilter, page, pageSize, filterOwn ? profileId : 'all', condicionFilter, vendedorFilter, dateFrom, dateTo],
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      let q = supabase
+        .from('venta_lineas')
+        .select('id, venta_id, producto_id, cantidad, precio_unitario, total, productos(codigo, nombre), ventas!inner(id, folio, fecha, created_at, status, tipo, condicion_pago, vendedor_id, cliente_id, empresa_id, clientes(nombre), vendedores:profiles!vendedor_id(nombre))', { count: 'exact' })
+        .eq('ventas.empresa_id', empresa!.id)
+        .order('created_at', { ascending: false, referencedTable: undefined })
+        .range((page - 1) * pageSize, page * pageSize - 1);
+
+      if (filterOwn) q = q.eq('ventas.vendedor_id', profileId!);
+
+      if (statusFilter && statusFilter !== 'todos') {
+        const arr = statusFilter.split(',');
+        if (arr.length > 1) q = q.in('ventas.status', arr as any);
+        else q = q.eq('ventas.status', statusFilter as any);
+      }
+      if (tipoFilter && tipoFilter !== 'todos') {
+        const arr = tipoFilter.split(',');
+        if (arr.length > 1) q = q.in('ventas.tipo', arr as any);
+        else q = q.eq('ventas.tipo', tipoFilter as any);
+      }
+      if (condicionFilter && condicionFilter !== 'todos') {
+        const arr = condicionFilter.split(',');
+        if (arr.length > 1) q = q.in('ventas.condicion_pago', arr as any);
+        else q = q.eq('ventas.condicion_pago', condicionFilter as any);
+      }
+      if (vendedorFilter && vendedorFilter !== 'todos') {
+        const arr = vendedorFilter.split(',');
+        if (arr.length > 1) q = q.in('ventas.vendedor_id', arr as any);
+        else q = q.eq('ventas.vendedor_id', vendedorFilter);
+      }
+      if (dateFrom) q = q.gte('ventas.fecha', dateFrom);
+      if (dateTo) q = q.lte('ventas.fecha', dateTo);
+
+      if (search) {
+        const s = search.replace(/[%_,()]/g, '\\$&').replace(/'/g, "''");
+        const [productosRes, ventasRes] = await Promise.all([
+          supabase.from('productos').select('id').eq('empresa_id', empresa!.id).or(`nombre.ilike.%${s}%,codigo.ilike.%${s}%`).limit(500),
+          supabase.from('ventas').select('id').eq('empresa_id', empresa!.id).ilike('folio', `%${s}%`).limit(500),
+        ]);
+        const productoIds = (productosRes.data ?? []).map((r: any) => r.id);
+        const ventaIds = (ventasRes.data ?? []).map((r: any) => r.id);
+        const orParts: string[] = [];
+        if (productoIds.length) orParts.push(`producto_id.in.(${productoIds.join(',')})`);
+        if (ventaIds.length) orParts.push(`venta_id.in.(${ventaIds.join(',')})`);
+        if (orParts.length === 0) {
+          q = q.eq('venta_id', '00000000-0000-0000-0000-000000000000');
+        } else {
+          q = q.or(orParts.join(','));
+        }
+      }
+
+      const { data, error, count } = await q;
+      if (error) throw error;
+
+      const rows = (data ?? []).map((row: any) => ({
+        linea_id: row.id,
+        venta_id: row.venta_id,
+        producto_id: row.producto_id,
+        cantidad: row.cantidad,
+        precio_unitario: row.precio_unitario,
+        linea_total: row.total,
+        producto_codigo: row.productos?.codigo ?? '',
+        producto_nombre: row.productos?.nombre ?? '',
+        folio: row.ventas?.folio,
+        fecha: row.ventas?.fecha,
+        status: row.ventas?.status,
+        tipo: row.ventas?.tipo,
+        condicion_pago: row.ventas?.condicion_pago,
+        cliente_nombre: row.ventas?.clientes?.nombre,
+        vendedor_nombre: row.ventas?.vendedores?.nombre,
+      }));
+
+      return { rows, total: count ?? 0 };
+    },
+  });
+}
+
+/** All ventas (for lookups) */
+export function useVentas(search?: string, statusFilter?: string, tipoFilter?: string) {
+  const qc = useQueryClient();
+  const { empresa } = useAuth();
+
+  useEffect(() => {
+    if (!empresa?.id) return;
+    const channel = supabase
+      .channel('ventas-realtime-all')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas', filter: `empresa_id=eq.${empresa.id}` }, () => {
+        qc.invalidateQueries({ queryKey: ['ventas'] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [qc, empresa?.id]);
+
+  return useQuery({
+    queryKey: ['ventas', empresa?.id, search, statusFilter, tipoFilter],
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      return fetchAllPages((from, to) => {
+        let q = supabase
+          .from('ventas')
+          .select('id, folio, fecha, total, subtotal, iva_total, descuento_total, saldo_pendiente, status, tipo, condicion_pago, vendedor_id, cliente_id, clientes(nombre), vendedores:profiles!vendedor_id(nombre)')
+          .eq('empresa_id', empresa!.id)
+          .order('created_at', { ascending: false })
+          .range(from, to);
+        if (search) q = q.or(`folio.ilike.%${search}%`);
+        if (statusFilter && statusFilter !== 'todos') q = q.eq('status', statusFilter as Venta['status']);
+        if (tipoFilter && tipoFilter !== 'todos') q = q.eq('tipo', tipoFilter as Venta['tipo']);
+        return q;
+      }) as Promise<Venta[]>;
+    },
+  });
+}
+
+export function useVenta(id?: string) {
+  return useQuery({
+    queryKey: ['venta', id],
+    queryFn: async () => {
+      // Try server first
+      const { data, error } = await supabase
+        .from('ventas')
+        .select('*, clientes(nombre), vendedores:profiles!vendedor_id(nombre), tarifas(nombre), almacenes(nombre), venta_lineas(*, productos(id, codigo, nombre, precio_principal, tiene_iva, tiene_ieps, tasa_iva_id, tasa_ieps_id, unidad_venta_id), unidades(nombre, abreviatura))')
+        .eq('id', id!)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) return data as Venta;
+
+      // Fallback: try local IndexedDB (sale not yet synced)
+      try {
+        const { getOfflineTable } = await import('@/lib/offlineDb');
+        const table = getOfflineTable('ventas');
+        if (table) {
+          const local = await table.get(id!);
+          if (local) {
+            // Enrich with local venta_lineas if available
+            const lineasTable = getOfflineTable('venta_lineas');
+            let venta_lineas: unknown[] = [];
+            if (lineasTable) {
+              const allLineas = await lineasTable.toArray();
+              venta_lineas = allLineas.filter((l: Record<string, unknown>) => l.venta_id === id);
+              const prodTable = getOfflineTable('productos');
+              if (prodTable) {
+                const prods = await prodTable.toArray();
+                const prodMap = new Map(prods.map((p: Record<string, unknown>) => [p.id, p]));
+                venta_lineas = venta_lineas.map((l: unknown) => {
+                  const line = l as Record<string, unknown>;
+                  return {
+                    ...line,
+                    productos: prodMap.get(line.producto_id as string) || { id: line.producto_id, codigo: '', nombre: (line.descripcion as string) ?? '—' },
+                  };
+                });
+              }
+            }
+            let clientes: { nombre: string } = { nombre: 'Sin cliente' };
+            if (local.cliente_id) {
+              const cliTable = getOfflineTable('clientes');
+              if (cliTable) {
+                const cli = await cliTable.get(local.cliente_id);
+                if (cli) clientes = { nombre: cli.nombre };
+              }
+            }
+            return { ...local, clientes, vendedores: null, tarifas: null, almacenes: null, venta_lineas } as unknown as Venta;
+          }
+        }
+      } catch { /* IndexedDB not available */ }
+
+      return null as unknown as Venta;
+    },
+    enabled: !!id,
+  });
+}
+
+export function useSaveVenta() {
+  const qc = useQueryClient();
+  const { empresa } = useAuth();
+  return useMutation({
+    mutationFn: async (venta: Partial<Venta> & { id?: string }) => {
+      const clean = pickColumns(venta, VENTA_COLUMNS);
+      delete (clean as any).id;
+      if (venta.id) {
+        const { data, error } = await supabase.from('ventas').update(clean as any).eq('id', venta.id).select('id').single();
+        if (error) throw error;
+        return data;
+      } else {
+        if (!empresa?.id) throw new Error('Sin empresa');
+        (clean as any).empresa_id = empresa.id;
+        const { data, error } = await supabase.from('ventas').insert(clean as any).select('id').single();
+        if (error) throw error;
+        return data;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ventas'] });
+      qc.invalidateQueries({ queryKey: ['venta'] });
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || 'Error inesperado');
+    },
+  });
+}
+
+export function useSaveVentaLinea() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (linea: Partial<VentaLinea> & { id?: string }) => {
+      const clean = pickColumns(linea, VENTA_LINEA_COLUMNS);
+      delete (clean as any).id;
+      if (linea.id) {
+        const { data, error } = await supabase.from('venta_lineas').update(clean as any).eq('id', linea.id).select('id').single();
+        if (error) throw error;
+        return data;
+      } else {
+        const { data, error } = await supabase.from('venta_lineas').insert(clean as any).select('id').single();
+        if (error) throw error;
+        return data;
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['venta'] }),
+    onError: (error: any) => {
+      toast.error(error?.message || 'Error inesperado');
+    },
+  });
+}
+
+export function useDeleteVentaLinea() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('venta_lineas').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['venta'] }),
+    onError: (error: any) => {
+      toast.error(error?.message || 'Error inesperado');
+    },
+  });
+}
+
+export function useDeleteVenta() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      // Validate no cobros applied before deleting
+      const { count, error: checkErr } = await supabase
+        .from('cobro_aplicaciones')
+        .select('id', { count: 'exact', head: true })
+        .eq('venta_id', id);
+      if (checkErr) throw checkErr;
+      if (count && count > 0) throw new Error('No puedes eliminar una venta con pagos aplicados. Cancélala primero.');
+
+      const { error } = await supabase.from('ventas').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: ['ventas'] });
+      const prev = qc.getQueriesData<any[]>({ queryKey: ['ventas'] });
+      qc.setQueriesData<any[]>({ queryKey: ['ventas'] }, (old) =>
+        old?.filter(v => v.id !== id)
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) ctx.prev.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['ventas'] }),
+  });
+}

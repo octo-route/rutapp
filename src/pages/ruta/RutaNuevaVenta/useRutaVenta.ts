@@ -1,0 +1,824 @@
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { todayInTimezone , todayLocal, roundMoney } from '@/lib/utils';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
+import { queueOperation } from '@/lib/syncQueue';
+import { getOfflineTable } from '@/lib/offlineDb';
+import { supabase } from '@/lib/supabase';
+import { useQueryClient } from '@tanstack/react-query';
+import { useOfflineQuery } from '@/hooks/useOfflineData';
+import { resolveProductPrice, resolveProductPricing, type TarifaLineaRule, type ProductForPricing } from '@/lib/priceResolver';
+import { buildPosLinePricing, type PosPricingItem } from '@/lib/posPricing';
+import { toast } from 'sonner';
+import { usePromocionesActivas, evaluatePromociones, type CartItemForPromo, type PromoResult } from '@/hooks/usePromociones';
+import type { CartItem, DevolucionItem, CuentaPendiente, Step, PagoLinea, DescuentoExtraTipo } from './types';
+import { locationService } from '@/lib/locationService';
+import { useCurrency } from '@/hooks/useCurrency';
+import { useClienteInsights } from '@/hooks/useClienteInsights';
+import { usePermisos } from '@/hooks/usePermisos';
+import { STEPS } from './types';
+
+export function useRutaVenta(opts?: { onAlmacenMissing?: () => void }) {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const urlClienteId = searchParams.get('clienteId');
+  const { empresa, user, profile } = useAuth();
+  const queryClient = useQueryClient();
+
+  const [step, setStep] = useState<Step>('tipo');
+  const [clienteId, setClienteId] = useState<string | null>(urlClienteId);
+  const [clienteNombre, setClienteNombre] = useState('');
+  const [clienteCredito, setClienteCredito] = useState<{ credito: boolean; limite: number; dias: number } | null>(null);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [devoluciones, setDevoluciones] = useState<DevolucionItem[]>([]);
+  const [searchCliente, setSearchCliente] = useState('');
+  const [searchProducto, setSearchProducto] = useState('');
+  const [searchDevProducto, setSearchDevProducto] = useState('');
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [tipoVenta, setTipoVenta] = useState<'venta_directa' | 'pedido'>('venta_directa');
+  const [condicionPago, setCondicionPago] = useState<'contado' | 'credito' | 'por_definir'>('contado');
+  const [notas, setNotas] = useState('');
+  const [fechaEntrega, setFechaEntrega] = useState('');
+  const [pagos, setPagos] = useState<PagoLinea[]>([]);
+  const [cuentasPendientes, setCuentasPendientes] = useState<CuentaPendiente[]>([]);
+  const [showDevSearch, setShowDevSearch] = useState(false);
+  const [showReemplazoFor, setShowReemplazoFor] = useState<string | null>(null);
+  const [searchReemplazo, setSearchReemplazo] = useState('');
+  const [ticketInfo, setTicketInfo] = useState<{ folio: string; fecha: string } | null>(null);
+  const [sinCompra, setSinCompra] = useState(false);
+  const [sinImpuestos, setSinImpuestos] = useState(false);
+  const [motivoSinCompra, setMotivoSinCompra] = useState('');
+  const [savingSinCompra, setSavingSinCompra] = useState(false);
+  // Descuento extra al total (gateado por permiso 'ventas.aplicar_descuento')
+  const [descuentoExtraTipo, setDescuentoExtraTipo] = useState<DescuentoExtraTipo>('monto');
+  const [descuentoExtraValor, setDescuentoExtraValor] = useState<number>(0);
+  const [descuentoExtraMotivo, setDescuentoExtraMotivo] = useState<string>('');
+
+  const { hasPermiso, isOwner } = usePermisos();
+  const canChangePrice = isOwner || hasPermiso('ventas.cambiar_precio', 'ver');
+  const canApplyDiscount = isOwner || hasPermiso('ventas.aplicar_descuento', 'ver');
+
+  const VISITED_KEY = `rutapp_visited_${todayLocal()}`;
+  const markVisited = (cId: string) => {
+    try {
+      const raw = localStorage.getItem(VISITED_KEY);
+      const set = raw ? new Set(JSON.parse(raw)) : new Set();
+      set.add(cId);
+      localStorage.setItem(VISITED_KEY, JSON.stringify([...set]));
+    } catch {}
+  };
+
+  const captureGps = (): { lat: number; lng: number } | null => {
+    return locationService.getLastKnownLocation();
+  };
+
+  const saveVisita = async (tipo: string, opts?: { ventaId?: string; motivo?: string; notasVisita?: string }) => {
+    if (!empresa || !user) return;
+    const cId = clienteId || urlClienteId;
+    const gps = await captureGps();
+    await queueOperation('visitas', 'insert', {
+      id: crypto.randomUUID(), empresa_id: empresa.id, cliente_id: cId, user_id: user.id, tipo,
+      motivo: opts?.motivo || null, notas: opts?.notasVisita || null,
+      gps_lat: gps?.lat ?? null, gps_lng: gps?.lng ?? null,
+      venta_id: opts?.ventaId || null, fecha: new Date().toISOString(), created_at: new Date().toISOString(),
+    });
+  };
+
+  const entregaInmediata = tipoVenta === 'venta_directa';
+
+  const { data: cargasRaw } = useOfflineQuery('cargas', { empresa_id: empresa?.id }, { enabled: !!empresa?.id, orderBy: 'fecha', ascending: false });
+  const activeCarga = useMemo(() => {
+    if (!cargasRaw || !profile) return null;
+    const vendId = profile.id || profile.id;
+    return cargasRaw.find((c: any) => c.vendedor_id === vendId && ['pendiente', 'en_ruta'].includes(c.status)) ?? null;
+  }, [cargasRaw, profile]);
+
+  const { data: cargaLineasRaw } = useOfflineQuery('carga_lineas', { carga_id: activeCarga?.id }, { enabled: !!activeCarga?.id });
+
+  // When no active carga, fall back to the user's assigned warehouse stock
+  const useFallbackStock = !activeCarga;
+  const almacenId = profile?.almacen_id;
+
+  const { data: stockAlmacenRaw } = useOfflineQuery('stock_almacen', {
+    empresa_id: empresa?.id,
+    almacen_id: almacenId,
+  }, {
+    enabled: useFallbackStock && !!empresa?.id && !!almacenId,
+  });
+
+  const stockAbordo = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!useFallbackStock && cargaLineasRaw && cargaLineasRaw.length > 0) {
+      (cargaLineasRaw as any[]).forEach(l => {
+        const disponible = (l.cantidad_cargada ?? 0) - (l.cantidad_vendida ?? 0) - (l.cantidad_devuelta ?? 0);
+        map.set(l.producto_id, Math.max(0, disponible));
+      });
+    } else if (useFallbackStock && almacenId && stockAlmacenRaw) {
+      // Use warehouse-specific stock
+      (stockAlmacenRaw as any[]).forEach(s => {
+        map.set(s.producto_id, s.cantidad ?? 0);
+      });
+    }
+    return map;
+  }, [cargaLineasRaw, useFallbackStock, almacenId, stockAlmacenRaw]);
+
+  const { data: promocionesActivas } = usePromocionesActivas();
+  const { data: clientes } = useOfflineQuery('clientes', { empresa_id: empresa?.id, status: 'activo' }, { enabled: !!empresa?.id, orderBy: 'nombre' });
+
+  useEffect(() => {
+    if (urlClienteId && clientes) {
+      const c = clientes.find(cl => cl.id === urlClienteId);
+      if (c) {
+        setClienteNombre(c.nombre);
+        setClienteCredito({ credito: c.credito ?? false, limite: c.limite_credito ?? 0, dias: c.dias_credito ?? 0 });
+
+        // Fetch real-time saldo from server to avoid stale credit check
+        if (navigator.onLine && c.credito) {
+          (async () => {
+            try {
+              const { data: ventasOnline } = await supabase
+                .from('ventas')
+                .select('saldo_pendiente')
+                .eq('empresa_id', empresa!.id)
+                .eq('cliente_id', urlClienteId!)
+                .eq('condicion_pago', 'credito')
+                .gt('saldo_pendiente', 0)
+                .in('status', ['confirmado', 'entregado', 'facturado']);
+              if (ventasOnline) {
+                const saldoReal = ventasOnline.reduce((s: number, v: any) => s + (v.saldo_pendiente ?? 0), 0);
+                if (Math.abs(saldoReal - saldoPendienteTotal) > 1) {
+                  toast.warning(`Saldo actualizado desde servidor: $${saldoReal.toFixed(2)}`);
+                }
+              }
+            } catch {} // offline — continue with cached data
+          })();
+        }
+      }
+    }
+  }, [urlClienteId, clientes]);
+
+  const { data: allVentas } = useOfflineQuery('ventas', { empresa_id: empresa?.id }, { enabled: !!empresa?.id });
+  const ventasPendientes = useMemo(() => {
+    if (!allVentas || !clienteId) return [];
+    return (allVentas as any[]).filter(v => v.cliente_id === clienteId && (v.saldo_pendiente ?? 0) > 0 && ['confirmado', 'entregado', 'facturado'].includes(v.status)).sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+  }, [allVentas, clienteId]);
+
+  const saldoPendienteTotal = useMemo(() => (ventasPendientes ?? []).reduce((s, v) => s + (v.saldo_pendiente ?? 0), 0), [ventasPendientes]);
+
+  const { data: productos } = useOfflineQuery('productos', { empresa_id: empresa?.id, se_puede_vender: true, status: 'activo' }, { enabled: !!empresa?.id, orderBy: 'nombre' });
+  const { data: tarifasOffline } = useOfflineQuery('tarifas', { empresa_id: empresa?.id, activa: true }, { enabled: !!empresa?.id });
+  const selectedClienteData = clientes?.find(c => c.id === clienteId);
+  const clienteTarifaId = selectedClienteData?.tarifa_id || tarifasOffline?.find((t: any) => t.tipo === 'general')?.id;
+  const clienteListaPrecioId = (selectedClienteData as any)?.lista_precio_id || null;
+  const { data: tarifaLineasOffline } = useOfflineQuery('tarifa_lineas', { tarifa_id: clienteTarifaId }, { enabled: !!clienteTarifaId });
+
+  const resolvePrice = useMemo(() => {
+    const rules = (tarifaLineasOffline ?? []) as TarifaLineaRule[];
+    return (producto: any): number => {
+      if (!rules.length) return producto.precio_principal ?? 0;
+      return resolveProductPrice(rules, { id: producto.id, precio_principal: producto.precio_principal ?? 0, costo: producto.costo ?? 0, clasificacion_id: producto.clasificacion_id, tiene_iva: producto.tiene_iva, iva_pct: producto.iva_pct ?? 16, tiene_ieps: producto.tiene_ieps, ieps_pct: producto.ieps_pct ?? 0, ieps_tipo: producto.ieps_tipo, usa_listas_precio: producto.usa_listas_precio }, clienteListaPrecioId);
+    };
+  }, [tarifaLineasOffline, clienteListaPrecioId]);
+
+  /** Full pricing info for building cart items with raw data */
+  const resolvePricingFull = useMemo(() => {
+    const rules = (tarifaLineasOffline ?? []) as TarifaLineaRule[];
+    return (producto: any) => {
+      const pf: ProductForPricing = { id: producto.id, precio_principal: producto.precio_principal ?? 0, costo: producto.costo ?? 0, clasificacion_id: producto.clasificacion_id, tiene_iva: producto.tiene_iva, iva_pct: producto.iva_pct ?? 16, tiene_ieps: producto.tiene_ieps, ieps_pct: producto.ieps_pct ?? 0, ieps_tipo: producto.ieps_tipo, usa_listas_precio: producto.usa_listas_precio };
+      if (!rules.length) {
+        const fallback = pf.precio_principal;
+        return { unitPrice: fallback, rawUnitPrice: fallback, rawDisplayPrice: fallback, basePrecio: 'sin_impuestos' as string, redondeo: 'ninguno' };
+      }
+      const r = resolveProductPricing(rules, pf, clienteListaPrecioId);
+      return { unitPrice: r.unitPrice, rawUnitPrice: r.rawUnitPrice, rawDisplayPrice: r.rawDisplayPrice, basePrecio: r.basePrecio, redondeo: r.appliedRule?.redondeo ?? 'ninguno' };
+    };
+  }, [tarifaLineasOffline, clienteListaPrecioId]);
+
+  // Recalculate cart prices when client tarifa changes
+  useEffect(() => {
+    if (cart.length === 0 || !productos) return;
+    setCart(prev => prev.map(item => {
+      if (item.es_cambio) return item;
+      const prod = productos.find((p: any) => p.id === item.producto_id);
+      if (!prod) return item;
+      const pf = resolvePricingFull(prod);
+      if (pf.unitPrice === item.precio_unitario) return item;
+      return {
+        ...item,
+        precio_unitario: pf.unitPrice,
+        precio_unitario_sin_redondeo: pf.rawUnitPrice,
+        precio_display_sin_redondeo: pf.rawDisplayPrice,
+        base_precio: pf.basePrecio,
+        redondeo: pf.redondeo,
+      };
+    }));
+  }, [resolvePricingFull, productos]);
+
+  const { data: pedidoSugeridoRaw } = useOfflineQuery('cliente_pedido_sugerido', { cliente_id: clienteId }, { enabled: !!clienteId });
+  const pedidoSugerido = useMemo(() => {
+    if (!pedidoSugeridoRaw || !productos) return [];
+    return (pedidoSugeridoRaw as any[]).map(ps => { const prod = productos.find((p: any) => p.id === ps.producto_id); return prod ? { ...ps, productos: prod } : null; }).filter(Boolean);
+  }, [pedidoSugeridoRaw, productos]);
+
+  // ── Client insights (smart suggestion + alerts) ──
+  const insights = useClienteInsights(clienteId, selectedClienteData);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  useEffect(() => { setBannerDismissed(false); }, [clienteId]);
+
+  const filteredClientes = clientes?.filter(c => !searchCliente || c.nombre.toLowerCase().includes(searchCliente.toLowerCase()) || c.codigo?.toLowerCase().includes(searchCliente.toLowerCase()));
+  const productosDisponibles = useMemo(() => {
+    if (!productos) return [];
+    if (tipoVenta === 'pedido') return productos;
+    if (useFallbackStock && almacenId) {
+      return productos.filter(p => p.vender_sin_stock || (stockAbordo.get(p.id) ?? 0) > 0);
+    }
+    if (useFallbackStock) {
+      return productos.filter(p => p.vender_sin_stock || (p.cantidad ?? 0) > 0);
+    }
+    return productos.filter(p => p.vender_sin_stock || (stockAbordo.get(p.id) ?? 0) > 0);
+  }, [productos, tipoVenta, stockAbordo, useFallbackStock, almacenId]);
+  const filteredProductos = productosDisponibles?.filter(p => !searchProducto || p.nombre.toLowerCase().includes(searchProducto.toLowerCase()) || p.codigo.toLowerCase().includes(searchProducto.toLowerCase()));
+  const filteredDevProductos = productos?.filter(p => !searchDevProducto || p.nombre.toLowerCase().includes(searchDevProducto.toLowerCase()) || p.codigo.toLowerCase().includes(searchDevProducto.toLowerCase()));
+  const filteredReemplazoProductos = productos?.filter(p => !searchReemplazo || p.nombre.toLowerCase().includes(searchReemplazo.toLowerCase()) || p.codigo.toLowerCase().includes(searchReemplazo.toLowerCase()));
+
+  const getMaxQty = (productoId: string) => {
+    if (tipoVenta === 'pedido') return Infinity;
+    const prod = productos?.find(p => p.id === productoId);
+    if (prod?.vender_sin_stock) return Infinity;
+    if (useFallbackStock && almacenId) {
+      return stockAbordo.get(productoId) ?? 0;
+    }
+    if (useFallbackStock) {
+      return prod?.cantidad ?? 0;
+    }
+    return stockAbordo.get(productoId) ?? 0;
+  };
+
+  /** Apply a list of suggested items into the cart, capping qty at available stock */
+  const applySuggestionList = (items: { producto_id: string; cantidad: number }[], label: string) => {
+    if (!productos || !items.length) return;
+    const newItems: CartItem[] = [];
+    let cappedCount = 0;
+    let skippedCount = 0;
+    items.forEach(s => {
+      const prod = (productos as any[]).find(p => p.id === s.producto_id);
+      if (!prod) return;
+      const max = getMaxQty(prod.id);
+      // Skip products with zero stock when in venta_directa mode
+      if (max <= 0 && !prod.vender_sin_stock) { skippedCount++; return; }
+      const finalQty = Math.min(s.cantidad, max);
+      if (finalQty < s.cantidad) cappedCount++;
+      const pf = resolvePricingFull(prod);
+      newItems.push({
+        producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre,
+        precio_unitario: pf.unitPrice, cantidad: finalQty,
+        unidad: (prod.unidades as any)?.abreviatura || 'pz',
+        unidad_id: prod.unidad_venta_id ?? undefined,
+        tiene_iva: prod.tiene_iva ?? false,
+        iva_pct: prod.tiene_iva ? (prod.iva_pct ?? 16) : 0,
+        tiene_ieps: prod.tiene_ieps ?? false,
+        ieps_pct: prod.tiene_ieps ? (prod.ieps_pct ?? 0) : 0,
+        precio_unitario_sin_redondeo: pf.rawUnitPrice,
+        precio_display_sin_redondeo: pf.rawDisplayPrice,
+        base_precio: pf.basePrecio, redondeo: pf.redondeo,
+      });
+    });
+    setCart(prev => [...prev.filter(c => c.es_cambio), ...newItems]);
+    let msg = `${newItems.length} productos cargados (${label})`;
+    if (cappedCount > 0) msg += ` · ${cappedCount} ajustados al stock`;
+    if (skippedCount > 0) msg += ` · ${skippedCount} sin stock`;
+    toast.success(msg);
+  };
+
+  /** Backwards-compatible: smart pick (manual list preferred, fallback to historial) */
+  const applySmartSuggestion = () => applySuggestionList(insights.suggested, insights.manualList.length > 0 ? 'lista' : 'historial');
+  /** Apply ONLY the manually configured list */
+  const applyManualList = () => applySuggestionList(insights.manualList, 'lista configurada');
+  /** Apply ONLY the historical average */
+  const applyHistorialAvg = () => applySuggestionList(insights.historialAvg, 'promedio historial');
+
+  /** Repeat the client's last sale */
+  const repeatLastSale = () => {
+    if (!productos || !insights.lastSaleLineas.length) return;
+    const newItems: CartItem[] = [];
+    insights.lastSaleLineas.forEach(l => {
+      const prod = (productos as any[]).find(p => p.id === l.producto_id);
+      if (!prod) return;
+      const pf = resolvePricingFull(prod);
+      newItems.push({
+        producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre,
+        precio_unitario: pf.unitPrice, cantidad: Number(l.cantidad) || 1,
+        unidad: (prod.unidades as any)?.abreviatura || 'pz',
+        unidad_id: prod.unidad_venta_id ?? undefined,
+        tiene_iva: prod.tiene_iva ?? false,
+        iva_pct: prod.tiene_iva ? (prod.iva_pct ?? 16) : 0,
+        tiene_ieps: prod.tiene_ieps ?? false,
+        ieps_pct: prod.tiene_ieps ? (prod.ieps_pct ?? 0) : 0,
+        precio_unitario_sin_redondeo: pf.rawUnitPrice,
+        precio_display_sin_redondeo: pf.rawDisplayPrice,
+        base_precio: pf.basePrecio, redondeo: pf.redondeo,
+      });
+    });
+    setCart(prev => [...prev.filter(c => c.es_cambio), ...newItems]);
+    toast.success(`${newItems.length} productos de la última venta`);
+  };
+
+  /** Find product by scanned code (barcode → SKU → name fuzzy) */
+  const findProductByCode = (code: string): any | null => {
+    if (!productos || !code) return null;
+    const c = code.trim().toLowerCase();
+    const list = productos as any[];
+    return (
+      list.find(p => (p.codigo_barras ?? '').toLowerCase() === c) ||
+      list.find(p => (p.codigo ?? '').toLowerCase() === c) ||
+      list.find(p => (p.codigo_barras ?? '').toLowerCase().includes(c)) ||
+      list.find(p => (p.codigo ?? '').toLowerCase().includes(c)) ||
+      list.find(p => (p.nombre ?? '').toLowerCase().includes(c)) ||
+      null
+    );
+  };
+
+  /** Set exact qty (used by numeric keypad) */
+  const setItemQty = (productoId: string, qty: number, esCambio = false) => {
+    const match = !!esCambio;
+    if (qty <= 0) {
+      setCart(prev => prev.filter(c => !(c.producto_id === productoId && !!c.es_cambio === match)));
+      return;
+    }
+    const maxQty = esCambio ? Infinity : getMaxQty(productoId);
+    const capped = Math.min(qty, maxQty);
+    setCart(prev => prev.map(c => c.producto_id === productoId && !!c.es_cambio === match ? { ...c, cantidad: capped } : c));
+  };
+
+  const addToCart = (p: any, esCambio = false) => {
+    const maxQty = esCambio ? Infinity : getMaxQty(p.id);
+    const existing = cart.find(c => c.producto_id === p.id && c.es_cambio === esCambio);
+    if (existing) {
+      const newQty = Math.min(existing.cantidad + 1, maxQty);
+      if (newQty <= existing.cantidad) { toast.error('Stock a bordo insuficiente'); return; }
+      setCart(cart.map(c => c.producto_id === p.id && c.es_cambio === esCambio ? { ...c, cantidad: newQty } : c));
+    } else {
+      if (maxQty < 1) { toast.error('Sin stock a bordo'); return; }
+      const pf = resolvePricingFull(p);
+      setCart([...cart, { producto_id: p.id, codigo: p.codigo, nombre: p.nombre, precio_unitario: esCambio ? 0 : pf.unitPrice, cantidad: 1, unidad: 'pz', unidad_id: p.unidad_venta_id ?? undefined, tiene_iva: esCambio ? false : (p.tiene_iva ?? false), iva_pct: esCambio ? 0 : (p.tiene_iva ? (p.iva_pct ?? 16) : 0), tiene_ieps: esCambio ? false : (p.tiene_ieps ?? false), ieps_pct: esCambio ? 0 : (p.tiene_ieps ? (p.ieps_pct ?? 0) : 0), es_cambio: esCambio, precio_unitario_sin_redondeo: esCambio ? 0 : pf.rawUnitPrice, precio_display_sin_redondeo: esCambio ? 0 : pf.rawDisplayPrice, base_precio: pf.basePrecio, redondeo: pf.redondeo }]);
+    }
+  };
+
+  const updateQty = (productoId: string, delta: number, esCambio?: boolean) => { const match = !!esCambio; setCart(prev => prev.map(c => { if (c.producto_id !== productoId || !!c.es_cambio !== match) return c; const newQty = c.cantidad + delta; const maxQty = esCambio ? Infinity : getMaxQty(productoId); if (newQty > maxQty) return c; return newQty > 0 ? { ...c, cantidad: newQty } : c; })); };
+  const removeFromCart = (productoId: string, esCambio?: boolean) => { const match = !!esCambio; setCart(prev => prev.filter(c => !(c.producto_id === productoId && !!c.es_cambio === match))); };
+  const getItemInCart = (productoId: string) => cart.find(c => c.producto_id === productoId && !c.es_cambio);
+
+  const addDevolucion = (p: any, defaults?: { motivo?: DevolucionItem['motivo']; accion?: DevolucionItem['accion'] }) => { if (devoluciones.find(d => d.producto_id === p.id)) { updateDevQty(p.id, (devoluciones.find(d => d.producto_id === p.id)?.cantidad ?? 0) + 1); return; } setDevoluciones(prev => [...prev, { producto_id: p.id, codigo: p.codigo, nombre: p.nombre, cantidad: 1, motivo: defaults?.motivo ?? 'no_vendido', accion: defaults?.accion ?? 'reposicion', precio_unitario: p.precio_principal ?? 0 }]); };
+  const updateDevQty = (productoId: string, qty: number) => { if (qty <= 0) setDevoluciones(prev => prev.filter(d => d.producto_id !== productoId)); else setDevoluciones(prev => prev.map(d => d.producto_id === productoId ? { ...d, cantidad: qty } : d)); };
+  const updateDevMotivo = (productoId: string, motivo: DevolucionItem['motivo']) => { setDevoluciones(prev => prev.map(d => { if (d.producto_id !== productoId) return d; const updated = { ...d, motivo }; if (updated.accion === 'reposicion' && motivo !== 'cambio' && motivo !== 'danado' && motivo !== 'caducado' && motivo !== 'error_pedido') { /* keep accion */ } return updated; })); };
+  const updateDevAccion = (productoId: string, accion: DevolucionItem['accion']) => { setDevoluciones(prev => prev.map(d => { if (d.producto_id !== productoId) return d; const updated = { ...d, accion }; if (accion !== 'reposicion') { delete updated.reemplazo_producto_id; delete updated.reemplazo_nombre; } return updated; })); };
+  const batchUpdateDevDefaults = (motivo: DevolucionItem['motivo'], accion: DevolucionItem['accion']) => { setDevoluciones(prev => prev.map(d => { const updated = { ...d, motivo, accion }; if (accion !== 'reposicion') { delete updated.reemplazo_producto_id; delete updated.reemplazo_nombre; } return updated; })); };
+  const setReemplazo = (devProductoId: string, p: any) => { setDevoluciones(prev => prev.map(d => d.producto_id === devProductoId ? { ...d, reemplazo_producto_id: p.id, reemplazo_nombre: p.nombre } : d)); setShowReemplazoFor(null); setSearchReemplazo(''); };
+  const removeDevolucion = (productoId: string) => { setDevoluciones(prev => prev.filter(d => d.producto_id !== productoId)); };
+
+  const processDevolucionesAndGoToProductos = () => {
+    let newCart = cart.filter(c => !c.es_cambio);
+    // Add replacement products (reposición) at $0
+    devoluciones.filter(d => d.accion === 'reposicion' && d.reemplazo_producto_id).forEach(d => {
+      const p = productos?.find(pr => pr.id === d.reemplazo_producto_id);
+      if (p) {
+        const existing = newCart.find(c => c.producto_id === p.id && c.es_cambio);
+        if (existing) { newCart = newCart.map(c => c.producto_id === p.id && c.es_cambio ? { ...c, cantidad: c.cantidad + d.cantidad } : c); }
+        else { newCart.push({ producto_id: p.id, codigo: p.codigo, nombre: p.nombre, precio_unitario: 0, cantidad: d.cantidad, unidad: 'pz', tiene_iva: false, iva_pct: 0, tiene_ieps: false, ieps_pct: 0, es_cambio: true }); }
+      }
+    });
+    setCart(newCart);
+    setStep('productos');
+  };
+
+  const selectedCliente = clientes?.find(c => c.id === clienteId);
+  const promoResults = useMemo(() => {
+    if (!promocionesActivas || cart.length === 0) return [] as PromoResult[];
+    const cartForPromo: CartItemForPromo[] = cart.filter(c => !c.es_cambio).map(c => {
+      const prod = productos?.find((p: any) => p.id === c.producto_id);
+      return { producto_id: c.producto_id, clasificacion_id: prod?.clasificacion_id ?? undefined, precio_unitario: c.precio_unitario, cantidad: c.cantidad };
+    });
+    return evaluatePromociones(promocionesActivas, cartForPromo, clienteId || undefined, (selectedCliente as any)?.zona_id || undefined);
+  }, [promocionesActivas, cart, clienteId, selectedCliente, productos]);
+
+  // Build a map of raw promo discount per product
+  const promoRawByProduct = useMemo(() => {
+    const m = new Map<string, number>();
+    promoResults.forEach(r => {
+      if (r.producto_id) m.set(r.producto_id, (m.get(r.producto_id) ?? 0) + r.descuento);
+    });
+    return m;
+  }, [promoResults]);
+
+  const descuentoDevolucion = useMemo(() => devoluciones.filter(d => d.accion === 'descuento_venta').reduce((s, d) => s + d.precio_unitario * d.cantidad, 0), [devoluciones]);
+
+  const totals = useMemo(() => {
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    let subtotal = 0, iva = 0, ieps = 0, items = 0, descuentoPromo = 0;
+    cart.forEach(item => {
+      if (item.es_cambio) { items += item.cantidad; return; }
+      const promoDisc = promoRawByProduct.get(item.producto_id) ?? 0;
+      const pricingItem: PosPricingItem = {
+        precio_unitario: item.precio_unitario,
+        precio_unitario_sin_redondeo: item.precio_unitario_sin_redondeo ?? item.precio_unitario,
+        precio_display_sin_redondeo: item.precio_display_sin_redondeo ?? item.precio_unitario,
+        cantidad: item.cantidad,
+        tiene_iva: sinImpuestos ? false : item.tiene_iva,
+        iva_pct: item.iva_pct,
+        tiene_ieps: sinImpuestos ? false : item.tiene_ieps,
+        ieps_pct: item.ieps_pct,
+        base_precio: (item.base_precio ?? 'sin_impuestos') as any,
+        redondeo: item.redondeo ?? 'ninguno',
+      };
+      const lp = buildPosLinePricing(pricingItem, promoDisc);
+      subtotal += lp.subtotal;
+      iva += lp.iva;
+      ieps += lp.ieps;
+      descuentoPromo += lp.effectiveDiscount;
+      items += item.cantidad;
+    });
+    const preExtra = r2(Math.max(0, subtotal + ieps + iva - descuentoDevolucion));
+    // Solo aplica si tiene permiso y valor > 0
+    const extraVal = canApplyDiscount && descuentoExtraValor > 0 ? descuentoExtraValor : 0;
+    const extraAmt = extraVal > 0
+      ? r2(descuentoExtraTipo === 'porcentaje' ? preExtra * (extraVal / 100) : Math.min(extraVal, preExtra))
+      : 0;
+    const totalDescuentos = r2(descuentoPromo + descuentoDevolucion + extraAmt);
+    const total = r2(Math.max(0, preExtra - extraAmt));
+    return { subtotal: r2(subtotal), iva: r2(iva), ieps: r2(ieps), total, items, descuento: totalDescuentos, descuentoDevolucion: r2(descuentoDevolucion), descuentoExtra: extraAmt };
+  }, [cart, promoRawByProduct, descuentoDevolucion, sinImpuestos, canApplyDiscount, descuentoExtraValor, descuentoExtraTipo]);
+
+  const creditoDisponible = clienteCredito ? clienteCredito.limite - saldoPendienteTotal : 0;
+  const excedeCredito = condicionPago === 'credito' && totals.total > creditoDisponible;
+  const totalPagosLineas = pagos.reduce((s, p) => s + p.monto, 0);
+
+  // Auto-distribute surplus payment to pending accounts (FIFO)
+  useEffect(() => {
+    if (condicionPago !== 'contado' || cuentasPendientes.length === 0) return;
+    const surplus = totalPagosLineas - totals.total;
+    if (surplus <= 0) {
+      // Reset any auto-assigned amounts when payment doesn't cover current sale
+      const hasAny = cuentasPendientes.some(c => c.montoAplicar > 0);
+      if (hasAny) setCuentasPendientes(prev => prev.map(c => ({ ...c, montoAplicar: 0 })));
+      return;
+    }
+    let remaining = surplus;
+    const updated = cuentasPendientes.map(c => {
+      const apply = Math.min(remaining, c.saldo_pendiente);
+      remaining -= apply;
+      return { ...c, montoAplicar: Math.round(apply * 100) / 100 };
+    });
+    // Only update if values actually changed to avoid infinite loop
+    const changed = updated.some((u, i) => u.montoAplicar !== cuentasPendientes[i].montoAplicar);
+    if (changed) setCuentasPendientes(updated);
+  }, [totalPagosLineas, totals.total, condicionPago, cuentasPendientes.length]);
+
+  const totalAplicarCuentas = cuentasPendientes.reduce((s, c) => s + c.montoAplicar, 0);
+  const totalACobrar = (condicionPago === 'contado' ? totals.total : 0) + totalAplicarCuentas;
+  const montoRecibidoNum = totalPagosLineas;
+  const cambio = pagos.some(p => p.metodo_pago === 'efectivo') ? Math.max(0, totalPagosLineas - totalACobrar) : 0;
+
+  const initCuentasPendientes = () => { if (ventasPendientes && ventasPendientes.length > 0) setCuentasPendientes(ventasPendientes.map(v => ({ id: v.id, folio: v.folio, fecha: v.fecha, total: v.total ?? 0, saldo_pendiente: v.saldo_pendiente ?? 0, montoAplicar: 0 }))); else setCuentasPendientes([]); };
+  const liquidarTodas = () => { setCuentasPendientes(prev => prev.map(c => ({ ...c, montoAplicar: c.saldo_pendiente }))); };
+  const updateCuentaMonto = (id: string, monto: number) => { setCuentasPendientes(prev => prev.map(c => c.id === id ? { ...c, montoAplicar: Math.min(Math.max(0, monto), c.saldo_pendiente) } : c)); };
+
+  const updateCargaVendidaOffline = async (items: CartItem[]) => {
+    try {
+      const cargasTable = getOfflineTable('cargas'); const cargaLineasTable = getOfflineTable('carga_lineas');
+      if (!cargasTable || !cargaLineasTable) return;
+      const allCargas = await cargasTable.toArray();
+      const ac = allCargas.filter((c: any) => c.empresa_id === empresa?.id && c.status === 'en_ruta').sort((a: any, b: any) => (b.fecha > a.fecha ? 1 : -1))[0];
+      if (!ac) return;
+      const allLineas = await cargaLineasTable.toArray();
+      for (const item of items) {
+        const cl = allLineas.find((l: any) => l.carga_id === ac.id && l.producto_id === item.producto_id);
+        if (cl) await queueOperation('carga_lineas', 'update', { id: cl.id, carga_id: cl.carga_id, producto_id: cl.producto_id, cantidad_cargada: cl.cantidad_cargada, cantidad_vendida: (cl.cantidad_vendida ?? 0) + item.cantidad, cantidad_devuelta: cl.cantidad_devuelta ?? 0 });
+      }
+    } catch (e) { console.error('Error updating carga offline:', e); }
+  };
+
+  const handleSave = async () => {
+    if (!empresa || !user) return;
+     if (!profile?.almacen_id) {
+      opts?.onAlmacenMissing?.();
+      return;
+    }
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      const ventaId = crypto.randomUUID();
+      let localFolio = '';
+      // Try to get folio from server first (prevents duplicates between offline vendors)
+      try {
+        const { data: folioData } = await (supabase.rpc as any)('generate_folio', {
+          p_empresa_id: empresa.id,
+          p_tipo: tipoVenta === 'pedido' ? 'PED' : 'VTA',
+        });
+        if (folioData) localFolio = String(folioData);
+      } catch {}
+
+      // Offline fallback: use UUID-based folio, will NOT collide
+      if (!localFolio) {
+        const prefix = tipoVenta === 'pedido' ? 'PED' : 'VTA';
+        localFolio = `${prefix}-${ventaId.slice(0, 8).toUpperCase()}`;
+      }
+
+      if (devoluciones.length > 0 && clienteId) {
+        const devId = crypto.randomUUID();
+        const cargaIdForDev = activeCarga?.id || null;
+        await queueOperation('devoluciones', 'insert', { id: devId, empresa_id: empresa.id, user_id: user.id, vendedor_id: profile?.id || profile?.id || null, cliente_id: clienteId, carga_id: cargaIdForDev, venta_id: ventaId, tipo: 'tienda', fecha: todayInTimezone(empresa.zona_horaria), created_at: new Date().toISOString() });
+        for (const d of devoluciones) {
+          const montoCredito = (d.accion === 'nota_credito' || d.accion === 'devolucion_dinero' || d.accion === 'descuento_venta') ? d.precio_unitario * d.cantidad : 0;
+          await queueOperation('devolucion_lineas', 'insert', {
+            id: crypto.randomUUID(), devolucion_id: devId, producto_id: d.producto_id, cantidad: d.cantidad,
+            motivo: d.motivo, accion: d.accion, reemplazo_producto_id: d.reemplazo_producto_id || null,
+            monto_credito: montoCredito, created_at: new Date().toISOString(),
+          });
+
+          // ── Restore inventory for returned products ──
+          const destAlmacenId = profile?.almacen_id || null;
+
+          if (activeCarga) {
+            // Has active carga → update carga_lineas devuelta count
+            try {
+              const cargaLineasTable = getOfflineTable('carga_lineas');
+              if (cargaLineasTable) {
+                const allCL = await cargaLineasTable.toArray();
+                const cl = allCL.find((l: any) => l.carga_id === activeCarga.id && l.producto_id === d.producto_id);
+                if (cl) {
+                  await queueOperation('carga_lineas', 'update', {
+                    id: cl.id, carga_id: cl.carga_id, producto_id: cl.producto_id,
+                    cantidad_cargada: cl.cantidad_cargada,
+                    cantidad_vendida: cl.cantidad_vendida ?? 0,
+                    cantidad_devuelta: (cl.cantidad_devuelta ?? 0) + d.cantidad,
+                  });
+                }
+              }
+            } catch (e) { console.error('Error updating carga devuelta:', e); }
+          }
+
+          // Always restore stock to user's assigned warehouse
+          if (destAlmacenId) {
+            try {
+              const stockTable = getOfflineTable('stock_almacen');
+              if (stockTable) {
+                const allStock = await stockTable.toArray();
+                const existing = allStock.find((s: any) => s.almacen_id === destAlmacenId && s.producto_id === d.producto_id);
+                if (existing) {
+                  await queueOperation('stock_almacen', 'update', {
+                    id: existing.id, almacen_id: destAlmacenId, producto_id: d.producto_id,
+                    empresa_id: empresa.id, cantidad: (existing.cantidad ?? 0) + d.cantidad,
+                  });
+                } else {
+                  await queueOperation('stock_almacen', 'insert', {
+                    id: crypto.randomUUID(), almacen_id: destAlmacenId, producto_id: d.producto_id,
+                    empresa_id: empresa.id, cantidad: d.cantidad,
+                  });
+                }
+              }
+              // Also update global product stock
+              const prodTable = getOfflineTable('productos');
+              if (prodTable) {
+                const prod = await prodTable.get(d.producto_id);
+                if (prod) {
+                  await queueOperation('productos', 'update', {
+                    id: d.producto_id, cantidad: (prod.cantidad ?? 0) + d.cantidad,
+                  });
+                }
+              }
+            } catch (e) { console.error('Error restoring stock for devolution:', e); }
+
+            // Log inventory movement
+            await queueOperation('movimientos_inventario', 'insert', {
+              id: crypto.randomUUID(), empresa_id: empresa.id, tipo: 'entrada',
+              producto_id: d.producto_id, cantidad: d.cantidad,
+              almacen_destino_id: destAlmacenId,
+              referencia_tipo: 'devolucion', referencia_id: devId,
+              user_id: user.id, fecha: todayInTimezone(empresa.zona_horaria),
+              created_at: new Date().toISOString(),
+              notas: `Devolución ${d.nombre} - ${d.motivo}`,
+            });
+          }
+        }
+      }
+
+      const applyPayment = totalACobrar > 0;
+      // saldo_pendiente starts as full total; will be reduced after payments are applied
+      const tarifaId = clienteTarifaId || selectedClienteData?.tarifa_id || null;
+      const extraAmtSaved = (totals as any).descuentoExtra ?? 0;
+      const extraValSaved = canApplyDiscount && descuentoExtraValor > 0 ? descuentoExtraValor : 0;
+      await queueOperation('ventas', 'insert', { id: ventaId, empresa_id: empresa.id, cliente_id: clienteId, tipo: tipoVenta, vendedor_id: profile?.id || profile?.id || null, condicion_pago: condicionPago, entrega_inmediata: entregaInmediata, fecha_entrega: tipoVenta === 'pedido' && fechaEntrega ? fechaEntrega : null, status: 'confirmado', notas: notas || null, folio: localFolio, tarifa_id: tarifaId, almacen_id: profile?.almacen_id || null, subtotal: totals.subtotal, iva_total: totals.iva, ieps_total: totals.ieps, descuento_total: totals.descuento, descuento_extra: extraValSaved, descuento_extra_tipo: descuentoExtraTipo, descuento_extra_motivo: extraAmtSaved > 0 ? (descuentoExtraMotivo || null) : null, total: totals.total, saldo_pendiente: totals.total, fecha: todayInTimezone(empresa.zona_horaria), created_at: new Date().toISOString() });
+
+      for (const item of cart) { const lineSub = item.precio_unitario * item.cantidad; const lineIeps = (!sinImpuestos && item.tiene_ieps) ? lineSub * (item.ieps_pct / 100) : 0; const lineIva = (!sinImpuestos && item.tiene_iva) ? (lineSub + lineIeps) * (item.iva_pct / 100) : 0; const savedIvaPct = sinImpuestos ? 0 : item.iva_pct; const savedIepsPct = sinImpuestos ? 0 : item.ieps_pct; await queueOperation('venta_lineas', 'insert', { id: crypto.randomUUID(), venta_id: ventaId, producto_id: item.producto_id, descripcion: item.nombre, cantidad: item.cantidad, precio_unitario: item.precio_unitario, unidad_id: item.unidad_id || null, subtotal: lineSub, iva_pct: savedIvaPct, iva_monto: lineIva, ieps_pct: savedIepsPct, ieps_monto: lineIeps, descuento_pct: 0, total: lineSub + lineIeps + lineIva, notas: item.es_cambio ? 'CAMBIO - Sin cargo' : null, created_at: new Date().toISOString() }); }
+
+      if (applyPayment && clienteId && pagos.length > 0) {
+        // Snapshot pending accounts to avoid mutating React state
+        const cuentasSnapshot = cuentasPendientes
+          .filter(c => c.montoAplicar > 0)
+          .map(c => ({ id: c.id, montoAplicar: c.montoAplicar, saldo_pendiente: c.saldo_pendiente }));
+        let saleRemaining = condicionPago === 'contado' ? totals.total : 0;
+        let cuentaIdx = 0;
+        const accountApplied = new Map<string, number>();
+
+        for (const pago of pagos) {
+          if (pago.monto <= 0) continue;
+          const cobroId = crypto.randomUUID();
+
+          // Track applications first to determine the actual covered amount
+          // (the cobro must reflect only what was applied, not the cash received — change is not part of the cobro)
+          const aplicaciones: Array<{ venta_id: string; monto: number }> = [];
+          let remaining = pago.monto;
+
+          // First apply to current sale
+          if (saleRemaining > 0 && remaining > 0) {
+            const apply = Math.min(remaining, saleRemaining);
+            aplicaciones.push({ venta_id: ventaId, monto: apply });
+            saleRemaining -= apply;
+            remaining -= apply;
+          }
+
+          // Then apply to pending accounts using snapshot (no state mutation)
+          while (remaining > 0.01 && cuentaIdx < cuentasSnapshot.length) {
+            const cuenta = cuentasSnapshot[cuentaIdx];
+            const alreadyApplied = accountApplied.get(cuenta.id) ?? 0;
+            const cuentaRemaining = cuenta.montoAplicar - alreadyApplied;
+            if (cuentaRemaining <= 0.01) { cuentaIdx++; continue; }
+            const apply = Math.min(remaining, cuentaRemaining);
+            aplicaciones.push({ venta_id: cuenta.id, monto: apply });
+            accountApplied.set(cuenta.id, alreadyApplied + apply);
+            remaining -= apply;
+            if (alreadyApplied + apply >= cuenta.montoAplicar - 0.01) cuentaIdx++;
+          }
+
+          // Cobro = sum of applications (excludes change given back)
+          const montoCobro = roundMoney(aplicaciones.reduce((s, a) => s + a.monto, 0));
+          if (montoCobro <= 0) continue;
+
+          await queueOperation('cobros', 'insert', { id: cobroId, empresa_id: empresa.id, cliente_id: clienteId, user_id: user.id, monto: montoCobro, metodo_pago: pago.metodo_pago, referencia: pago.referencia || null, fecha: todayInTimezone(empresa.zona_horaria), created_at: new Date().toISOString() });
+
+          for (const ap of aplicaciones) {
+            await queueOperation('cobro_aplicaciones', 'insert', { id: crypto.randomUUID(), cobro_id: cobroId, venta_id: ap.venta_id, monto_aplicado: ap.monto, created_at: new Date().toISOString() });
+          }
+        }
+
+        // Update saldo_pendiente for the current sale based on actual payments applied
+        const appliedToSale = (condicionPago === 'contado' ? totals.total : 0) - saleRemaining;
+        if (appliedToSale > 0) {
+          await queueOperation('ventas', 'update', { id: ventaId, saldo_pendiente: Math.max(0, totals.total - appliedToSale) });
+        }
+
+        // Update saldo_pendiente for pending accounts using tracked amounts
+        for (const cuenta of cuentasSnapshot) {
+          const applied = accountApplied.get(cuenta.id) ?? 0;
+          if (applied > 0) {
+            const nuevoSaldo = Math.max(0, cuenta.saldo_pendiente - applied);
+            await queueOperation('ventas', 'update', { id: cuenta.id, saldo_pendiente: nuevoSaldo });
+            // Update local offline cache immediately
+            try {
+              const ventasTable = getOfflineTable('ventas');
+              if (ventasTable) {
+                const localVenta = await ventasTable.get(cuenta.id);
+                if (localVenta) {
+                  await ventasTable.put({ ...localVenta, saldo_pendiente: nuevoSaldo });
+                }
+              }
+            } catch {}
+          }
+        }
+      } else if (condicionPago === 'contado' && totals.total === 0) {
+        // Zero-total sale, mark as paid
+        await queueOperation('ventas', 'update', { id: ventaId, saldo_pendiente: 0 });
+      }
+
+      await updateCargaVendidaOffline(cart);
+      await saveVisita(tipoVenta === 'pedido' ? 'pedido' : 'venta', { ventaId });
+      if (clienteId) markVisited(clienteId);
+      toast.success('¡Venta registrada! Se sincronizará automáticamente');
+      queryClient.invalidateQueries({ queryKey: ['ruta-ventas'] });
+      queryClient.invalidateQueries({ queryKey: ['ruta-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['ruta-cuentas-pendientes'] });
+      queryClient.invalidateQueries({ queryKey: ['ruta-carga'] });
+      setTicketInfo({ folio: localFolio, fecha: new Date().toLocaleDateString('es-MX') });
+    } catch (err: any) { toast.error(err.message); } finally { setSaving(false); savingRef.current = false; }
+  };
+
+  const currentStepIdx = STEPS.indexOf(step);
+  const goBack = () => { if (currentStepIdx === 0) navigate('/ruta/ventas'); else setStep(STEPS[currentStepIdx - 1]); };
+  const goToPayment = () => { initCuentasPendientes(); setStep('pago'); };
+  const { symbol: currSym, fmt } = useCurrency();
+  const fmtM = fmt;
+  const cambioItems = cart.filter(c => c.es_cambio);
+  const chargedItems = cart.filter(c => !c.es_cambio);
+
+  /** Compute the suggested (tarifa-based) price for a product */
+  const getSuggestedPrice = (productoId: string): number => {
+    const prod = productos?.find((p: any) => p.id === productoId);
+    if (!prod) return 0;
+    return resolvePricingFull(prod).unitPrice;
+  };
+
+  /** Set unit price manually for a product (creates the cart line if missing) */
+  const setItemPriceManual = (productoId: string, price: number) => {
+    const prod = productos?.find((p: any) => p.id === productoId);
+    if (!prod) return;
+    setCart(prev => {
+      const existing = prev.find(c => c.producto_id === productoId && !c.es_cambio);
+      if (existing) {
+        return prev.map(c => c.producto_id === productoId && !c.es_cambio
+          ? { ...c, precio_unitario: price, precio_manual: true, lista_precio_id: null, lista_nombre: null }
+          : c);
+      }
+      return [...prev, {
+        producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre,
+        precio_unitario: price, cantidad: 1, unidad: (prod.unidades as any)?.abreviatura || 'pz',
+        unidad_id: prod.unidad_venta_id ?? undefined,
+        tiene_iva: prod.tiene_iva ?? false,
+        iva_pct: prod.tiene_iva ? (prod.iva_pct ?? 16) : 0,
+        tiene_ieps: prod.tiene_ieps ?? false,
+        ieps_pct: prod.tiene_ieps ? (prod.ieps_pct ?? 0) : 0,
+        precio_manual: true, lista_precio_id: null, lista_nombre: null,
+      }];
+    });
+    toast.success(`Precio actualizado: $${price.toFixed(2)}`);
+  };
+
+  /** Apply a price-list price to a product (creates the cart line if missing) */
+  const setItemPriceFromLista = (
+    productoId: string,
+    listaPrecioId: string | null,
+    _tarifaId: string | null,
+    unitPrice: number,
+    listaNombre: string,
+  ) => {
+    const prod = productos?.find((p: any) => p.id === productoId);
+    if (!prod) return;
+    setCart(prev => {
+      const existing = prev.find(c => c.producto_id === productoId && !c.es_cambio);
+      if (existing) {
+        return prev.map(c => c.producto_id === productoId && !c.es_cambio
+          ? { ...c, precio_unitario: unitPrice, precio_manual: false, lista_precio_id: listaPrecioId, lista_nombre: listaNombre }
+          : c);
+      }
+      return [...prev, {
+        producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre,
+        precio_unitario: unitPrice, cantidad: 1, unidad: (prod.unidades as any)?.abreviatura || 'pz',
+        unidad_id: prod.unidad_venta_id ?? undefined,
+        tiene_iva: prod.tiene_iva ?? false,
+        iva_pct: prod.tiene_iva ? (prod.iva_pct ?? 16) : 0,
+        tiene_ieps: prod.tiene_ieps ?? false,
+        ieps_pct: prod.tiene_ieps ? (prod.ieps_pct ?? 0) : 0,
+        precio_manual: false, lista_precio_id: listaPrecioId, lista_nombre: listaNombre,
+      }];
+    });
+    toast.success(`Precio aplicado: ${listaNombre}`);
+  };
+
+  /** Reset a product to its suggested (tarifa) price */
+  const resetItemToSuggested = (productoId: string) => {
+    const prod = productos?.find((p: any) => p.id === productoId);
+    if (!prod) return;
+    const pf = resolvePricingFull(prod);
+    setCart(prev => prev.map(c => c.producto_id === productoId && !c.es_cambio
+      ? { ...c, precio_unitario: pf.unitPrice, precio_unitario_sin_redondeo: pf.rawUnitPrice,
+          precio_display_sin_redondeo: pf.rawDisplayPrice, base_precio: pf.basePrecio,
+          redondeo: pf.redondeo, precio_manual: false, lista_precio_id: null, lista_nombre: null }
+      : c));
+    toast.success('Precio restablecido al sugerido');
+  };
+
+
+  return {
+    navigate, empresa, user, profile, urlClienteId,
+    step, setStep, clienteId, setClienteId, clienteNombre, setClienteNombre,
+    clienteCredito, setClienteCredito, cart, setCart, devoluciones, setDevoluciones,
+    searchCliente, setSearchCliente, searchProducto, setSearchProducto,
+    searchDevProducto, setSearchDevProducto, saving, tipoVenta, setTipoVenta,
+    condicionPago, setCondicionPago, notas, setNotas, fechaEntrega, setFechaEntrega,
+    pagos, setPagos,
+    cuentasPendientes, showDevSearch, setShowDevSearch,
+    showReemplazoFor, setShowReemplazoFor, searchReemplazo, setSearchReemplazo,
+    ticketInfo, sinCompra, setSinCompra, motivoSinCompra, setMotivoSinCompra, savingSinCompra, setSavingSinCompra, sinImpuestos, setSinImpuestos,
+    entregaInmediata, stockAbordo, usandoAlmacen: useFallbackStock, clientes, productos, filteredClientes,
+    filteredProductos, filteredDevProductos, filteredReemplazoProductos, pedidoSugerido,
+    promoResults, totals, creditoDisponible, excedeCredito, totalAplicarCuentas,
+    totalACobrar, montoRecibidoNum, cambio, saldoPendienteTotal, cambioItems, chargedItems,
+    currentStepIdx, goBack, goToPayment, fmt, fmtM, currSym, markVisited, saveVisita,
+    addToCart, updateQty, removeFromCart, getItemInCart, getMaxQty, setItemQty,
+    addDevolucion, updateDevQty, updateDevMotivo, updateDevAccion, batchUpdateDevDefaults, setReemplazo, removeDevolucion,
+    processDevolucionesAndGoToProductos, initCuentasPendientes, liquidarTodas, updateCuentaMonto,
+    handleSave,
+    // Insights & smart actions
+    insights, bannerDismissed, setBannerDismissed,
+    applySmartSuggestion, applyManualList, applyHistorialAvg, repeatLastSale, findProductByCode,
+    // Price overrides
+    getSuggestedPrice, setItemPriceManual, setItemPriceFromLista, resetItemToSuggested,
+    // Permisos
+    canChangePrice, canApplyDiscount,
+    // Descuento extra
+    descuentoExtraTipo, setDescuentoExtraTipo,
+    descuentoExtraValor, setDescuentoExtraValor,
+    descuentoExtraMotivo, setDescuentoExtraMotivo,
+  };
+}

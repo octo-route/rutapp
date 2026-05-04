@@ -1,0 +1,577 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+const PER_USER_QUOTA = 30; // optimizaciones incluidas por usuario activo / mes
+const MAX_WAYPOINTS_PER_REQUEST = 23; // Google Routes hard limit is 25 incl. origin/destination
+const REAL_MATRIX_MAX_STOPS = 60; // arriba de esto usamos Haversine para no disparar costo
+
+type LatLng = { lat: number; lng: number };
+type Waypoint = LatLng & { id: string; colonia?: string | null };
+
+function haversine(a: LatLng, b: LatLng): number {
+  const R = 6371000;
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Construye matriz NxN de distancias REALES por calle usando Google Routes
+ * computeRouteMatrix. N = waypoints.length + 1 (índice 0 = origen).
+ * Devuelve null si falla, para poder hacer fallback a Haversine.
+ */
+async function buildRealDistanceMatrix(
+  googleApiKey: string,
+  origin: LatLng,
+  waypoints: Waypoint[],
+): Promise<number[][] | null> {
+  const points: LatLng[] = [origin, ...waypoints];
+  const n = points.length;
+  // Google computeRouteMatrix: máx 625 elementos por request (25x25). Para N<=25 cabe en 1 request.
+  // Para N mayor, hacemos en bloques.
+  const matrix: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
+  const BLOCK = 25;
+
+  try {
+    for (let oStart = 0; oStart < n; oStart += BLOCK) {
+      for (let dStart = 0; dStart < n; dStart += BLOCK) {
+        const origins = points.slice(oStart, oStart + BLOCK);
+        const destinations = points.slice(dStart, dStart + BLOCK);
+        const body = {
+          origins: origins.map(p => ({ waypoint: { location: { latLng: { latitude: p.lat, longitude: p.lng } } } })),
+          destinations: destinations.map(p => ({ waypoint: { location: { latLng: { latitude: p.lat, longitude: p.lng } } } })),
+          travelMode: "DRIVE",
+        };
+        const res = await fetch("https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": googleApiKey,
+            "X-Goog-FieldMask": "originIndex,destinationIndex,distanceMeters,condition",
+          },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          console.error("DistanceMatrix block error:", await res.text());
+          return null;
+        }
+        const data = await res.json();
+        if (!Array.isArray(data)) {
+          console.error("DistanceMatrix unexpected response:", data);
+          return null;
+        }
+        for (const cell of data) {
+          if (cell.condition !== "ROUTE_EXISTS") continue;
+          const oi = oStart + (cell.originIndex ?? 0);
+          const di = dStart + (cell.destinationIndex ?? 0);
+          matrix[oi][di] = cell.distanceMeters ?? 0;
+        }
+      }
+    }
+    return matrix;
+  } catch (e) {
+    console.error("buildRealDistanceMatrix error:", e);
+    return null;
+  }
+}
+
+/** NN sobre matriz precomputada. Índice 0 = origen. Devuelve orden de waypoints (índices base 0 sobre waypoints). */
+function nearestNeighborOrderMatrix(n: number, matrix: number[][]): number[] {
+  // n = total puntos incluyendo origen. waypoints son índices 1..n-1
+  const visited = new Array(n).fill(false);
+  visited[0] = true;
+  const order: number[] = [];
+  let current = 0;
+  for (let step = 0; step < n - 1; step++) {
+    let bestIdx = -1;
+    let bestDist = Infinity;
+    for (let i = 1; i < n; i++) {
+      if (visited[i]) continue;
+      const d = matrix[current][i];
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    if (bestIdx === -1) break;
+    visited[bestIdx] = true;
+    order.push(bestIdx - 1); // a índice de waypoints
+    current = bestIdx;
+  }
+  return order;
+}
+
+function twoOptImproveMatrix(matrix: number[][], order: number[]): number[] {
+  // order: array de índices de waypoint (0..n-2). En matriz son order[i]+1.
+  const route = [...order];
+  const n = route.length;
+  const idx = (i: number) => (i === -1 || i === n) ? 0 : route[i] + 1;
+  let improved = true;
+  let iterations = 0;
+  const maxIterations = Math.min(n * n, 400);
+  while (improved && iterations < maxIterations) {
+    improved = false;
+    iterations++;
+    for (let i = 0; i < n - 1; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const a = idx(i - 1), b = idx(i), c = idx(j), d = idx(j + 1);
+        const currentDist = matrix[a][b] + matrix[c][d];
+        const newDist = matrix[a][c] + matrix[b][d];
+        if (newDist < currentDist - 1) {
+          let left = i, right = j;
+          while (left < right) {
+            [route[left], route[right]] = [route[right], route[left]];
+            left++; right--;
+          }
+          improved = true;
+        }
+      }
+    }
+  }
+  return route;
+}
+
+function nearestNeighborOrder(origin: LatLng, waypoints: Waypoint[]): number[] {
+  const n = waypoints.length;
+  const visited = new Array(n).fill(false);
+  const order: number[] = [];
+  let current: LatLng = origin;
+  for (let step = 0; step < n; step++) {
+    let bestIdx = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < n; i++) {
+      if (visited[i]) continue;
+      const d = haversine(current, waypoints[i]);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    visited[bestIdx] = true;
+    order.push(bestIdx);
+    current = waypoints[bestIdx];
+  }
+  return order;
+}
+
+function twoOptImprove(origin: LatLng, waypoints: Waypoint[], order: number[]): number[] {
+  const route = [...order];
+  const n = route.length;
+  const pos = (i: number) => (i === -1 ? origin : waypoints[route[i]]);
+  let improved = true;
+  let iterations = 0;
+  const maxIterations = Math.min(n * n, 400);
+  while (improved && iterations < maxIterations) {
+    improved = false;
+    iterations++;
+    for (let i = 0; i < n - 1; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const prevI = pos(i - 1);
+        const curI = waypoints[route[i]];
+        const curJ = waypoints[route[j]];
+        const nextJ = j + 1 < n ? waypoints[route[j + 1]] : origin;
+        const currentDist = haversine(prevI, curI) + haversine(curJ, nextJ);
+        const newDist = haversine(prevI, curJ) + haversine(curI, nextJ);
+        if (newDist < currentDist - 1) {
+          let left = i, right = j;
+          while (left < right) {
+            [route[left], route[right]] = [route[right], route[left]];
+            left++; right--;
+          }
+          improved = true;
+        }
+      }
+    }
+  }
+  return route;
+}
+
+function totalOriginalDistance(origin: LatLng, waypoints: Waypoint[]): number {
+  if (waypoints.length === 0) return 0;
+  let d = haversine(origin, waypoints[0]);
+  for (let i = 0; i < waypoints.length - 1; i++) d += haversine(waypoints[i], waypoints[i + 1]);
+  d += haversine(waypoints[waypoints.length - 1], origin);
+  return d;
+}
+
+async function fetchGooglePolyline(
+  googleApiKey: string,
+  origin: LatLng,
+  ordered: Waypoint[]
+): Promise<{ polyline: string | null; distanceMeters: number; duration: string }> {
+  // chunk if needed (>23 intermediates)
+  if (ordered.length === 0) return { polyline: null, distanceMeters: 0, duration: "0s" };
+
+  const chunks: Waypoint[][] = [];
+  for (let i = 0; i < ordered.length; i += MAX_WAYPOINTS_PER_REQUEST) {
+    chunks.push(ordered.slice(i, i + MAX_WAYPOINTS_PER_REQUEST));
+  }
+
+  let totalDistance = 0;
+  let totalSeconds = 0;
+  const polylines: string[] = [];
+  let chunkOrigin = origin;
+
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const chunk = chunks[ci];
+    const isLast = ci === chunks.length - 1;
+    const chunkDest = isLast ? origin : chunk[chunk.length - 1];
+    const intermediates = isLast ? chunk : chunk.slice(0, -1);
+
+    const body: any = {
+      origin: { location: { latLng: { latitude: chunkOrigin.lat, longitude: chunkOrigin.lng } } },
+      destination: { location: { latLng: { latitude: chunkDest.lat, longitude: chunkDest.lng } } },
+      travelMode: "DRIVE",
+      optimizeWaypointOrder: false,
+      routeModifiers: { avoidTolls: false, avoidHighways: false },
+    };
+    if (intermediates.length > 0) {
+      body.intermediates = intermediates.map(wp => ({
+        location: { latLng: { latitude: wp.lat, longitude: wp.lng } }
+      }));
+    }
+
+    try {
+      const res = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": googleApiKey,
+          "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        console.error("Google Routes chunk error:", await res.text());
+        continue;
+      }
+      const data = await res.json();
+      const route = data.routes?.[0];
+      if (!route) continue;
+      totalDistance += route.distanceMeters ?? 0;
+      const sec = parseInt(String(route.duration ?? "0").replace("s", ""), 10);
+      if (!isNaN(sec)) totalSeconds += sec;
+      if (route.polyline?.encodedPolyline) polylines.push(route.polyline.encodedPolyline);
+    } catch (e) {
+      console.error("Google Routes chunk fetch error:", e);
+    }
+    chunkOrigin = chunkDest;
+  }
+
+  // Returning multiple polylines as a JSON-encoded array (frontend will decode each)
+  return {
+    polyline: polylines.length === 1 ? polylines[0] : (polylines.length > 1 ? JSON.stringify(polylines) : null),
+    distanceMeters: totalDistance,
+    duration: `${totalSeconds}s`,
+  };
+}
+
+interface RouteInput {
+  /** Identifier for this route (e.g. vendedor_id or 'default') */
+  key: string;
+  origin: LatLng;
+  waypoints: Waypoint[];
+  /** If true, skip NN+2-opt and use waypoints in the given order (for restoring saved routes) */
+  preserve_order?: boolean;
+}
+
+interface RouteResult {
+  key: string;
+  optimized_order: string[];
+  polyline: string | null;
+  distance_meters: number;
+  duration: string;
+  original_distance_meters: number;
+  error?: string;
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "No autorizado" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const googleApiKey = Deno.env.get("GOOGLE_ROUTES_API_KEY") || Deno.env.get("GOOGLE_MAPS_API_KEY");
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims) {
+      return new Response(JSON.stringify({ error: "Token inválido" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const userId = claimsData.claims.sub;
+
+    const { data: userRoles } = await supabase
+      .from("user_roles")
+      .select("role_id, roles(nombre, es_sistema)")
+      .eq("user_id", userId);
+    const isAdmin = userRoles?.some((ur: any) => {
+      const roleName = (ur.roles?.nombre ?? "").toLowerCase();
+      return ur.roles?.es_sistema === true || roleName.includes("admin");
+    });
+    if (!isAdmin) {
+      return new Response(JSON.stringify({ error: "Solo administradores pueden optimizar rutas" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles").select("empresa_id").eq("user_id", userId).single();
+    if (!profile) {
+      return new Response(JSON.stringify({ error: "Perfil no encontrado" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    const body = await req.json();
+
+    // Build a unified list of routes to process. Supports BOTH legacy and new payload.
+    // Legacy: { origin, waypoints, dia_filtro }
+    // New:    { routes: [{ key, origin, waypoints }], dia_filtro }
+    let routesIn: RouteInput[] = [];
+    if (Array.isArray(body.routes)) {
+      routesIn = body.routes.filter((r: any) =>
+        r && r.origin && r.origin.lat != null && r.origin.lng != null && Array.isArray(r.waypoints) && r.waypoints.length >= 1
+      );
+    } else if (body.origin && Array.isArray(body.waypoints)) {
+      routesIn = [{ key: "default", origin: body.origin, waypoints: body.waypoints }];
+    }
+
+    if (routesIn.length === 0) {
+      return new Response(JSON.stringify({ error: "Se necesita al menos una ruta con origen y al menos 1 cliente" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Quota check (each optimization counts as 1; preserve_order calls are free)
+    const optimizingCount = routesIn.filter(r => r.preserve_order !== true).length;
+
+    // Calcular cuota dinámica: (usuarios activos * 30) + recargas disponibles
+    const { count: activeUsers } = await supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("empresa_id", profile.empresa_id)
+      .eq("estado", "activo");
+    const baseQuota = (activeUsers ?? 0) * PER_USER_QUOTA;
+
+    const { data: rechargeRows } = await supabase
+      .from("optimizacion_recargas")
+      .select("id, cantidad_creditos, creditos_consumidos")
+      .eq("empresa_id", profile.empresa_id)
+      .eq("status", "paid");
+    const availableRecharges = (rechargeRows ?? []).reduce(
+      (sum: number, r: any) => sum + Math.max(0, (r.cantidad_creditos ?? 0) - (r.creditos_consumidos ?? 0)),
+      0
+    );
+
+    const totalQuota = baseQuota + availableRecharges;
+    let usedThisMonth = 0;
+
+    if (optimizingCount > 0) {
+      const now = new Date();
+      const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const { count: monthlyCount } = await supabase
+        .from("optimizacion_rutas_log")
+        .select("id", { count: "exact", head: true })
+        .eq("empresa_id", profile.empresa_id)
+        .gte("created_at", firstOfMonth);
+
+      usedThisMonth = monthlyCount ?? 0;
+      if (usedThisMonth + optimizingCount > totalQuota) {
+        return new Response(JSON.stringify({
+          error: `Límite mensual alcanzado. Cuota: ${totalQuota} (${activeUsers ?? 0} usuarios × ${PER_USER_QUOTA} + ${availableRecharges} recargas). Disponibles: ${Math.max(0, totalQuota - usedThisMonth)}, requeridas: ${optimizingCount}.`,
+          quota: { base: baseQuota, recharges: availableRecharges, total: totalQuota, used: usedThisMonth, available: Math.max(0, totalQuota - usedThisMonth) },
+        }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
+    const results: RouteResult[] = [];
+
+    // Process each route independently (atomic per-route)
+    for (const r of routesIn) {
+      try {
+        const preserveOrder = r.preserve_order === true;
+
+        // Only count toward quota if we are actually optimizing (not just drawing saved routes)
+        if (!preserveOrder) {
+          await supabase.from("optimizacion_rutas_log").insert({
+            empresa_id: profile.empresa_id,
+            user_id: userId,
+            dia_filtro: body.dia_filtro || null,
+            clientes_count: r.waypoints.length,
+          });
+        }
+
+        const original = totalOriginalDistance(r.origin, r.waypoints);
+        let orderedWp: Waypoint[] = r.waypoints;
+        let optMethod: "real_matrix" | "haversine" | "preserved" | "colonia_grouped" = "haversine";
+        if (preserveOrder) {
+          orderedWp = r.waypoints;
+          optMethod = "preserved";
+        } else {
+          // Detectar si los waypoints traen colonia → agrupar para no saltar entre colonias.
+          const withColonia = r.waypoints.filter(w => w.colonia && String(w.colonia).trim() !== "");
+          const useColoniaGrouping = withColonia.length >= Math.ceil(r.waypoints.length * 0.6) && r.waypoints.length >= 3;
+
+          if (useColoniaGrouping) {
+            // Agrupar por colonia (los sin colonia van a un bucket "__sin__")
+            const groups = new Map<string, Waypoint[]>();
+            for (const w of r.waypoints) {
+              const key = (w.colonia && String(w.colonia).trim()) || "__sin__";
+              if (!groups.has(key)) groups.set(key, []);
+              groups.get(key)!.push(w);
+            }
+
+            // Centroide por colonia
+            const centroids = new Map<string, LatLng>();
+            for (const [k, list] of groups.entries()) {
+              const lat = list.reduce((s, p) => s + p.lat, 0) / list.length;
+              const lng = list.reduce((s, p) => s + p.lng, 0) / list.length;
+              centroids.set(k, { lat, lng });
+            }
+
+            // Orden de colonias por nearest neighbour desde el origen
+            const remaining = new Set(groups.keys());
+            const coloniaOrder: string[] = [];
+            let cursor: LatLng = r.origin;
+            while (remaining.size > 0) {
+              let bestKey: string | null = null;
+              let bestDist = Infinity;
+              for (const k of remaining) {
+                const d = haversine(cursor, centroids.get(k)!);
+                if (d < bestDist) { bestDist = d; bestKey = k; }
+              }
+              if (!bestKey) break;
+              coloniaOrder.push(bestKey);
+              remaining.delete(bestKey);
+              cursor = centroids.get(bestKey)!;
+            }
+
+            // Dentro de cada colonia: NN + 2-opt usando como origen la posición previa
+            const finalOrder: Waypoint[] = [];
+            let prev: LatLng = r.origin;
+            for (const k of coloniaOrder) {
+              const wps = groups.get(k)!;
+              if (wps.length === 1) {
+                finalOrder.push(wps[0]);
+                prev = wps[0];
+                continue;
+              }
+              const nn = nearestNeighborOrder(prev, wps);
+              const opt = twoOptImprove(prev, wps, nn);
+              for (const idx of opt) finalOrder.push(wps[idx]);
+              prev = wps[opt[opt.length - 1]];
+            }
+            orderedWp = finalOrder;
+            optMethod = "colonia_grouped";
+          } else {
+            // Intentar matriz REAL por calle si hay API key y la ruta es razonable
+            let usedReal = false;
+            if (googleApiKey && r.waypoints.length <= REAL_MATRIX_MAX_STOPS) {
+              const matrix = await buildRealDistanceMatrix(googleApiKey, r.origin, r.waypoints);
+              if (matrix) {
+                const n = r.waypoints.length + 1;
+                const nn = nearestNeighborOrderMatrix(n, matrix);
+                const optimized = twoOptImproveMatrix(matrix, nn);
+                orderedWp = optimized.map(idx => r.waypoints[idx]);
+                optMethod = "real_matrix";
+                usedReal = true;
+              }
+            }
+            if (!usedReal) {
+              const nn = nearestNeighborOrder(r.origin, r.waypoints);
+              const optimized = twoOptImprove(r.origin, r.waypoints, nn);
+              orderedWp = optimized.map(idx => r.waypoints[idx]);
+              optMethod = "haversine";
+            }
+          }
+        }
+        console.log(`Route ${r.key}: method=${optMethod}, stops=${r.waypoints.length}`);
+
+        let polyline: string | null = null;
+        let distanceMeters = 0;
+        let duration = "0s";
+
+        if (googleApiKey) {
+          const g = await fetchGooglePolyline(googleApiKey, r.origin, orderedWp);
+          polyline = g.polyline;
+          distanceMeters = g.distanceMeters;
+          duration = g.duration;
+        }
+
+        if (distanceMeters === 0) {
+          let totalDist = haversine(r.origin, orderedWp[0]);
+          for (let i = 0; i < orderedWp.length - 1; i++) {
+            totalDist += haversine(orderedWp[i], orderedWp[i + 1]);
+          }
+          totalDist += haversine(orderedWp[orderedWp.length - 1], r.origin);
+          distanceMeters = Math.round(totalDist * 1.3);
+          duration = `${Math.round(totalDist * 1.3 / 8.33)}s`;
+        }
+
+        results.push({
+          key: r.key,
+          optimized_order: orderedWp.map(wp => wp.id),
+          polyline,
+          distance_meters: distanceMeters,
+          duration,
+          original_distance_meters: Math.round(original * 1.3),
+        });
+      } catch (e: any) {
+        console.error(`Error optimizing route ${r.key}:`, e);
+        results.push({
+          key: r.key, optimized_order: [], polyline: null,
+          distance_meters: 0, duration: "0s", original_distance_meters: 0,
+          error: e?.message || "Error desconocido",
+        });
+      }
+    }
+
+    // Recalcular uso final tras los inserts
+    const fmFinal = new Date(); fmFinal.setDate(1); fmFinal.setHours(0,0,0,0);
+    const { count: finalUsed } = await supabase.from("optimizacion_rutas_log")
+      .select("id", { count: "exact", head: true })
+      .eq("empresa_id", profile.empresa_id)
+      .gte("created_at", fmFinal.toISOString());
+    const usedNow = finalUsed ?? 0;
+    const remaining = Math.max(0, totalQuota - usedNow);
+
+    // Backwards-compatible response: when single route, expose top-level fields too.
+    const single = results.length === 1 ? results[0] : null;
+
+    return new Response(JSON.stringify({
+      routes: results,
+      remaining_this_month: remaining,
+      quota: {
+        usuarios_activos: activeUsers ?? 0,
+        per_user: PER_USER_QUOTA,
+        base: baseQuota,
+        recharges: availableRecharges,
+        total: totalQuota,
+        used: usedNow,
+        available: remaining,
+      },
+      ...(single ? {
+        optimized_order: single.optimized_order,
+        polyline: single.polyline,
+        distance_meters: single.distance_meters,
+        duration: single.duration,
+      } : {}),
+    }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  } catch (err) {
+    console.error("Optimize route error:", err);
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Error desconocido" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+});

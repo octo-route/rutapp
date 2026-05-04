@@ -1,0 +1,425 @@
+import { useState, useMemo } from 'react';
+import { queueOperation } from '@/lib/syncQueue';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
+import { useVenta } from '@/hooks/useVentas';
+import { supabase } from '@/lib/supabase';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { fmtDate, roundMoney, todayInTimezone } from '@/lib/utils';
+import { buildTicketHTML as buildUnifiedTicketHTML, type TicketData } from '@/lib/ticketHtml';
+import { printTicket } from '@/lib/printTicketUtil';
+import { isBluetoothAvailable, connectPrinter, sendBytes } from '@/lib/bluetoothPrinter';
+import { generarEstadoCuentaPdf } from '@/lib/estadoCuentaPdf';
+import { toPng } from 'html-to-image';
+import type { View, CuentaPendiente, EditLinea } from './types';
+import { useCurrency } from '@/hooks/useCurrency';
+
+export function useVentaDetalle() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user, empresa } = useAuth();
+  const queryClient = useQueryClient();
+  const { data: venta, isLoading } = useVenta(id);
+
+  const [view, setView] = useState<View>('detalle');
+  const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia' | 'tarjeta'>('efectivo');
+  const [montoRecibido, setMontoRecibido] = useState('');
+  const [referenciaPago, setReferenciaPago] = useState('');
+  const [cuentasPendientes, setCuentasPendientes] = useState<CuentaPendiente[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [montoAplicarActual, setMontoAplicarActual] = useState(0);
+  const [ticketData, setTicketData] = useState<{ monto: number; cambio: number; metodo: string; folio: string; fecha: string; aplicaciones: { folio: string; monto: number; saldoRestante: number }[] } | null>(null);
+  const [sendingWA, setSendingWA] = useState(false);
+  const [showWADialog, setShowWADialog] = useState(false);
+  const [waPhone, setWaPhone] = useState('');
+  const [ecPdfBlob, setEcPdfBlob] = useState<Blob | null>(null);
+  const [showEcPreview, setShowEcPreview] = useState(false);
+  const [editLineas, setEditLineas] = useState<EditLinea[]>([]);
+  const [editCondicion, setEditCondicion] = useState<'contado' | 'credito' | 'por_definir'>('contado');
+  const [editNotas, setEditNotas] = useState('');
+  const [showProductSearch, setShowProductSearch] = useState(false);
+  const [searchProducto, setSearchProducto] = useState('');
+
+  const clienteId = (venta as any)?.cliente_id;
+  const { symbol: currSym, fmt } = useCurrency();
+  const fmtM = fmt;
+
+  const { data: clienteData } = useQuery({
+    queryKey: ['ruta-cliente-detalle', clienteId], enabled: !!clienteId,
+    queryFn: async () => { const { data } = await supabase.from('clientes').select('id, nombre, telefono, credito, limite_credito, dias_credito').eq('id', clienteId!).single(); return data; },
+  });
+
+  const { data: productos } = useQuery({
+    queryKey: ['ruta-productos-edit', empresa?.id], enabled: !!empresa?.id && view === 'editar',
+    queryFn: async () => { const { data } = await supabase.from('productos').select('id, codigo, nombre, precio_principal, tiene_iva, tasa_iva_id, unidades:unidad_venta_id(nombre, abreviatura), tasas_iva:tasa_iva_id(porcentaje)').eq('empresa_id', empresa!.id).eq('se_puede_vender', true).eq('status', 'activo').order('nombre'); return data ?? []; },
+  });
+
+  const { data: otrasPendientes } = useQuery({
+    queryKey: ['ruta-cuentas-pendientes-detalle', clienteId, id], enabled: !!clienteId && view === 'cobrar',
+    queryFn: async () => { const { data } = await supabase.from('ventas').select('id, folio, fecha, total, saldo_pendiente').eq('cliente_id', clienteId!).gt('saldo_pendiente', 0).neq('id', id!).in('status', ['borrador', 'confirmado', 'entregado', 'facturado']).order('fecha', { ascending: true }); return data ?? []; },
+  });
+
+  const { data: ventasPendientesCredito } = useQuery({
+    queryKey: ['ruta-saldo-total-credito', clienteId], enabled: !!clienteId && view === 'editar',
+    queryFn: async () => { const { data } = await supabase.from('ventas').select('saldo_pendiente').eq('cliente_id', clienteId!).gt('saldo_pendiente', 0).neq('id', id!); return (data ?? []).reduce((s, v) => s + (v.saldo_pendiente ?? 0), 0); },
+  });
+
+  const editTotals = useMemo(() => {
+    let subtotal = 0, iva = 0;
+    editLineas.forEach(item => { const s = item.precio_unitario * item.cantidad; subtotal += s; if (item.tiene_iva) iva += s * (item.iva_pct / 100); });
+    return { subtotal, iva, total: subtotal + iva };
+  }, [editLineas]);
+
+  const saldoPendienteOtras = ventasPendientesCredito ?? 0;
+  const creditoDisponible = clienteData ? (clienteData.limite_credito ?? 0) - saldoPendienteOtras : 0;
+  const excedeCredito = editCondicion === 'credito' && editTotals.total > creditoDisponible;
+  const saldoActual = roundMoney(venta?.saldo_pendiente ?? 0);
+  const totalAplicarOtras = roundMoney(cuentasPendientes.reduce((s, c) => s + c.montoAplicar, 0));
+  const totalACobrar = roundMoney(montoAplicarActual + totalAplicarOtras);
+  const montoRecibidoNum = roundMoney(parseFloat(montoRecibido) || 0);
+  const cambio = montoRecibidoNum > totalACobrar ? roundMoney(montoRecibidoNum - totalACobrar) : 0;
+
+  const updateMontoAplicarActual = (monto: number) => {
+    const montoNormalizado = roundMoney(monto);
+    setMontoAplicarActual(roundMoney(Math.min(Math.max(0, montoNormalizado), saldoActual)));
+  };
+
+  const filteredProductos = productos?.filter(p => !searchProducto || p.nombre.toLowerCase().includes(searchProducto.toLowerCase()) || p.codigo.toLowerCase().includes(searchProducto.toLowerCase()));
+
+  const initEditar = () => {
+    if (!venta) return;
+    const lineas = (venta as any).venta_lineas ?? [];
+    setEditLineas(lineas.map((l: any) => ({ id: l.id, producto_id: l.producto_id, nombre: l.productos?.nombre ?? l.descripcion ?? '', codigo: l.productos?.codigo ?? '', cantidad: l.cantidad, precio_unitario: l.precio_unitario, unidad: l.unidades?.abreviatura ?? 'pz', tiene_iva: (l.iva_pct ?? 0) > 0, iva_pct: l.iva_pct ?? 0 })));
+    setEditCondicion(venta.condicion_pago as any);
+    setEditNotas(venta.notas ?? '');
+    setView('editar');
+  };
+
+  const addProductToEdit = (p: any) => {
+    const existing = editLineas.find(l => l.producto_id === p.id);
+    if (existing) { setEditLineas(prev => prev.map(l => l.producto_id === p.id ? { ...l, cantidad: l.cantidad + 1 } : l)); }
+    else { setEditLineas(prev => [...prev, { producto_id: p.id, nombre: p.nombre, codigo: p.codigo, cantidad: 1, precio_unitario: p.precio_principal ?? 0, unidad: (p.unidades as any)?.abreviatura || 'pz', tiene_iva: p.tiene_iva ?? false, iva_pct: p.tiene_iva ? ((p.tasas_iva as any)?.porcentaje ?? 16) : 0 }]); }
+  };
+
+  const updateEditQty = (idx: number, delta: number) => { setEditLineas(prev => prev.map((l, i) => i !== idx ? l : l.cantidad + delta > 0 ? { ...l, cantidad: l.cantidad + delta } : l)); };
+  const removeEditLine = (idx: number) => { setEditLineas(prev => prev.filter((_, i) => i !== idx)); };
+
+  const handleSaveEdits = async () => {
+    if (editLineas.length === 0) { toast.error('Agrega al menos un producto'); return; }
+    setSaving(true);
+    try {
+      const newLineas = editLineas.map(item => ({ venta_id: id!, producto_id: item.producto_id, descripcion: item.nombre, cantidad: item.cantidad, precio_unitario: item.precio_unitario, subtotal: item.precio_unitario * item.cantidad, iva_pct: item.iva_pct, iva_monto: item.tiene_iva ? item.precio_unitario * item.cantidad * (item.iva_pct / 100) : 0, ieps_pct: 0, ieps_monto: 0, descuento_pct: 0, total: item.precio_unitario * item.cantidad * (1 + (item.tiene_iva ? item.iva_pct / 100 : 0)) }));
+
+      const ventaUpdate = { condicion_pago: editCondicion as any, notas: editNotas || null, subtotal: editTotals.subtotal, iva_total: editTotals.iva, total: editTotals.total, saldo_pendiente: editTotals.total };
+
+      if (navigator.onLine) {
+        // Insert first, then delete old — if insert fails, old lines remain intact
+        const { error: linErr } = await supabase.from('venta_lineas').insert(newLineas);
+        if (linErr) throw linErr;
+        // Delete old lines (those not just inserted)
+        await supabase.from('venta_lineas').delete().eq('venta_id', id!).not('id', 'in', `(${(await supabase.from('venta_lineas').select('id').eq('venta_id', id!).order('created_at', { ascending: false }).limit(newLineas.length)).data?.map(r => r.id).join(',') ?? ''})`);
+        const { error: ventaErr } = await supabase.from('ventas').update(ventaUpdate).eq('id', id!);
+        if (ventaErr) throw ventaErr;
+      } else {
+        await queueOperation('ventas', 'update', { id: id!, ...ventaUpdate });
+      }
+
+      toast.success('Venta actualizada');
+      queryClient.invalidateQueries({ queryKey: ['venta', id] });
+      queryClient.invalidateQueries({ queryKey: ['ventas'] });
+      queryClient.invalidateQueries({ queryKey: ['ruta-ventas'] });
+      setView('detalle');
+    } catch (err: any) { toast.error(err.message); } finally { setSaving(false); }
+  };
+
+  const initCobrar = () => {
+    if (otrasPendientes?.length) {
+      setCuentasPendientes(otrasPendientes.map(v => ({
+        id: v.id,
+        folio: v.folio,
+        fecha: v.fecha,
+        total: roundMoney(v.total ?? 0),
+        saldo_pendiente: roundMoney(v.saldo_pendiente ?? 0),
+        montoAplicar: 0,
+      })));
+    } else {
+      setCuentasPendientes([]);
+    }
+    setMetodoPago('efectivo');
+    setMontoAplicarActual(roundMoney(saldoActual));
+    setMontoRecibido(saldoActual > 0 ? roundMoney(saldoActual).toFixed(2) : '');
+    setReferenciaPago('');
+    setView('cobrar');
+  };
+
+  const updateCuentaMonto = (cid: string, monto: number) => {
+    const montoNormalizado = roundMoney(monto);
+    setCuentasPendientes(prev => prev.map(c => c.id === cid ? {
+      ...c,
+      montoAplicar: roundMoney(Math.min(Math.max(0, montoNormalizado), roundMoney(c.saldo_pendiente))),
+    } : c));
+  };
+  const liquidarTodas = () => {
+    setCuentasPendientes(prev => prev.map(c => ({ ...c, montoAplicar: roundMoney(c.saldo_pendiente) })));
+  };
+
+  const handleCobrar = async () => {
+    if (!user || !venta || totalACobrar <= 0) return;
+    setSaving(true);
+    try {
+      if (!empresa?.id) throw new Error('Sin empresa');
+      const { data: cobro, error: cobroErr } = await supabase.from('cobros').insert({ empresa_id: empresa.id, cliente_id: clienteId, user_id: user.id, monto: roundMoney(totalACobrar), metodo_pago: metodoPago, referencia: referenciaPago || null, fecha: todayInTimezone(empresa.zona_horaria) }).select('id').single();
+      if (cobroErr) throw cobroErr;
+      const aplicaciones: { cobro_id: string; venta_id: string; monto_aplicado: number }[] = [];
+      const ticketApps: { folio: string; monto: number; saldoRestante: number }[] = [];
+
+      // Apply to current sale
+      if (montoAplicarActual > 0) {
+        aplicaciones.push({ cobro_id: cobro.id, venta_id: venta.id, monto_aplicado: roundMoney(montoAplicarActual) });
+        const newSaldo = roundMoney(saldoActual - montoAplicarActual);
+        const saldoUpdate = { saldo_pendiente: Math.max(0, newSaldo), status: newSaldo <= 0.01 && venta.status === 'borrador' ? 'confirmado' as const : venta.status };
+        if (navigator.onLine) {
+          await supabase.from('ventas').update(saldoUpdate).eq('id', venta.id);
+        } else {
+          await queueOperation('ventas', 'update', { id: venta.id, ...saldoUpdate });
+        }
+        ticketApps.push({ folio: venta.folio ?? 'Sin folio', monto: roundMoney(montoAplicarActual), saldoRestante: roundMoney(Math.max(0, newSaldo)) });
+      }
+
+      // Apply to other pending sales
+      for (const cuenta of cuentasPendientes) {
+        if (cuenta.montoAplicar > 0) {
+          aplicaciones.push({ cobro_id: cobro.id, venta_id: cuenta.id, monto_aplicado: roundMoney(cuenta.montoAplicar) });
+          const newSaldo = roundMoney(cuenta.saldo_pendiente - cuenta.montoAplicar);
+          if (navigator.onLine) {
+            await supabase.from('ventas').update({ saldo_pendiente: Math.max(0, newSaldo) }).eq('id', cuenta.id);
+          } else {
+            await queueOperation('ventas', 'update', { id: cuenta.id, saldo_pendiente: Math.max(0, newSaldo) });
+          }
+          ticketApps.push({ folio: cuenta.folio ?? '—', monto: roundMoney(cuenta.montoAplicar), saldoRestante: roundMoney(Math.max(0, newSaldo)) });
+        }
+      }
+
+      if (aplicaciones.length > 0) { const { error: appErr } = await supabase.from('cobro_aplicaciones').insert(aplicaciones); if (appErr) throw appErr; }
+      setTicketData({ monto: roundMoney(totalACobrar), cambio: roundMoney(cambio), metodo: metodoPago, folio: venta.folio ?? 'Sin folio', fecha: new Date().toLocaleString('es-MX'), aplicaciones: ticketApps });
+      setView('ticket');
+      toast.success('¡Cobro registrado!');
+      ['venta', 'ruta-ventas', 'ruta-stats', 'ventas', 'ruta-cuentas-pendientes'].forEach(k => queryClient.invalidateQueries({ queryKey: [k === 'venta' ? 'venta' : k, ...(k === 'venta' ? [id] : [])] }));
+    } catch (err: any) { toast.error(err.message); } finally { setSaving(false); }
+  };
+
+  const logHistorial = async (ventaId: string, accion: string, detalles: any = {}) => {
+    try {
+      await supabase.from('venta_historial').insert({
+        venta_id: ventaId,
+        empresa_id: empresa!.id,
+        user_id: user!.id,
+        user_nombre: (user as any)?.user_metadata?.full_name ?? user?.email ?? '',
+        accion,
+        detalles,
+      });
+    } catch (e) { console.error('Error logging historial', e); }
+  };
+
+  const handleCancelar = async () => {
+    if (!venta) return;
+    setSaving(true);
+    try {
+      const prevStatus = venta.status;
+      const { error } = await supabase.from('ventas').update({ status: 'cancelado' as const }).eq('id', venta.id);
+      if (error) throw error;
+      // Cancel associated cobros
+      const { data: apps } = await supabase.from('cobro_aplicaciones').select('id, cobro_id, monto_aplicado').eq('venta_id', venta.id);
+      if (apps && apps.length > 0) {
+        const cobroIds = [...new Set(apps.map(a => a.cobro_id))];
+        for (const cid of cobroIds) {
+          const { data: allApps } = await supabase.from('cobro_aplicaciones').select('venta_id').eq('cobro_id', cid);
+          const onlyThisVenta = (allApps ?? []).every(a => a.venta_id === venta.id);
+          if (onlyThisVenta) {
+            await supabase.from('cobros').update({ status: 'cancelado' } as any).eq('id', cid);
+          }
+        }
+      }
+      await logHistorial(venta.id, 'cancelada', { status: { anterior: prevStatus, nuevo: 'cancelado' } });
+      toast.success('Venta cancelada');
+      queryClient.invalidateQueries({ queryKey: ['venta', id] });
+      queryClient.invalidateQueries({ queryKey: ['ruta-ventas'] });
+      queryClient.invalidateQueries({ queryKey: ['productos'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-almacen'] });
+      queryClient.invalidateQueries({ queryKey: ['inventario-dashboard'] });
+    } catch (err: any) { toast.error(err.message); } finally { setSaving(false); }
+  };
+
+  const handleVolverBorrador = async () => {
+    if (!venta || venta.status === 'borrador' || venta.status === 'cancelado') return;
+    if (['entregado', 'facturado'].includes(venta.status)) {
+      toast.error('Una venta entregada no puede volver a borrador, solo cancelar');
+      return;
+    }
+    setSaving(true);
+    try {
+      const prevStatus = venta.status;
+      const { error } = await supabase.from('ventas').update({ status: 'borrador' as const }).eq('id', venta.id);
+      if (error) throw error;
+      await logHistorial(venta.id, 'vuelta_borrador', { status: { anterior: prevStatus, nuevo: 'borrador' } });
+      toast.success('Venta regresada a borrador');
+      queryClient.invalidateQueries({ queryKey: ['venta', id] });
+      queryClient.invalidateQueries({ queryKey: ['ruta-ventas'] });
+    } catch (err: any) { toast.error(err.message); } finally { setSaving(false); }
+  };
+
+  const getTicketData = (): TicketData | null => {
+    if (!venta) return null;
+    const e = empresa as any;
+    return {
+      empresa: {
+        nombre: e?.nombre ?? '',
+        rfc: e?.rfc ?? null,
+        razon_social: e?.razon_social ?? null,
+        telefono: e?.telefono ?? null,
+        direccion: e?.direccion ?? null,
+        colonia: e?.colonia ?? null,
+        ciudad: e?.ciudad ?? null,
+        estado: e?.estado ?? null,
+        cp: e?.cp ?? null,
+        email: e?.email ?? null,
+        logo_url: e?.logo_url ?? null,
+        moneda: e?.moneda ?? 'MXN',
+        notas_ticket: e?.notas_ticket ?? null,
+        ticket_campos: e?.ticket_campos ?? null,
+      },
+      folio: venta.folio ?? 'Sin folio',
+      fecha: fmtDate(venta.fecha),
+      clienteNombre: (venta as any).clientes?.nombre ?? 'Sin cliente',
+      lineas: ((venta as any).venta_lineas ?? []).map((l: any) => ({
+        nombre: l.productos?.nombre ?? l.descripcion ?? '—',
+        cantidad: l.cantidad,
+        precio: l.precio_unitario ?? 0,
+        total: l.total ?? 0,
+        iva_monto: l.iva_monto ?? 0,
+        ieps_monto: l.ieps_monto ?? 0,
+        descuento_pct: l.descuento_porcentaje ?? l.descuento_pct ?? 0,
+        producto_id: l.producto_id,
+      })),
+      subtotal: venta.subtotal ?? 0,
+      iva: venta.iva_total ?? 0,
+      ieps: (venta as any).ieps_total ?? 0,
+      total: venta.total ?? 0,
+      condicionPago: venta.condicion_pago,
+      metodoPago: (venta as any).metodo_pago ?? undefined,
+      saldoNuevo: (venta.saldo_pendiente ?? 0) > 0 ? venta.saldo_pendiente : undefined,
+      promociones: ((venta as any).venta_promociones ?? []).filter((p: any) => (p.descuento ?? 0) > 0).map((p: any) => ({
+        descripcion: p.descripcion ?? p.nombre ?? '',
+        descuento: p.descuento ?? 0,
+        producto_id: p.producto_id,
+      })),
+    };
+  };
+
+  const handleWhatsAppSend = async () => {
+    if (!waPhone.trim() || !venta) return;
+    setSendingWA(true);
+    try {
+      const { sendReceiptWhatsApp } = await import('@/lib/whatsappReceipt');
+      const td = getTicketData()!;
+      const result = await sendReceiptWhatsApp({ data: td, empresaId: empresa?.id ?? '', phone: waPhone, referencia_id: venta.id });
+      if (result.success) { toast.success('Enviado por WhatsApp'); setShowWADialog(false); } else toast.error(result.error || 'Error al enviar');
+    } catch (err: any) { toast.error(err.message); } finally { setSendingWA(false); }
+  };
+
+  const ticketAncho = (empresa as any)?.ticket_ancho ?? '80';
+
+  /** Convert remote logo URL to base64 to avoid CORS issues with toPng */
+  const logoToBase64 = async (td: TicketData): Promise<TicketData> => {
+    if (!td.empresa.logo_url || td.empresa.logo_url.startsWith('data:')) return td;
+    const copy = { ...td, empresa: { ...td.empresa } };
+    try {
+      const resp = await fetch(copy.empresa.logo_url!, { mode: 'cors' });
+      const blob = await resp.blob();
+      copy.empresa.logo_url = await new Promise<string>((res) => {
+        const reader = new FileReader();
+        reader.onloadend = () => res(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      try {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = copy.empresa.logo_url!;
+        await new Promise<void>((ok, fail) => { img.onload = () => ok(); img.onerror = fail; });
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        c.getContext('2d')!.drawImage(img, 0, 0);
+        copy.empresa.logo_url = c.toDataURL('image/png');
+      } catch { copy.empresa.logo_url = null; }
+    }
+    return copy;
+  };
+
+  const handleDownloadPDF = async () => {
+    let td = getTicketData(); if (!td) return;
+    td = await logoToBase64(td);
+    const container = document.createElement('div'); container.style.position = 'fixed'; container.style.left = '-9999px'; container.style.top = '0'; container.innerHTML = buildUnifiedTicketHTML(td, { ticketAncho }); document.body.appendChild(container);
+    try { await new Promise(r => requestAnimationFrame(() => setTimeout(r, 200))); const dataUrl = await toPng(container.firstElementChild as HTMLElement, { cacheBust: true, pixelRatio: 3, backgroundColor: '#ffffff' }); const a = document.createElement('a'); a.href = dataUrl; a.download = `${venta?.folio ?? 'ticket'}.png`; a.click(); toast.success('Ticket descargado'); } catch { toast.error('Error generando imagen'); } finally { document.body.removeChild(container); }
+  };
+
+  const handlePrintTicket = async () => {
+    const td = getTicketData();
+    if (!td) return;
+    await printTicket(td, { ticketAncho });
+  };
+
+  const handleShareTicket = async () => {
+    const td = getTicketData(); if (!td) return;
+    const text = [
+      td.empresa.nombre,
+      td.empresa.rfc ? `RFC: ${td.empresa.rfc}` : '',
+      td.empresa.direccion ?? '',
+      td.empresa.telefono ? `Tel: ${td.empresa.telefono}` : '',
+      '─'.repeat(30),
+      `Folio: ${td.folio}`, `Fecha: ${td.fecha}`, `Cliente: ${td.clienteNombre}`,
+      `Pago: ${td.condicionPago === 'credito' ? 'Crédito' : td.condicionPago === 'contado' ? 'Contado' : 'Por definir'}`,
+      td.metodoPago ? `Método: ${td.metodoPago}` : '',
+      '─'.repeat(30),
+      ...td.lineas.map(l => `${l.cantidad}x ${l.nombre} ${fmtM(l.total)}`),
+      '─'.repeat(30),
+      `Subtotal: ${fmtM(td.subtotal)}`,
+      td.iva > 0 ? `IVA: ${fmtM(td.iva)}` : '',
+      (td.ieps ?? 0) > 0 ? `IEPS: ${fmtM(td.ieps!)}` : '',
+      `TOTAL: ${fmtM(td.total)}`,
+      '', 'rutapp.mx',
+    ].filter(Boolean).join('\n');
+    if (navigator.share) {
+      try { await navigator.share({ title: `Ticket ${td.folio}`, text }); } catch { /* cancelled */ }
+    } else {
+      await navigator.clipboard.writeText(text);
+      toast.success('Copiado al portapapeles');
+    }
+  };
+
+  const handleEstadoCuenta = async () => {
+    if (!empresa || !clienteData) { toast.error('Cargando datos...'); return; }
+    try {
+      const [ventasRes, cobrosRes] = await Promise.all([supabase.from('ventas').select('id, folio, fecha, total, saldo_pendiente, status, condicion_pago').eq('cliente_id', clienteId!).eq('empresa_id', empresa.id).neq('status', 'cancelado').order('fecha', { ascending: false }).limit(200), supabase.from('cobros').select('id, fecha, monto, metodo_pago, referencia').eq('cliente_id', clienteId!).eq('empresa_id', empresa.id).order('fecha', { ascending: false }).limit(200)]);
+      const blob = await generarEstadoCuentaPdf({ empresa: { nombre: empresa.nombre, razon_social: empresa.razon_social ?? undefined, rfc: empresa.rfc ?? undefined, direccion: empresa.direccion ?? undefined, telefono: empresa.telefono ?? undefined, email: empresa.email ?? undefined, logo_url: empresa.logo_url ?? undefined }, cliente: { nombre: clienteData.nombre, telefono: clienteData.telefono ?? undefined, credito: clienteData.credito ?? false, limite_credito: clienteData.limite_credito ?? 0, dias_credito: clienteData.dias_credito ?? 0 }, ventas: (ventasRes.data ?? []).map(v => ({ folio: v.folio ?? '—', fecha: v.fecha, total: v.total ?? 0, saldo_pendiente: v.saldo_pendiente ?? 0, status: v.status, condicion_pago: v.condicion_pago })), cobros: (cobrosRes.data ?? []).map(c => ({ fecha: c.fecha, monto: c.monto ?? 0, metodo_pago: c.metodo_pago, referencia: c.referencia ?? undefined })) });
+      setEcPdfBlob(blob); setShowEcPreview(true);
+    } catch { toast.error('Error generando estado de cuenta'); }
+  };
+
+  return {
+    id, navigate, venta, isLoading, view, setView, fmt, fmtM, currSym, clienteData, clienteId,
+    metodoPago, setMetodoPago, montoRecibido, setMontoRecibido, referenciaPago, setReferenciaPago,
+    cuentasPendientes, setCuentasPendientes, saving, ticketData,
+    sendingWA, showWADialog, setShowWADialog, waPhone, setWaPhone,
+    ecPdfBlob, showEcPreview, setShowEcPreview, empresa,
+    editLineas, setEditLineas, editCondicion, setEditCondicion, editNotas, setEditNotas,
+    showProductSearch, setShowProductSearch, searchProducto, setSearchProducto,
+    editTotals, saldoPendienteOtras, creditoDisponible, excedeCredito,
+    saldoActual, totalAplicarOtras, totalACobrar, montoRecibidoNum, cambio,
+    montoAplicarActual, updateMontoAplicarActual,
+    filteredProductos, initEditar, addProductToEdit, updateEditQty, removeEditLine,
+    handleSaveEdits, initCobrar, updateCuentaMonto, liquidarTodas, handleCobrar,
+    handleCancelar, handleVolverBorrador, handleWhatsAppSend, handleDownloadPDF, handlePrintTicket, handleShareTicket, handleEstadoCuenta,
+  };
+}
