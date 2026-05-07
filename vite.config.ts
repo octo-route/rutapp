@@ -32,7 +32,9 @@ function bumpAppVersion(): string {
   }
 }
 
-const APP_VERSION = bumpAppVersion();
+const isProduction = process.env.NODE_ENV === "production";
+
+const APP_VERSION = isProduction ? bumpAppVersion() : "dev";
 
 export default defineConfig(({ mode }) => ({
   define: {
