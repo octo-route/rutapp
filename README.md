@@ -1,73 +1,162 @@
-# Welcome to your Lovable project
+# RutApp
 
-## Project info
+Sistema integral de gestión comercial y operación de rutas para empresas de distribución y ventas móviles.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Características principales
 
-## How can I edit this code?
+- Gestión de ventas y cobranzas
+- Control de inventario y almacenes
+- Punto de venta (POS)
+- Rutas móviles para vendedores
+- Gestión de clientes y proveedores
+- Facturación CFDI
+- Reportes y dashboards
+- Logística y entregas
+- Sincronización offline
+- Notificaciones y WhatsApp
 
-There are several ways of editing your application.
+---
 
-**Use Lovable**
+# Stack tecnológico
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Frontend
 
-Changes made via Lovable will be committed automatically to this repo.
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- shadcn/ui
+- React Query
+- Zustand
 
-**Use your preferred IDE**
+## Backend
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- Supabase
+  - PostgreSQL
+  - Authentication
+  - Edge Functions
+  - Storage
+  - Realtime
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## Integraciones
 
-Follow these steps:
+- OpenPay
+- Stripe
+- Facturama
+- Google Maps
+- WhatsApp
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+---
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# Requisitos
 
-# Step 3: Install the necessary dependencies.
-npm i
+- Node.js 20+
+- npm 10+
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+---
+
+# Instalación local
+
+```bash
+git clone <REPO_URL>
+
+cd rutapp
+
+npm install
+```
+
+---
+
+# Variables de entorno
+
+Crear archivo `.env`:
+
+```env
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
+```
+
+---
+
+# Ejecutar en desarrollo
+
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+---
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+# Build de producción
 
-**Use GitHub Codespaces**
+```bash
+npm run build
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+---
 
-## What technologies are used for this project?
+# Testing
 
-This project is built with:
+```bash
+npm run test
+npm run test:e2e
+```
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+---
 
-## How can I deploy this project?
+# Estructura del proyecto
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+```txt
+src/
+  components/
+  hooks/
+  pages/
+  lib/
+  contexts/
+  integrations/
+  stores/
 
-## Can I connect a custom domain to my Lovable project?
+supabase/
+  functions/
+  migrations/
+```
 
-Yes, you can!
+---
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+# Arquitectura
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+RutApp utiliza una arquitectura SPA basada en React y Supabase.
+
+La lógica de negocio se divide entre:
+
+- Frontend React
+- Edge Functions de Supabase
+- Policies y procedimientos SQL
+- Sincronización offline local
+
+---
+
+# Funcionalidades offline
+
+La aplicación soporta operación offline parcial mediante:
+
+- IndexedDB (Dexie)
+- Cola de sincronización
+- Cache local
+- Restauración automática de pendientes
+
+---
+
+# Deployment
+
+La aplicación puede desplegarse en cualquier proveedor compatible con aplicaciones Vite/React:
+
+- Vercel
+- Netlify
+- VPS
+- Docker
+
+---
+
+# Licencia
+
+Propiedad privada. Uso interno únicamente.

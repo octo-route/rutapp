@@ -6,7 +6,10 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
+// AI provider endpoint
+const AI_GATEWAY_URL =
+  Deno.env.get("AI_GATEWAY_URL") ||
+  "https://api.openai.com/v1/chat/completions";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -14,19 +17,24 @@ serve(async (req) => {
   }
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY no configurada");
+    const AI_API_KEY = Deno.env.get("AI_API_KEY");
+
+    if (!AI_API_KEY) {
+      throw new Error("AI_API_KEY no configurada");
+    }
 
     const body = await req.json();
     const { pdf_base64 } = body;
 
-    if (!pdf_base64) throw new Error("Falta pdf_base64");
+    if (!pdf_base64) {
+      throw new Error("Falta pdf_base64");
+    }
 
-    // Use Gemini vision to parse the CSF PDF
-    const response = await fetch(AI_GATEWAY, {
+    // Parse SAT fiscal certificate using AI vision model
+    const response = await fetch(AI_GATEWAY_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${AI_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -41,15 +49,15 @@ serve(async (req) => {
 {
   "rfc": "RFC del contribuyente",
   "razon_social": "Nombre o Razón Social completa",
-  "regimen_fiscal": "Clave del régimen fiscal (solo el número, ej: 601, 612, 621)",
-  "cp": "Código postal del domicilio fiscal",
-  "direccion": "Calle y número exterior",
-  "colonia": "Nombre de la colonia",
+  "regimen_fiscal": "Clave del régimen fiscal",
+  "cp": "Código postal",
+  "direccion": "Calle y número",
+  "colonia": "Colonia",
   "ciudad": "Municipio o alcaldía",
   "estado": "Entidad federativa"
 }
 
-Si algún dato no está disponible, usa null. El régimen fiscal debe ser SOLO la clave numérica (ej: "612"), no la descripción completa.`,
+Si algún dato no está disponible, usa null.`,
               },
               {
                 type: "image_url",
@@ -71,31 +79,51 @@ Si algún dato no está disponible, usa null. El régimen fiscal debe ser SOLO l
     }
 
     const aiResult = await response.json();
-    const rawContent = aiResult.choices?.[0]?.message?.content || "";
-    console.log("AI raw response:", rawContent);
 
-    // Extract JSON from response (handle markdown code blocks)
+    const rawContent = aiResult.choices?.[0]?.message?.content || "";
+
     let jsonStr = rawContent;
+
     const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+
     if (jsonMatch) {
       jsonStr = jsonMatch[1].trim();
     } else {
-      // Try to find raw JSON
       const braceMatch = rawContent.match(/\{[\s\S]*\}/);
-      if (braceMatch) jsonStr = braceMatch[0];
+
+      if (braceMatch) {
+        jsonStr = braceMatch[0];
+      }
     }
 
     const parsed = JSON.parse(jsonStr);
 
     return new Response(
-      JSON.stringify({ success: true, data: parsed }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({
+        success: true,
+        data: parsed,
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      },
     );
   } catch (error: any) {
     console.error("Error:", error.message);
+
     return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({
+        error: error.message,
+      }),
+      {
+        status: 400,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      },
     );
   }
 });

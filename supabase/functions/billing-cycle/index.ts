@@ -8,7 +8,9 @@ const corsHeaders = {
 };
 
 const log = (step: string, details?: any) =>
-  console.log(`[BILLING-CYCLE] ${step}${details ? ` — ${JSON.stringify(details)}` : ""}`);
+  console.log(
+    `[BILLING-CYCLE] ${step}${details ? ` — ${JSON.stringify(details)}` : ""}`,
+  );
 
 const DIAS_GRACIA = 3;
 
@@ -29,18 +31,31 @@ async function sendWhatsApp(supabase: any, empresaId: string, message: string) {
       body: { action: "send_text", empresa_id: empresaId, phone, message },
     });
   } catch (e) {
-    log("WhatsApp send failed (non-blocking)", { empresaId, error: (e as Error).message });
+    log("WhatsApp send failed (non-blocking)", {
+      empresaId,
+      error: (e as Error).message,
+    });
   }
 }
 
 // Retry schedule: attempt 1 = day +1, attempt 2 = day +3, attempt 3 = day +7 (relative to original failure)
 // We track by intento_num: 1 → schedule 2 (in 2 days), 2 → schedule 3 (in 4 days), 3 → mark fallido
-async function scheduleNextRetry(supabase: any, retry: any, errorMsg: string, now: Date) {
+async function scheduleNextRetry(
+  supabase: any,
+  retry: any,
+  errorMsg: string,
+  now: Date,
+) {
   const nextNum = retry.intento_num + 1;
   if (nextNum > 3) {
     // No more retries — mark this and the chain as failed. WhatsApp + suspend handled by Part 2 (gracia).
-    await supabase.from("cobro_reintentos")
-      .update({ estado: "fallido", ultimo_error: errorMsg, procesado_at: now.toISOString() })
+    await supabase
+      .from("cobro_reintentos")
+      .update({
+        estado: "fallido",
+        ultimo_error: errorMsg,
+        procesado_at: now.toISOString(),
+      })
       .eq("id", retry.id);
     log("Retries exhausted", { facturaId: retry.factura_id });
     return;
@@ -50,8 +65,13 @@ async function scheduleNextRetry(supabase: any, retry: any, errorMsg: string, no
   const next = new Date(now);
   next.setDate(next.getDate() + daysAhead);
 
-  await supabase.from("cobro_reintentos")
-    .update({ estado: "procesado", ultimo_error: errorMsg, procesado_at: now.toISOString() })
+  await supabase
+    .from("cobro_reintentos")
+    .update({
+      estado: "procesado",
+      ultimo_error: errorMsg,
+      procesado_at: now.toISOString(),
+    })
     .eq("id", retry.id);
 
   await supabase.from("cobro_reintentos").insert({
@@ -63,7 +83,11 @@ async function scheduleNextRetry(supabase: any, retry: any, errorMsg: string, no
     estado: "pendiente",
     ultimo_error: errorMsg,
   });
-  log("Next retry scheduled", { facturaId: retry.factura_id, intento: nextNum, fecha: next.toISOString().slice(0, 10) });
+  log("Next retry scheduled", {
+    facturaId: retry.factura_id,
+    intento: nextNum,
+    fecha: next.toISOString().slice(0, 10),
+  });
 }
 
 Deno.serve(async (req) => {
@@ -75,11 +99,13 @@ Deno.serve(async (req) => {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      { auth: { persistSession: false } }
+      { auth: { persistSession: false } },
     );
 
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
-    const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" }) : null;
+    const stripe = stripeKey
+      ? new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" })
+      : null;
 
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
@@ -92,11 +118,13 @@ Deno.serve(async (req) => {
       // Include active, past_due, gracia, and expired trial subs
       const { data: activeSubs } = await supabase
         .from("subscriptions")
-        .select("id, empresa_id, max_usuarios, stripe_subscription_id, stripe_price_id, plan_id, descuento_porcentaje, status, trial_ends_at")
+        .select(
+          "id, empresa_id, max_usuarios, stripe_subscription_id, stripe_price_id, plan_id, descuento_porcentaje, status, trial_ends_at",
+        )
         .in("status", ["active", "past_due", "gracia", "trial"]);
 
       // Filter: active subs always, others only if trial already ended
-      const subsToInvoice = (activeSubs || []).filter(s => {
+      const subsToInvoice = (activeSubs || []).filter((s) => {
         if (s.status === "active") return true;
         if (s.status === "trial") {
           return s.trial_ends_at && new Date(s.trial_ends_at) <= now;
@@ -111,7 +139,10 @@ Deno.serve(async (req) => {
         // automatically and the webhook (invoice.created/paid) syncs it into `facturas`.
         // Generating it here too would duplicate.
         if (sub.stripe_subscription_id) {
-          log("Skipped (Stripe handles billing)", { empresa: sub.empresa_id, stripeSub: sub.stripe_subscription_id });
+          log("Skipped (Stripe handles billing)", {
+            empresa: sub.empresa_id,
+            stripeSub: sub.stripe_subscription_id,
+          });
           continue;
         }
 
@@ -145,14 +176,19 @@ Deno.serve(async (req) => {
         // ─── Check active coupon ───
         const { data: cuponUso } = await supabase
           .from("cupon_usos")
-          .select("id, meses_restantes, cupon_id, cupones:cupon_id(descuento_pct, acumulable)")
+          .select(
+            "id, meses_restantes, cupon_id, cupones:cupon_id(descuento_pct, acumulable)",
+          )
           .eq("empresa_id", sub.empresa_id)
           .order("aplicado_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
         let cuponDescuento = 0;
-        if (cuponUso && (cuponUso.meses_restantes === null || cuponUso.meses_restantes > 0)) {
+        if (
+          cuponUso &&
+          (cuponUso.meses_restantes === null || cuponUso.meses_restantes > 0)
+        ) {
           const cupon = cuponUso.cupones as any;
           if (cupon) {
             cuponDescuento = cupon.descuento_pct || 0;
@@ -166,26 +202,43 @@ Deno.serve(async (req) => {
           // Decrement meses_restantes
           if (cuponUso.meses_restantes !== null) {
             const newMeses = cuponUso.meses_restantes - 1;
-            await supabase.from("cupon_usos").update({ meses_restantes: newMeses }).eq("id", cuponUso.id);
+            await supabase
+              .from("cupon_usos")
+              .update({ meses_restantes: newMeses })
+              .eq("id", cuponUso.id);
 
             // If coupon expired, recalculate subscription discount without it
             if (newMeses <= 0 && cupon?.acumulable) {
               const baseDiscount = sub.descuento_porcentaje || 0;
-              await supabase.from("subscriptions").update({ descuento_porcentaje: baseDiscount }).eq("id", sub.id);
+              await supabase
+                .from("subscriptions")
+                .update({ descuento_porcentaje: baseDiscount })
+                .eq("id", sub.id);
             }
           }
-          log("Coupon applied", { empresa: sub.empresa_id, cuponDescuento, totalDescuento: descuento, mesesRestantes: cuponUso.meses_restantes });
+          log("Coupon applied", {
+            empresa: sub.empresa_id,
+            cuponDescuento,
+            totalDescuento: descuento,
+            mesesRestantes: cuponUso.meses_restantes,
+          });
         }
 
         // Round per-user price to whole peso to avoid fractional totals
-        const precioConDescuento = descuento > 0
-          ? Math.round(precioUnitario * (1 - descuento / 100))
-          : precioUnitario;
+        const precioConDescuento =
+          descuento > 0
+            ? Math.round(precioUnitario * (1 - descuento / 100))
+            : precioUnitario;
         const subtotal = precioUnitario * qty;
         const total = precioConDescuento * qty;
 
-        const mesActual = now.toLocaleDateString("es-MX", { month: "long", year: "numeric" });
-        const periodoFin = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+        const mesActual = now.toLocaleDateString("es-MX", {
+          month: "long",
+          year: "numeric",
+        });
+        const periodoFin = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+          .toISOString()
+          .slice(0, 10);
 
         // Create invoice
         const { data: factura } = await supabase
@@ -202,7 +255,9 @@ Deno.serve(async (req) => {
             total,
             estado: "pendiente",
             es_prorrateo: false,
-            fecha_vencimiento: new Date(now.getTime() + DIAS_GRACIA * 86400000).toISOString(),
+            fecha_vencimiento: new Date(
+              now.getTime() + DIAS_GRACIA * 86400000,
+            ).toISOString(),
           })
           .select("numero_factura")
           .single();
@@ -218,12 +273,20 @@ Deno.serve(async (req) => {
         const numFactura = factura?.numero_factura || "N/A";
 
         // WhatsApp notification (only manual/OpenPay subs reach this point)
-        const fechaLimite = new Date(now.getTime() + DIAS_GRACIA * 86400000).toLocaleDateString("es-MX");
-        await sendWhatsApp(supabase, sub.empresa_id,
-          `¡Hola! 👋\nSe ha generado tu factura de *${mesActual}* para *${empresaNombre}*.\n📋 *Factura:* ${numFactura}\n💰 *Monto:* $${total.toLocaleString()} MXN\n📅 *Fecha límite:* ${fechaLimite}\nTienes *${DIAS_GRACIA} días de gracia* para realizar tu pago.`
+        const fechaLimite = new Date(
+          now.getTime() + DIAS_GRACIA * 86400000,
+        ).toLocaleDateString("es-MX");
+        await sendWhatsApp(
+          supabase,
+          sub.empresa_id,
+          `¡Hola! 👋\nSe ha generado tu factura de *${mesActual}* para *${empresaNombre}*.\n📋 *Factura:* ${numFactura}\n💰 *Monto:* $${total.toLocaleString()} MXN\n📅 *Fecha límite:* ${fechaLimite}\nTienes *${DIAS_GRACIA} días de gracia* para realizar tu pago.`,
         );
 
-        log("Invoice generated", { empresa: sub.empresa_id, total, numFactura });
+        log("Invoice generated", {
+          empresa: sub.empresa_id,
+          total,
+          numFactura,
+        });
       }
     }
 
@@ -231,7 +294,9 @@ Deno.serve(async (req) => {
     // Check subs in grace/past_due status
     const { data: graceSubs } = await supabase
       .from("subscriptions")
-      .select("id, empresa_id, current_period_end, status, stripe_subscription_id, trial_ends_at")
+      .select(
+        "id, empresa_id, current_period_end, status, stripe_subscription_id, trial_ends_at",
+      )
       .in("status", ["past_due", "gracia"]);
 
     for (const sub of graceSubs || []) {
@@ -239,12 +304,17 @@ Deno.serve(async (req) => {
       const isTrialOrigin = !sub.stripe_subscription_id;
 
       // For trial-origin users, use trial_ends_at as the reference date
-      const refDate = isTrialOrigin && sub.trial_ends_at
-        ? new Date(sub.trial_ends_at)
-        : sub.current_period_end ? new Date(sub.current_period_end) : null;
+      const refDate =
+        isTrialOrigin && sub.trial_ends_at
+          ? new Date(sub.trial_ends_at)
+          : sub.current_period_end
+            ? new Date(sub.current_period_end)
+            : null;
       if (!refDate) continue;
 
-      const daysPastDue = Math.floor((now.getTime() - refDate.getTime()) / 86400000);
+      const daysPastDue = Math.floor(
+        (now.getTime() - refDate.getTime()) / 86400000,
+      );
 
       const { data: empresa } = await supabase
         .from("empresas")
@@ -263,28 +333,40 @@ Deno.serve(async (req) => {
 
         if (isTrialOrigin) {
           // Never paid → trial suspension message
-          await sendWhatsApp(supabase, sub.empresa_id,
-            `👋 *Te extrañamos en Rutapp*\n\nHola, tu periodo de prueba de *${empresaNombre}* terminó y tu acceso ha sido pausado temporalmente.\n\nPero no te preocupes, *todos tus datos están guardados*. Solo activa tu plan y todo estará como lo dejaste:\n\n💳 *Activar mi plan:* https://rutapps.lovable.app/facturacion\n\n📺 Descubre todo lo que Rutapp puede hacer por tu negocio: https://www.youtube.com/@RutAppMx\n\n¿Tienes dudas? Escríbenos, con gusto te ayudamos. 😊`
+          await sendWhatsApp(
+            supabase,
+            sub.empresa_id,
+            `👋 *Te extrañamos en Rutapp*\n\nHola, tu periodo de prueba de *${empresaNombre}* terminó y tu acceso ha sido pausado temporalmente.\n\nPero no te preocupes, *todos tus datos están guardados*. Solo activa tu plan y todo estará como lo dejaste:\n\n💳 *Activar mi plan:* https://rutapps.netlify.app/facturacion\n\n📺 Descubre todo lo que Rutapp puede hacer por tu negocio: https://www.youtube.com/@RutAppMx\n\n¿Tienes dudas? Escríbenos, con gusto te ayudamos. 😊`,
           );
         } else {
           // Was paying → account suspended message
-          await sendWhatsApp(supabase, sub.empresa_id,
-            `⚠️ *Suscripción suspendida — Rutapp*\n\nHola, la suscripción de *${empresaNombre}* ha sido *suspendida* por falta de pago.\n\n🔒 Tu acceso ha sido restringido temporalmente.\nPara reactivar:\n1️⃣ Abre la app → *Mi Suscripción*\n2️⃣ Actualiza tu método de pago\n3️⃣ Tu acceso se restaurará al instante ✅\n\nTus datos están seguros. 🔐`
+          await sendWhatsApp(
+            supabase,
+            sub.empresa_id,
+            `⚠️ *Suscripción suspendida — Rutapp*\n\nHola, la suscripción de *${empresaNombre}* ha sido *suspendida* por falta de pago.\n\n🔒 Tu acceso ha sido restringido temporalmente.\nPara reactivar:\n1️⃣ Abre la app → *Mi Suscripción*\n2️⃣ Actualiza tu método de pago\n3️⃣ Tu acceso se restaurará al instante ✅\n\nTus datos están seguros. 🔐`,
           );
         }
 
-        log("Subscription suspended", { empresa: sub.empresa_id, daysPastDue, isTrialOrigin });
+        log("Subscription suspended", {
+          empresa: sub.empresa_id,
+          daysPastDue,
+          isTrialOrigin,
+        });
       } else {
         // Send daily grace reminder
         const diasRestantes = DIAS_GRACIA - daysPastDue;
 
         if (isTrialOrigin) {
-          await sendWhatsApp(supabase, sub.empresa_id,
-            `👋 *Tu prueba de Rutapp terminó*\n\nHola, el periodo de prueba de *${empresaNombre}* ha finalizado.\n\n⏳ Te quedan *${diasRestantes} día${diasRestantes !== 1 ? "s" : ""}* antes de que tu acceso sea pausado.\n\n💳 Activa tu plan ahora: https://rutapps.lovable.app/facturacion\n\nTus datos están seguros y listos para cuando actives. 😊`
+          await sendWhatsApp(
+            supabase,
+            sub.empresa_id,
+            `👋 *Tu prueba de Rutapp terminó*\n\nHola, el periodo de prueba de *${empresaNombre}* ha finalizado.\n\n⏳ Te quedan *${diasRestantes} día${diasRestantes !== 1 ? "s" : ""}* antes de que tu acceso sea pausado.\n\n💳 Activa tu plan ahora: https://rutapps.netlify.app/facturacion\n\nTus datos están seguros y listos para cuando actives. 😊`,
           );
         } else {
-          await sendWhatsApp(supabase, sub.empresa_id,
-            `¡Hola! 👋\nTe recordamos que el pago de *${empresaNombre}* aún está pendiente.\n⏳ Te quedan *${diasRestantes} día${diasRestantes !== 1 ? "s" : ""}* de gracia antes de la suspensión.\n💳 Actualiza tu método de pago para evitar interrupciones.`
+          await sendWhatsApp(
+            supabase,
+            sub.empresa_id,
+            `¡Hola! 👋\nTe recordamos que el pago de *${empresaNombre}* aún está pendiente.\n⏳ Te quedan *${diasRestantes} día${diasRestantes !== 1 ? "s" : ""}* de gracia antes de la suspensión.\n💳 Actualiza tu método de pago para evitar interrupciones.`,
           );
         }
 
@@ -296,7 +378,11 @@ Deno.serve(async (req) => {
             .eq("id", sub.id);
         }
 
-        log("Grace reminder sent", { empresa: sub.empresa_id, diasRestantes, isTrialOrigin });
+        log("Grace reminder sent", {
+          empresa: sub.empresa_id,
+          diasRestantes,
+          isTrialOrigin,
+        });
       }
     }
 
@@ -325,17 +411,25 @@ Deno.serve(async (req) => {
     if (stripe) {
       const { data: retries } = await supabase
         .from("cobro_reintentos")
-        .select("id, factura_id, empresa_id, stripe_invoice_id, intento_num, facturas:factura_id(stripe_invoice_id, total)")
+        .select(
+          "id, factura_id, empresa_id, stripe_invoice_id, intento_num, facturas:factura_id(stripe_invoice_id, total)",
+        )
         .eq("estado", "pendiente")
         .lte("proxima_fecha", today);
 
       log("Retries to process", { count: retries?.length || 0 });
 
       for (const retry of retries || []) {
-        const stripeInvId = retry.stripe_invoice_id || (retry.facturas as any)?.stripe_invoice_id;
+        const stripeInvId =
+          retry.stripe_invoice_id || (retry.facturas as any)?.stripe_invoice_id;
         if (!stripeInvId) {
-          await supabase.from("cobro_reintentos")
-            .update({ estado: "fallido", ultimo_error: "Sin stripe_invoice_id", procesado_at: now.toISOString() })
+          await supabase
+            .from("cobro_reintentos")
+            .update({
+              estado: "fallido",
+              ultimo_error: "Sin stripe_invoice_id",
+              procesado_at: now.toISOString(),
+            })
             .eq("id", retry.id);
           continue;
         }
@@ -343,10 +437,15 @@ Deno.serve(async (req) => {
         try {
           // Attempt to pay the invoice using the customer's default payment method
           const paid = await stripe.invoices.pay(stripeInvId);
-          log("Retry payment attempt", { retryId: retry.id, invoiceId: stripeInvId, status: paid.status });
+          log("Retry payment attempt", {
+            retryId: retry.id,
+            invoiceId: stripeInvId,
+            status: paid.status,
+          });
 
           if (paid.status === "paid") {
-            await supabase.from("cobro_reintentos")
+            await supabase
+              .from("cobro_reintentos")
               .update({ estado: "exitoso", procesado_at: now.toISOString() })
               .eq("id", retry.id);
             // invoice.paid webhook will handle factura update + WhatsApp
@@ -364,9 +463,12 @@ Deno.serve(async (req) => {
 
     log("Cycle completed");
 
-    return new Response(JSON.stringify({ success: true, timestamp: now.toISOString() }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ success: true, timestamp: now.toISOString() }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
     log("ERROR", (error as Error).message);
     return new Response(JSON.stringify({ error: (error as Error).message }), {
