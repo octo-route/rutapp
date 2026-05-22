@@ -159,4 +159,4 @@ La aplicación puede desplegarse en cualquier proveedor compatible con aplicacio
 
 # Licencia
 
-Propiedad privada. Uso interno únicamente.
+Propiedad privada. Uso interno únicamente.  .
