@@ -523,7 +523,7 @@ export default function ReporteDiarioRuta() {
       ${visitasHtml}
       ${abonosHtml}
       ${resumenHtml}
-      <div class="doc-footer">Este documento es una representación impresa. Generado por Rutapp · ${new Date().toLocaleString('es-MX')}</div>
+      <div class="doc-footer">Este documento es una representación impresa. Generado por OctoApp · ${new Date().toLocaleString('es-MX')}</div>
     </body></html>`);
     win.document.close();
     setTimeout(() => win.print(), 300);

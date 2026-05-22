@@ -103,8 +103,8 @@ export default defineConfig(({ mode }) => ({
         ],
       },
       manifest: {
-        name: "Rutapp – Venta en Ruta",
-        short_name: "Rutapp",
+        name: "OctoApp – Venta en Ruta",
+        short_name: "OctoApp",
         description: "Sistema de venta en ruta para vendedores móviles",
         theme_color: "#1a1a2e",
         background_color: "#1a1a2e",

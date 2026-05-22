@@ -36,7 +36,7 @@ export function buildBillingTextMessage(data: BillingTicketData): string {
     if (c.monto && data.monto) lines.push(`de *${data.monto}*`);
     if (c.num_usuarios && data.numUsuarios) lines.push(`por *${data.numUsuarios} usuario(s)*.`);
     if (c.enlace_facturacion) lines.push(`\n💳 ${data.enlaceFacturacion || ''}`);
-    if (c.mensaje_despedida) lines.push('\n¡Gracias por confiar en Rutapp! 🚀');
+    if (c.mensaje_despedida) lines.push('\n¡Gracias por confiar en OctoApp! 🚀');
   }
   if (data.tipo === 'cobro_exitoso') {
     if (c.monto && data.monto) lines.push(`Tu pago de *${data.monto}* se procesó correctamente.`);

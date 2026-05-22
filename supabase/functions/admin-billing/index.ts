@@ -10,7 +10,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// RutApp Stripe product IDs
+// OctoApp Stripe product IDs
 const RUTAPP_PRODUCT_IDS = new Set([
   "prod_U9a56wjBGbKv4B", // Mensual
   "prod_U9a6TsdjaGp99L", // Semestral
@@ -110,7 +110,7 @@ Deno.serve(async (req) => {
       }
 
       // NOTE: We intentionally do NOT filter by isRutappInvoice here.
-      // The Stripe account is dedicated to Rutapp; older invoices created via
+      // The Stripe account is dedicated to OctoApp; older invoices created via
       // Checkout/Customer Portal lack metadata.empresa_id, so filtering would
       // exclude legitimate paid invoices. Show them all.
       const rutappInvoices = allInvoices;
@@ -215,7 +215,7 @@ Deno.serve(async (req) => {
         let empresa = resolvedId ? empresaById[resolvedId] : undefined;
         if (!empresa && custEmail) empresa = empresaByEmail[String(custEmail).toLowerCase()];
 
-        // Decide if this is a Rutapp invoice (only Rutapp must show):
+        // Decide if this is a Rutapp invoice (only OctoApp must show):
         // a) Linked in DB (metadata, facturas, subscriptions)
         // b) Product matches RUTAPP_PRODUCT_IDS
         // c) Description / lines / product name mention 'rutapp'
@@ -253,7 +253,7 @@ Deno.serve(async (req) => {
           customer_name: custName,
           empresa_id: empresa?.id || resolvedId || null,
           empresa_nombre: empresa?.nombre || inv?.metadata?.empresa_nombre || null,
-          description: inv.lines?.data?.[0]?.description || "Suscripción Rutapp",
+          description: inv.lines?.data?.[0]?.description || "Suscripción OctoApp",
         };
       }).filter((x): x is NonNullable<typeof x> => x !== null);
 
@@ -451,7 +451,7 @@ Deno.serve(async (req) => {
         invoice: invoice.id,
         amount,
         currency: "mxn",
-        description: description || "Suscripción Rutapp",
+        description: description || "Suscripción OctoApp",
       });
 
       const finalizedInv = await stripe.invoices.finalizeInvoice(invoice.id);
@@ -573,7 +573,7 @@ Deno.serve(async (req) => {
         }).join("");
 
       const emailHtml = `<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Factura Rutapp</title></head>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Factura OctoApp</title></head>
 <body style="margin:0;padding:0;background-color:#f4f5f7;font-family:Arial,'Helvetica Neue',sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:32px 0;">
 <tr><td align="center">
@@ -582,7 +582,7 @@ Deno.serve(async (req) => {
 <!-- Header gradient -->
 <tr><td style="background:linear-gradient(135deg,${primaryColor},${adjustColor(primaryColor, -40)});padding:32px 40px;">
 <table width="100%" cellpadding="0" cellspacing="0"><tr>
-<td style="color:#fff;"><span style="font-size:24px;font-weight:800;letter-spacing:-0.5px;">Rutapp</span><br><span style="font-size:12px;opacity:0.85;">Sistema de Gestión de Rutas</span></td>
+<td style="color:#fff;"><span style="font-size:24px;font-weight:800;letter-spacing:-0.5px;">OctoApp</span><br><span style="font-size:12px;opacity:0.85;">Sistema de Gestión de Rutas</span></td>
 <td align="right" style="color:#fff;"><span style="font-size:28px;font-weight:700;letter-spacing:1px;">FACTURA</span><br><span style="font-size:12px;opacity:0.85;">${folio}</span></td>
 </tr></table>
 </td></tr>
@@ -597,7 +597,7 @@ Deno.serve(async (req) => {
 
 <!-- Intro text -->
 <p style="font-size:14px;color:#555;line-height:1.6;margin:0 0 24px;">
-Hemos generado su factura por la <strong>suscripción ${plan_nombre}</strong> de Rutapp para <strong>${num_usuarios} usuario${num_usuarios > 1 ? 's' : ''}</strong>${timbres > 0 ? ` con <strong>${timbres} timbres CFDI</strong>` : ''}.
+Hemos generado su factura por la <strong>suscripción ${plan_nombre}</strong> de OctoApp para <strong>${num_usuarios} usuario${num_usuarios > 1 ? 's' : ''}</strong>${timbres > 0 ? ` con <strong>${timbres} timbres CFDI</strong>` : ''}.
 </p>
 
 <!-- Info cards -->
@@ -662,7 +662,7 @@ ${itemsHtml}
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;"><tr>
 <td align="center" style="background:#f8f9fc;border-radius:8px;padding:16px;">
 <span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;">Atendido por</span><br>
-<span style="font-size:14px;font-weight:600;color:#333;">Diego León — Rutapp</span>
+<span style="font-size:14px;font-weight:600;color:#333;">Diego León — OctoApp</span>
 </td>
 </tr></table>
 
@@ -679,12 +679,12 @@ ${itemsHtml}
 <tr><td style="background:#f8f9fc;padding:24px 40px;border-top:1px solid #e8e8e8;">
 <table width="100%" cellpadding="0" cellspacing="0"><tr>
 <td style="font-size:12px;color:#888;line-height:1.6;">
-🌐 <a href="https://rutapp.mx" style="color:${primaryColor};text-decoration:none;">rutapp.mx</a><br>
-📧 soporte@rutapp.mx<br>
+🌐 <a href="https://octoapp.mx" style="color:${primaryColor};text-decoration:none;">octoapp.mx</a><br>
+📧 soporte@octoapp.mx<br>
 📱 +52 (xxx) xxx-xxxx
 </td>
 <td align="right" style="font-size:12px;color:#aaa;">
-<strong style="color:#666;">Rutapp</strong><br>
+<strong style="color:#666;">OctoApp</strong><br>
 Sistema de Gestión de Rutas<br>
 © ${new Date().getFullYear()}
 </td>
@@ -720,7 +720,7 @@ Sistema de Gestión de Rutas<br>
       // WHATSAPP
       if (enviar_whatsapp && telefono_envio) {
         const phone = telefono_envio.replace(/[\s\-\(\)]/g, "");
-        const waMsg = `📋 *Factura Rutapp — ${folio}*\n\nHola *${empresa_nombre}* 👋\n\nSe ha generado tu factura:\n\n📦 *Plan:* ${plan_nombre}\n👥 *Usuarios:* ${num_usuarios}${timbres > 0 ? `\n🔖 *Timbres:* ${timbres}` : ''}${descuento_plan_pct > 0 ? `\n💚 *Descuento plan:* ${descuento_plan_pct}%` : ''}${descuento_extra_pct > 0 ? `\n🎁 *Descuento extra:* ${descuento_extra_pct}%` : ''}\n\n💰 *Total: ${totalFmt}*\n\n💳 *Paga aquí:*\n${payUrl}\n\n⏰ Vigencia: ${vigencia} días\n\nGracias por confiar en Rutapp 🚀`;
+        const waMsg = `📋 *Factura OctoApp — ${folio}*\n\nHola *${empresa_nombre}* 👋\n\nSe ha generado tu factura:\n\n📦 *Plan:* ${plan_nombre}\n👥 *Usuarios:* ${num_usuarios}${timbres > 0 ? `\n🔖 *Timbres:* ${timbres}` : ''}${descuento_plan_pct > 0 ? `\n💚 *Descuento plan:* ${descuento_plan_pct}%` : ''}${descuento_extra_pct > 0 ? `\n🎁 *Descuento extra:* ${descuento_extra_pct}%` : ''}\n\n💰 *Total: ${totalFmt}*\n\n💳 *Paga aquí:*\n${payUrl}\n\n⏰ Vigencia: ${vigencia} días\n\nGracias por confiar en OctoApp 🚀`;
 
         // Get any available WA token
         const { data: waConfig } = await supabase
@@ -797,7 +797,7 @@ Sistema de Gestión de Rutas<br>
         if (!waToken) throw new Error("Token de WhatsApp no configurado");
 
         const amountFmt = `$${(amount / 100).toLocaleString("es-MX")} MXN`;
-        mensaje = `📋 *Factura Rutapp*\n\n${description || "Suscripción Rutapp"}\nMonto: ${amountFmt}\n\n💳 Paga aquí:\n${hosted_url}\n\nGracias por tu preferencia 🙌`;
+        mensaje = `📋 *Factura OctoApp*\n\n${description || "Suscripción OctoApp"}\nMonto: ${amountFmt}\n\n💳 Paga aquí:\n${hosted_url}\n\nGracias por tu preferencia 🙌`;
 
         const phone = profile.telefono.replace(/[\s\-\(\)]/g, "");
         try {
@@ -980,7 +980,7 @@ Sistema de Gestión de Rutas<br>
       if (!waToken) throw new Error("Token de WhatsApp no configurado");
 
       const cleanPhone = phone.replace(/[\s\-\(\)]/g, "");
-      const msg = "✅ *Prueba de Rutapp*\n\nEste es un mensaje de prueba del sistema de notificaciones de cobro de Rutapp.\n\n¡Todo funciona correctamente! 🎉";
+      const msg = "✅ *Prueba de OctoApp*\n\nEste es un mensaje de prueba del sistema de notificaciones de cobro de OctoApp.\n\n¡Todo funciona correctamente! 🎉";
 
       const apiRes = await fetch(WHATSAPI_URL, {
         method: "POST",

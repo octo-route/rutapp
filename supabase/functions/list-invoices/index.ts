@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
       due_date: inv.due_date,
       hosted_invoice_url: inv.hosted_invoice_url,
       invoice_pdf: inv.invoice_pdf,
-      description: inv.lines?.data?.[0]?.description || "Suscripción Rutapp",
+      description: inv.lines?.data?.[0]?.description || "Suscripción OctoApp",
     }));
 
     return new Response(JSON.stringify({ invoices: mapped }), {

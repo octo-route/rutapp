@@ -31,13 +31,13 @@ export interface TutorialVideo {
 // ─────────────────────────────────────────────────
 export const TUTORIAL_VIDEOS: TutorialVideo[] = [
   // Ejemplo:
-  // { url: 'https://www.youtube.com/watch?v=rUAByOAG-2E', title: 'Introducción a RutApp', module: 'dashboard' },
+  // { url: 'https://www.youtube.com/watch?v=rUAByOAG-2E', title: 'Introducción a OctoApp', module: 'dashboard' },
   // { url: 'https://youtu.be/PLzEs7dy9I4', title: 'Cómo gestionar Productos', module: 'productos' },
 ];
 // ─────────────────────────────────────────────────
 
 /** ID del canal de YouTube */
-export const YOUTUBE_CHANNEL_URL = 'https://www.youtube.com/@RutAppMx';
+export const YOUTUBE_CHANNEL_URL = 'https://www.youtube.com/@OctoAppMx';
 
 /** Extrae el videoId de una URL de YouTube */
 export function extractVideoId(url: string): string {

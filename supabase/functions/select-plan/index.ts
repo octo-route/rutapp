@@ -11,7 +11,7 @@ const log = (step: string, details?: any) =>
   console.log(`[SELECT-PLAN] ${step}${details ? ` — ${JSON.stringify(details)}` : ""}`);
 
 const WHATSAPI_URL = "https://itxrxxoykvxpwflndvea.supabase.co/functions/v1/api-proxy";
-const FACTURACION_URL = "https://rutapp.mx/mi-suscripcion";
+const FACTURACION_URL = "https://octoapp.mx/mi-suscripcion";
 
 /* ─── Send WhatsApp text ─── */
 async function sendWA(waToken: string, phone: string, message: string): Promise<boolean> {
@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
     if (!plan_id) throw new Error("plan_id requerido");
 
     const qty = Math.max(3, parseInt(num_usuarios) || 3);
-    const origin = req.headers.get("origin") || "https://rutapp.mx";
+    const origin = req.headers.get("origin") || "https://octoapp.mx";
 
     // Get user's empresa
     const { data: profile } = await supabase
@@ -282,7 +282,7 @@ Deno.serve(async (req) => {
 
     if (waConfig?.api_token && profile.telefono) {
       const waMsg = [
-        `💳 *Nueva factura generada — Rutapp*\n`,
+        `💳 *Nueva factura generada — OctoApp*\n`,
         `Hola ${profile.nombre || ""}`,
         `de *${empresaNombre}*,\n`,
         `Se ha generado tu factura:`,
@@ -294,7 +294,7 @@ Deno.serve(async (req) => {
         `Puedes pagar con tarjeta desde aquí:`,
         `👉 ${payLink}\n`,
         `O desde la app → *Mi Suscripción* → *Pagar*\n`,
-        `¡Gracias por confiar en Rutapp! 🚀`,
+        `¡Gracias por confiar en OctoApp! 🚀`,
       ].filter(Boolean).join("\n");
 
       const sent = await sendWA(waConfig.api_token, profile.telefono, waMsg);
@@ -331,7 +331,7 @@ Deno.serve(async (req) => {
         Hola <strong>${profile.nombre || empresaNombre}</strong>,
       </td></tr>
       <tr><td style="padding-bottom:20px;font-size:14px;color:#374151;">
-        Se ha generado una nueva factura para tu suscripci&oacute;n en Rutapp:
+        Se ha generado una nueva factura para tu suscripci&oacute;n en OctoApp:
       </td></tr>
       <tr><td style="padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
         <table width="100%" cellpadding="0" cellspacing="0">
@@ -357,7 +357,7 @@ Deno.serve(async (req) => {
         Tambi&eacute;n puedes pagar desde la app &rarr; Mi Suscripci&oacute;n &rarr; Pagar
       </td></tr>
       <tr><td style="padding:24px 0 0;font-size:13px;color:#9ca3af;border-top:1px solid #e5e7eb;margin-top:24px;">
-        &iexcl;Gracias por confiar en Rutapp! 🚀<br>
+        &iexcl;Gracias por confiar en OctoApp! 🚀<br>
         <span style="font-size:12px;">Este es un mensaje autom&aacute;tico, no responder.</span>
       </td></tr>
     </table>

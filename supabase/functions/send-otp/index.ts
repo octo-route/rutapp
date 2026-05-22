@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
         );
       }
 
-      const message = `🔐 *RutApp - Código de verificación*\n\nTu código es: *${otpCode}*\n\nEste código expira en 10 minutos.\nSi no solicitaste este código, ignora este mensaje.`;
+      const message = `🔐 *OctoApp - Código de verificación*\n\nTu código es: *${otpCode}*\n\nEste código expira en 10 minutos.\nSi no solicitaste este código, ignora este mensaje.`;
 
       const apiResponse = await fetch(WHATSAPI_URL, {
         method: "POST",

@@ -200,7 +200,7 @@ export default function PagarPage() {
             </div>
           </div>
           <p className="text-center text-xs text-slate-400 mt-6">
-            Powered by <span className="font-semibold">Rutapp</span> · Pagos seguros con OpenPay
+            Powered by <span className="font-semibold">OctoApp</span> · Pagos seguros con OpenPay
           </p>
         </div>
       </div>
@@ -371,7 +371,7 @@ export default function PagarPage() {
         </div>
 
         <p className="text-center text-xs text-slate-400 mt-6">
-          Powered by <span className="font-semibold">Rutapp</span> · Pagos seguros con OpenPay
+          Powered by <span className="font-semibold">OctoApp</span> · Pagos seguros con OpenPay
         </p>
       </div>
     </div>

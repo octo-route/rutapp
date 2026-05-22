@@ -122,8 +122,8 @@ export default function LandingPage() {
       <nav className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100 pt-[env(safe-area-inset-top)]">
         <div className="max-w-7xl mx-auto flex items-center justify-between px-[max(1.5rem,env(safe-area-inset-left))] h-16">
           <div className="flex items-center gap-2">
-            <img src="https://res.cloudinary.com/dstcnsu6a/image/upload/v1774544059/Imagen_p4jkid.png" alt="Rutapp" className="h-8 w-8 rounded-lg object-contain" />
-            <span className="text-xl font-black tracking-tight" style={{ color: 'hsl(230, 55%, 52%)' }}>Rutapp</span>
+            <img src="/Octoapp%20logo.png" alt="OctoApp" className="h-8 w-8 rounded-lg object-contain" />
+            <span className="text-xl font-black tracking-tight" style={{ color: 'hsl(230, 55%, 52%)' }}>OctoApp</span>
           </div>
           <div className="hidden md:flex items-center gap-7 text-sm font-medium text-gray-600">
             <a href="#realtime" className="hover:text-gray-900 transition-colors flex items-center gap-1.5">
@@ -308,7 +308,7 @@ export default function LandingPage() {
       <section id="features" className="py-20 px-6" style={{ background: 'hsl(220, 14%, 98%)' }}>
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-14">
-            <h2 className="text-3xl md:text-4xl font-black tracking-tight">Todo lo que Rutapp puede hacer por ti</h2>
+            <h2 className="text-3xl md:text-4xl font-black tracking-tight">Todo lo que OctoApp puede hacer por ti</h2>
             <p className="text-gray-500 mt-3 max-w-2xl mx-auto">
               Más de 30 funciones listas para usar, organizadas por área. Sin add-ons, sin sorpresas.
             </p>
@@ -346,7 +346,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-14">
             <h2 className="text-3xl md:text-4xl font-black tracking-tight">Míralo en acción</h2>
-            <p className="text-gray-500 mt-3">Así se ve Rutapp por dentro. Potente, limpio y fácil de usar.</p>
+            <p className="text-gray-500 mt-3">Así se ve OctoApp por dentro. Potente, limpio y fácil de usar.</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-10 items-center mb-20">
@@ -521,7 +521,7 @@ export default function LandingPage() {
               ¿Listo para ver tu operación en tiempo real?
             </h2>
             <p className="text-indigo-100 text-lg mb-8 max-w-xl mx-auto">
-              Únete a cientos de distribuidoras que ya optimizaron su operación con Rutapp.
+              Únete a cientos de distribuidoras que ya optimizaron su operación con OctoApp.
             </p>
             <Link to="/signup"
               className="inline-flex items-center gap-2 px-8 py-4 bg-white text-base font-bold rounded-xl shadow-xl hover:shadow-2xl transition-all"
@@ -536,14 +536,14 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-gray-100 py-10 px-[max(1.5rem,env(safe-area-inset-left))] pb-[max(2.5rem,env(safe-area-inset-bottom))]">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <span className="text-lg font-black" style={{ color: 'hsl(230, 55%, 52%)' }}>Rutapp</span>
+          <span className="text-lg font-black" style={{ color: 'hsl(230, 55%, 52%)' }}>OctoApp</span>
           <div className="flex items-center gap-6 text-sm text-gray-500">
             <a href="#realtime" className="hover:text-gray-700">En vivo</a>
             <a href="#features" className="hover:text-gray-700">Funciones</a>
             <a href="#pricing" className="hover:text-gray-700">Precios</a>
             <Link to="/login" className="hover:text-gray-700">Iniciar sesión</Link>
           </div>
-          <p className="text-xs text-gray-400">© {new Date().getFullYear()} Rutapp. Todos los derechos reservados.</p>
+          <p className="text-xs text-gray-400">© {new Date().getFullYear()} OctoApp. Todos los derechos reservados.</p>
         </div>
       </footer>
     </div>

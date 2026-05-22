@@ -216,8 +216,8 @@ function AppRoutes() {
       <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-6">
         <div className="relative flex flex-col items-center gap-5">
           <img
-            src="https://res.cloudinary.com/dstcnsu6a/image/upload/v1774544059/Imagen_p4jkid.png"
-            alt="Rutapp"
+            src="/Octoapp%20logo.png"
+            alt="OctoApp"
             className="h-14 w-14 rounded-2xl object-contain shadow-lg"
           />
           <div className="flex flex-col items-center gap-3">
@@ -244,7 +244,7 @@ function AppRoutes() {
               ))}
             </div>
           </div>
-          <p className="text-sm font-medium text-muted-foreground tracking-wide">Cargando Rutapp...</p>
+          <p className="text-sm font-medium text-muted-foreground tracking-wide">Cargando OctoApp...</p>
         </div>
         {loadingTooLong && user && (
           <button
@@ -297,7 +297,7 @@ function AppRoutes() {
         <SubscriptionBanner />
         <header className="border-b border-border bg-card px-4 py-3 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <span className="font-bold text-lg text-foreground">RutApp</span>
+            <span className="font-bold text-lg text-foreground">OctoApp</span>
             <Badge variant="destructive" className="text-xs">Suspendida</Badge>
           </div>
           <div className="flex items-center gap-2">
@@ -354,7 +354,7 @@ function AppRoutes() {
         <SubscriptionBanner />
         <header className="border-b border-border bg-card px-4 py-3 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <span className="font-bold text-lg text-foreground">RutApp</span>
+            <span className="font-bold text-lg text-foreground">OctoApp</span>
             <Badge variant="destructive" className="text-xs">Suspendida</Badge>
           </div>
           <div className="flex items-center gap-2">

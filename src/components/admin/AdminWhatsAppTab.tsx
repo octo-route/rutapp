@@ -64,7 +64,7 @@ function getSampleData(tipo: string, campos: Record<string, boolean>, emoji: str
     fechaCobro: '1 de abril 2026',
     numUsuarios: 3,
     enlacePago: 'https://invoice.stripe.com/i/acct_xxx/inv_xxx',
-    enlaceFacturacion: 'https://rutapp.mx/facturacion',
+    enlaceFacturacion: 'https://octoapp.mx/facturacion',
     fechaVigencia: '1 de mayo 2026',
     diasGracia: 3,
   };
@@ -194,7 +194,7 @@ export default function AdminWhatsAppTab() {
         data: sampleData,
         phone: testPhone,
         waToken: savedToken,
-        customerEmail: 'test@rutapp.mx',
+        customerEmail: 'test@octoapp.mx',
         textCaption: `${tpl.emoji} ${tpl.encabezado} (PRUEBA)`,
       });
 
@@ -222,7 +222,7 @@ export default function AdminWhatsAppTab() {
           data: sampleData,
           phone: testPhone,
           waToken: savedToken,
-          customerEmail: 'test@rutapp.mx',
+          customerEmail: 'test@octoapp.mx',
           textCaption: `${tpl.emoji} ${tpl.encabezado} (PRUEBA)`,
         });
         if (result.success) sent++;
@@ -422,7 +422,7 @@ export default function AdminWhatsAppTab() {
                                 <span className="text-white text-xs font-bold">R</span>
                               </div>
                               <div className="flex-1">
-                                <p className="text-white text-sm font-semibold">Rutapp</p>
+                                <p className="text-white text-sm font-semibold">OctoApp</p>
                                 <p className="text-white/60 text-[10px]">en línea</p>
                               </div>
                             </div>

@@ -539,8 +539,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </SheetTrigger>
               <SheetContent side="left" className="w-72 p-0 bg-sidebar border-sidebar-border flex flex-col h-full gap-0">
                 <div className="h-14 flex items-center px-4 border-b border-sidebar-border/30 shrink-0">
-                  <img src="https://res.cloudinary.com/dstcnsu6a/image/upload/v1774544059/Imagen_p4jkid.png" alt="Rutapp" className="h-7 w-7 rounded object-contain" />
-                  <span className="text-[18px] font-black text-primary tracking-tight">Rutapp</span>
+                  <img src="/Octoapp%20logo.png" alt="OctoApp" className="h-7 w-7 rounded object-contain" />
+                  <span className="text-[18px] font-black text-primary tracking-tight">OctoApp</span>
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto">
                   <SidebarNav
@@ -588,8 +588,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </div>
               </SheetContent>
             </Sheet>
-            <img src="https://res.cloudinary.com/dstcnsu6a/image/upload/v1774544059/Imagen_p4jkid.png" alt="Rutapp" className="h-6 w-6 rounded object-contain" />
-            <span className="text-[16px] font-black text-primary tracking-tight">Rutapp</span>
+            <img src="/Octoapp%20logo.png" alt="OctoApp" className="h-6 w-6 rounded object-contain" />
+            <span className="text-[16px] font-black text-primary tracking-tight">OctoApp</span>
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -673,11 +673,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           collapsed ? "justify-center px-2" : "px-4"
         )}>
           {collapsed ? (
-            <img src="https://res.cloudinary.com/dstcnsu6a/image/upload/v1774544059/Imagen_p4jkid.png" alt="R" className="h-7 w-7 rounded object-contain" />
+            <img src="/Octoapp%20logo.png" alt="OctoApp" className="h-7 w-7 rounded object-contain" />
           ) : (
             <div className="flex items-center gap-2">
-              <img src="https://res.cloudinary.com/dstcnsu6a/image/upload/v1774544059/Imagen_p4jkid.png" alt="Rutapp" className="h-7 w-7 rounded object-contain" />
-              <span className="text-[18px] font-black text-primary tracking-tight">Rutapp</span>
+              <img src="/Octoapp%20logo.png" alt="OctoApp" className="h-7 w-7 rounded object-contain" />
+              <span className="text-[18px] font-black text-primary tracking-tight">OctoApp</span>
             </div>
           )}
         </div>

@@ -18,7 +18,7 @@ const DIAS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', '
 const DIA_HOY = DIAS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1];
 
 // localStorage as offline fallback
-const VISITED_KEY = () => `rutapp_visited_${todayLocal()}`;
+const VISITED_KEY = () => `octoapp_visited_${todayLocal()}`;
 
 function getLocalVisitedSet(): Set<string> {
   try {

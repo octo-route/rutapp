@@ -15,7 +15,7 @@ export default function PrivacidadPage() {
         <div className="prose prose-sm max-w-none text-foreground/90 space-y-6">
           <section>
             <h2 className="text-lg font-bold text-foreground">1. Responsable del Tratamiento</h2>
-            <p>RutApp ("la Empresa") es responsable del tratamiento de los datos personales recabados a través de la plataforma, de conformidad con la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP) y su Reglamento. Domicilio: Guadalajara, Jalisco, México.</p>
+            <p>OctoApp ("la Empresa") es responsable del tratamiento de los datos personales recabados a través de la plataforma, de conformidad con la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP) y su Reglamento. Domicilio: Guadalajara, Jalisco, México.</p>
           </section>
 
           <section>
@@ -59,7 +59,7 @@ export default function PrivacidadPage() {
           <section>
             <h2 className="text-lg font-bold text-foreground">4. Datos Financieros y Cobro Automático</h2>
             <ul className="list-disc pl-5 space-y-1">
-              <li>Los datos de pago (tarjeta de crédito/débito) son procesados exclusivamente por Stripe, Inc. y nunca se almacenan en los servidores de RutApp.</li>
+              <li>Los datos de pago (tarjeta de crédito/débito) son procesados exclusivamente por Stripe, Inc. y nunca se almacenan en los servidores de OctoApp.</li>
               <li>Al registrar un método de pago, el Usuario autoriza a Stripe a procesar cobros recurrentes mensuales según el plan contratado.</li>
               <li>Stripe cumple con los estándares PCI DSS Nivel 1 para la seguridad de datos de tarjetas.</li>
               <li>La Empresa conserva registros de transacciones (montos, fechas, estados de pago) para fines contables y de soporte.</li>
@@ -84,7 +84,7 @@ export default function PrivacidadPage() {
 
           <section>
             <h2 className="text-lg font-bold text-foreground">6. Derechos ARCO</h2>
-            <p>Usted tiene derecho a Acceder, Rectificar, Cancelar u Oponerse al tratamiento de sus datos personales (derechos ARCO). Para ejercer estos derechos, envíe una solicitud a través de los canales de soporte de la plataforma o al correo soporte@rutapp.com indicando:</p>
+            <p>Usted tiene derecho a Acceder, Rectificar, Cancelar u Oponerse al tratamiento de sus datos personales (derechos ARCO). Para ejercer estos derechos, envíe una solicitud a través de los canales de soporte de la plataforma o al correo soporte@octoapp.mx indicando:</p>
             <ul className="list-disc pl-5 space-y-1">
               <li>Nombre completo y correo electrónico asociado a la cuenta.</li>
               <li>Descripción clara del derecho que desea ejercer.</li>
@@ -159,7 +159,7 @@ export default function PrivacidadPage() {
 
           <section>
             <h2 className="text-lg font-bold text-foreground">14. Contacto</h2>
-            <p>Para consultas sobre privacidad, protección de datos o para ejercer sus derechos ARCO, utilice los canales de soporte disponibles en la plataforma o escriba a soporte@rutapp.com.</p>
+            <p>Para consultas sobre privacidad, protección de datos o para ejercer sus derechos ARCO, utilice los canales de soporte disponibles en la plataforma o escriba a soporte@octoapp.mx.</p>
           </section>
         </div>
       </div>

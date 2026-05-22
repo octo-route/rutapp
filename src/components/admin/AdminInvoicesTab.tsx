@@ -213,7 +213,7 @@ export default function AdminInvoicesTab() {
         });
       }
 
-      const concepto = form.concepto || `Suscripción Rutapp ${selectedPlan.nombre} — ${selectedEmpresa?.nombre || ''}`;
+      const concepto = form.concepto || `Suscripción OctoApp ${selectedPlan.nombre} — ${selectedEmpresa?.nombre || ''}`;
       const fullPhone = form.telefono ? `${form.lada}${form.telefono.replace(/\D/g, '')}` : '';
 
       const res = await fetch(
@@ -580,7 +580,7 @@ export default function AdminInvoicesTab() {
             {/* Concepto personalizado */}
             <div className="space-y-2">
               <Label>Concepto (opcional)</Label>
-              <Input placeholder={`Suscripción Rutapp ${selectedPlan?.nombre || ''}`} value={form.concepto}
+              <Input placeholder={`Suscripción OctoApp ${selectedPlan?.nombre || ''}`} value={form.concepto}
                 onChange={e => setForm(f => ({ ...f, concepto: e.target.value }))} />
             </div>
 

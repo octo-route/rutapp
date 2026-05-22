@@ -9,14 +9,14 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const RUTAPP_PRODUCT_IDS = new Set([
+const OCTOAPP_PRODUCT_IDS = new Set([
   "prod_U9a56wjBGbKv4B",
   "prod_U9a6TsdjaGp99L",
   "prod_U9a7Ap6nbM6kPV",
 ]);
 
 const GRACE_DAYS = 3;
-const FACTURACION_URL = "https://rutapp.mx/facturacion";
+const FACTURACION_URL = "https://octoapp.mx/facturacion";
 
 /* ─── Template types ─── */
 interface TemplateConfig {
@@ -39,46 +39,46 @@ interface TicketVars {
 }
 
 /* ─── Default templates ─── */
-const YOUTUBE_CHANNEL = "https://www.youtube.com/@RutAppMx";
+const YOUTUBE_CHANNEL = "https://www.youtube.com/@OctoAppMx";
 
 const DEFAULT_TEMPLATES: Record<string, TemplateConfig> = {
   bienvenida: {
-    tipo: "bienvenida", emoji: "🎉", encabezado: "¡Bienvenido a Rutapp!",
+    tipo: "bienvenida", emoji: "🎉", encabezado: "¡Bienvenido a OctoApp!",
     activo: true,
     campos: { nombre_cliente: true, nombre_empresa: true, enlace_facturacion: true, mensaje_despedida: true },
   },
   pre_cobro: {
-    tipo: "pre_cobro", emoji: "🔔", encabezado: "Recordatorio de cobro — Rutapp",
+    tipo: "pre_cobro", emoji: "🔔", encabezado: "Recordatorio de cobro — OctoApp",
     activo: true,
     campos: { nombre_cliente: true, nombre_empresa: true, fecha_cobro: true, monto: true, num_usuarios: true, enlace_facturacion: true, mensaje_despedida: true },
   },
   cobro_exitoso: {
-    tipo: "cobro_exitoso", emoji: "✅", encabezado: "Pago confirmado — Rutapp",
+    tipo: "cobro_exitoso", emoji: "✅", encabezado: "Pago confirmado — OctoApp",
     activo: true,
     campos: { nombre_cliente: true, nombre_empresa: true, monto: true, fecha_vigencia: true, mensaje_despedida: true },
   },
   cobro_fallido: {
-    tipo: "cobro_fallido", emoji: "⚠️", encabezado: "Pago pendiente — Rutapp",
+    tipo: "cobro_fallido", emoji: "⚠️", encabezado: "Pago pendiente — OctoApp",
     activo: true,
     campos: { nombre_cliente: true, nombre_empresa: true, monto: true, dias_gracia: true, enlace_pago: true, advertencia_suspension: true },
   },
   suspension: {
-    tipo: "suspension", emoji: "🚫", encabezado: "Cuenta suspendida — Rutapp",
+    tipo: "suspension", emoji: "🚫", encabezado: "Cuenta suspendida — OctoApp",
     activo: true,
     campos: { nombre_cliente: true, nombre_empresa: true, enlace_facturacion: true, mensaje_contacto: true },
   },
   trial_expira_manana: {
-    tipo: "trial_expira_manana", emoji: "⏰", encabezado: "¡Tu prueba gratuita termina mañana! — Rutapp",
+    tipo: "trial_expira_manana", emoji: "⏰", encabezado: "¡Tu prueba gratuita termina mañana! — OctoApp",
     activo: true,
     campos: { nombre_cliente: true, nombre_empresa: true, enlace_facturacion: true, mensaje_despedida: true },
   },
   trial_expirado: {
-    tipo: "trial_expirado", emoji: "💡", encabezado: "Tu prueba gratuita ha terminado — Rutapp",
+    tipo: "trial_expirado", emoji: "💡", encabezado: "Tu prueba gratuita ha terminado — OctoApp",
     activo: true,
     campos: { nombre_cliente: true, nombre_empresa: true, dias_gracia: true, enlace_facturacion: true, advertencia_suspension: true },
   },
   trial_suspendido: {
-    tipo: "trial_suspendido", emoji: "👋", encabezado: "Te extrañamos en Rutapp",
+    tipo: "trial_suspendido", emoji: "👋", encabezado: "Te extrañamos en OctoApp",
     activo: true,
     campos: { nombre_cliente: true, nombre_empresa: true, enlace_facturacion: true, mensaje_contacto: true },
   },
@@ -95,8 +95,8 @@ function buildTextMessage(tpl: TemplateConfig, vars: TicketVars): string {
 
   if (tpl.tipo === "bienvenida") {
     lines.push("¡Nos da mucho gusto que estés aquí! 🙌\n");
-    lines.push("Tu cuenta de *Rutapp* ya está lista. Tienes una prueba gratuita para que explores todo el sistema sin compromiso.\n");
-    lines.push("📺 *Aprende a usar Rutapp paso a paso:*");
+    lines.push("Tu cuenta de *OctoApp* ya está lista. Tienes una prueba gratuita para que explores todo el sistema sin compromiso.\n");
+    lines.push("📺 *Aprende a usar OctoApp paso a paso:*");
     lines.push(YOUTUBE_CHANNEL);
     lines.push("\nAhí encontrarás videos con todo lo que necesitas para sacarle el máximo provecho a tu negocio.\n");
     if (c.enlace_facturacion) lines.push(`💳 *Ver mi suscripción:* ${vars.enlaceFacturacion || FACTURACION_URL}`);
@@ -107,7 +107,7 @@ function buildTextMessage(tpl: TemplateConfig, vars: TicketVars): string {
     if (c.monto && vars.monto) lines.push(`de *${vars.monto}*`);
     if (c.num_usuarios && vars.numUsuarios) lines.push(`por *${vars.numUsuarios} usuario(s)*.`);
     if (c.enlace_facturacion) lines.push(`\n💳 ${vars.enlaceFacturacion || ""}`);
-    if (c.mensaje_despedida) lines.push("\n¡Gracias por confiar en Rutapp! 🚀");
+    if (c.mensaje_despedida) lines.push("\n¡Gracias por confiar en OctoApp! 🚀");
   }
   if (tpl.tipo === "cobro_exitoso") {
     lines.push("¡Tu pago ha sido procesado exitosamente! 💪\n");
@@ -115,7 +115,7 @@ function buildTextMessage(tpl: TemplateConfig, vars: TicketVars): string {
     if (c.nombre_empresa && vars.numUsuarios) lines.push(`👥 *Usuarios activos:* ${vars.numUsuarios}`);
     if (c.fecha_vigencia && vars.fechaVigencia) lines.push(`📅 *Próximo cobro:* ${vars.fechaVigencia}`);
     lines.push("\nTu suscripción está al día y todos tus usuarios tienen acceso completo. 🟢");
-    if (c.mensaje_despedida) lines.push("\n¡Gracias por ser parte de *Rutapp*! Seguimos trabajando para que tu negocio crezca cada día. 🚀");
+    if (c.mensaje_despedida) lines.push("\n¡Gracias por ser parte de *OctoApp*! Seguimos trabajando para que tu negocio crezca cada día. 🚀");
   }
   if (tpl.tipo === "cobro_fallido") {
     lines.push("No pudimos procesar tu pago.");
@@ -130,11 +130,11 @@ function buildTextMessage(tpl: TemplateConfig, vars: TicketVars): string {
     if (c.mensaje_contacto) lines.push("\nSi tienes dudas o necesitas ayuda, contáctanos. Queremos seguir siendo parte de tu negocio. 💪");
   }
   if (tpl.tipo === "trial_expira_manana") {
-    lines.push("¡Esperamos que estés disfrutando *Rutapp*! 🎯\n");
+    lines.push("¡Esperamos que estés disfrutando *OctoApp*! 🎯\n");
     lines.push("Tu prueba gratuita termina mañana. Si te ha gustado lo que has visto, activa tu plan para no perder nada de lo que ya avanzaste:\n");
     if (c.enlace_facturacion) lines.push(`💳 *Activar mi plan:* ${vars.enlaceFacturacion || FACTURACION_URL}`);
     lines.push(`\n📺 ¿Aún no exploras todo? Mira nuestros tutoriales: ${YOUTUBE_CHANNEL}`);
-    if (c.mensaje_despedida) lines.push("\n¡Estamos seguros de que Rutapp va a ayudar a crecer tu negocio! 🚀");
+    if (c.mensaje_despedida) lines.push("\n¡Estamos seguros de que OctoApp va a ayudar a crecer tu negocio! 🚀");
   }
   if (tpl.tipo === "trial_expirado") {
     lines.push("Tu prueba gratuita ha terminado, pero *tus datos siguen seguros* con nosotros. 🔒\n");
@@ -147,7 +147,7 @@ function buildTextMessage(tpl: TemplateConfig, vars: TicketVars): string {
     lines.push("Tu periodo de prueba terminó y tu acceso ha sido pausado temporalmente.\n");
     lines.push("Pero no te preocupes, *todos tus datos están guardados*. Solo activa tu plan y todo estará como lo dejaste:\n");
     if (c.enlace_facturacion) lines.push(`💳 *Activar mi plan:* ${vars.enlaceFacturacion || FACTURACION_URL}`);
-    lines.push(`\n📺 Descubre todo lo que Rutapp puede hacer por tu negocio: ${YOUTUBE_CHANNEL}`);
+    lines.push(`\n📺 Descubre todo lo que OctoApp puede hacer por tu negocio: ${YOUTUBE_CHANNEL}`);
     if (c.mensaje_contacto) lines.push("\n¿Tienes dudas? Escríbenos, con gusto te ayudamos. 😊");
   }
   return lines.join("\n");
@@ -452,7 +452,7 @@ Deno.serve(async (req) => {
         if (!inv.lines?.data?.length) continue;
         const isRutapp = inv.lines.data.some((line: any) => {
           const pid = typeof line.price?.product === "string" ? line.price.product : line.price?.product?.id;
-          return pid && RUTAPP_PRODUCT_IDS.has(pid);
+          return pid && OCTOAPP_PRODUCT_IDS.has(pid);
         });
         if (!isRutapp || !inv.customer_email) continue;
 

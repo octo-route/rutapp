@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
            Tambi&eacute;n puedes pagar desde la app &rarr; Mi Suscripci&oacute;n
          </td></tr>`
       : `<tr><td style="padding:16px 0;text-align:center;">
-           <a href="<a href="https://rutapp.mx/mi-suscripcion" style="display:inline-block;padding:14px 36px;background:#2563eb;color:#ffffff;font-weight:600;font-size:16px;border-radius:8px;text-decoration:none;">Ver mi suscripci&oacute;n</a>" style="display:inline-block;padding:14px 36px;background:#2563eb;color:#ffffff;font-weight:600;font-size:16px;border-radius:8px;text-decoration:none;">Ver mi suscripci&oacute;n</a>
+           <a href="<a href="https://octoapp.mx/mi-suscripcion" style="display:inline-block;padding:14px 36px;background:#2563eb;color:#ffffff;font-weight:600;font-size:16px;border-radius:8px;text-decoration:none;">Ver mi suscripci&oacute;n</a>" style="display:inline-block;padding:14px 36px;background:#2563eb;color:#ffffff;font-weight:600;font-size:16px;border-radius:8px;text-decoration:none;">Ver mi suscripci&oacute;n</a>
          </td></tr>`;
 
     const html = `<!DOCTYPE html>
@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
         Hola <strong>${empresa || "Cliente"}</strong>,
       </td></tr>
       <tr><td style="padding-bottom:20px;font-size:14px;color:#374151;">
-        ${reference ? 'Se ha generado una referencia de pago para tu suscripci&oacute;n:' : 'Se ha generado una factura pendiente para tu suscripci&oacute;n en Rutapp:'}
+        ${reference ? 'Se ha generado una referencia de pago para tu suscripci&oacute;n:' : 'Se ha generado una factura pendiente para tu suscripci&oacute;n en OctoApp:'}
       </td></tr>
       <tr><td style="padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
         <table width="100%" cellpadding="0" cellspacing="0">
@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
       </td></tr>
       ${paymentInfo}
       <tr><td style="padding:24px 0 0;font-size:13px;color:#9ca3af;border-top:1px solid #e5e7eb;margin-top:24px;">
-        &iexcl;Gracias por confiar en Rutapp! &#x1F680;<br>
+        &iexcl;Gracias por confiar en OctoApp! &#x1F680;<br>
         <span style="font-size:12px;">Este es un mensaje autom&aacute;tico, no responder.</span>
       </td></tr>
     </table>

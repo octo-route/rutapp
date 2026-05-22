@@ -1,4 +1,4 @@
-# RutApp
+# OctoApp
 
 Sistema integral de gestión comercial y operación de rutas para empresas de distribución y ventas móviles.
 
@@ -60,7 +60,7 @@ Sistema integral de gestión comercial y operación de rutas para empresas de di
 ```bash
 git clone <REPO_URL>
 
-cd rutapp
+cd octoapp
 
 npm install
 ```
@@ -124,7 +124,7 @@ supabase/
 
 # Arquitectura
 
-RutApp utiliza una arquitectura SPA basada en React y Supabase.
+OctoApp utiliza una arquitectura SPA basada en React y Supabase.
 
 La lógica de negocio se divide entre:
 

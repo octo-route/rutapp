@@ -341,7 +341,7 @@ export async function generarReporteDiarioPdf(data: ReporteDiarioPdfData): Promi
     doc.setTextColor(160);
     const footY = doc.internal.pageSize.getHeight() - 24;
     doc.text(
-      `Generado por Rutapp · ${new Date().toLocaleString('es-MX')}  ·  Página ${i} de ${pageCount}`,
+      `Generado por OctoApp · ${new Date().toLocaleString('es-MX')}  ·  Página ${i} de ${pageCount}`,
       pageW / 2,
       footY,
       { align: 'center' },
