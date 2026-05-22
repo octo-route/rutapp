@@ -2,6 +2,8 @@
 
 Sistema integral de gestión comercial y operación de rutas para empresas de distribución y ventas móviles.
 
+> 📖 **Documentación técnica completa:** ver [DOCUMENTACION.md](DOCUMENTACION.md) — arquitectura, base de datos (todas las tablas), autenticación, permisos, edge functions, modo offline y despliegue.
+
 ## Características principales
 
 - Gestión de ventas y cobranzas
