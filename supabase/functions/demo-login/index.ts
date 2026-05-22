@@ -6,7 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const DEMO_EMAIL = "demo@rutapp.mx";
+const DEMO_EMAIL = "demo@octoapp.mx";
 const DEMO_PASSWORD = "demo1234";
 const DEMO_EMPRESA_NOMBRE = "Distribuidora Demo";
 
@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
       estado: "Nuevo León",
       cp: "64000",
       telefono: "8112345678",
-      email: "demo@rutapp.mx",
+      email: "demo@octoapp.mx",
       razon_social: "Distribuidora Demo S.A. de C.V.",
       regimen_fiscal: "601",
       moneda: "MXN",

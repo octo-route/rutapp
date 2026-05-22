@@ -146,7 +146,7 @@ export default function RutaPerfil() {
             >
               <Download className="h-5 w-5 text-primary" />
               <div className="flex-1 text-left">
-                <span className="text-[14px] font-medium text-foreground block">Instalar Rutapp</span>
+                <span className="text-[14px] font-medium text-foreground block">Instalar OctoApp</span>
                 <span className="text-[11px] text-muted-foreground">Agregar a tu pantalla de inicio</span>
               </div>
             </button>

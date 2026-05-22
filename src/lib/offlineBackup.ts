@@ -145,7 +145,7 @@ export async function exportFullBackup(): Promise<{ blob: Blob; filename: string
   const json = JSON.stringify(backup);
   const blob = new Blob([json], { type: 'application/json' });
   const date = todayLocal();
-  const filename = `rutapp-backup-${date}.json`;
+  const filename = `octoapp-backup-${date}.json`;
 
   return { blob, filename, recordCount };
 }

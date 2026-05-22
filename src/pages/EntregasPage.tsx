@@ -201,7 +201,7 @@ function PrintDocument({ entrega, empresa }: { entrega: any; empresa: any }) {
         )}
 
         <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '9px', color: '#bbb' }}>
-          rutapp.mx
+          octoapp.mx
         </div>
       </div>
     </div>

@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
     // Subscription with trial_end at first day of next month.
     // Stripe will charge ONLY the one-shot now, and start recurring on day 1° next month.
     // No proration, no surprises.
-    const origin = req.headers.get("origin") || "https://rutapp.mx";
+    const origin = req.headers.get("origin") || "https://octoapp.mx";
     const trialEndUnix = firstOfNextMonthUnix(now);
 
     const sessionParams: any = {

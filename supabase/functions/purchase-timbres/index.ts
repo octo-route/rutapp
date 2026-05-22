@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
         customerId = newCustomer.id;
       }
 
-      const origin = req.headers.get("origin") || "https://rutapp.mx";
+      const origin = req.headers.get("origin") || "https://octoapp.mx";
 
       const session = await stripe.checkout.sessions.create({
         customer: customerId,

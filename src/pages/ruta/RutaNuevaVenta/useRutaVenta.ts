@@ -59,7 +59,7 @@ export function useRutaVenta(opts?: { onAlmacenMissing?: () => void }) {
   const canChangePrice = isOwner || hasPermiso('ventas.cambiar_precio', 'ver');
   const canApplyDiscount = isOwner || hasPermiso('ventas.aplicar_descuento', 'ver');
 
-  const VISITED_KEY = `rutapp_visited_${todayLocal()}`;
+  const VISITED_KEY = `octoapp_visited_${todayLocal()}`;
   const markVisited = (cId: string) => {
     try {
       const raw = localStorage.getItem(VISITED_KEY);

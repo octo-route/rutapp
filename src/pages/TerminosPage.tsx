@@ -15,12 +15,12 @@ export default function TerminosPage() {
         <div className="prose prose-sm max-w-none text-foreground/90 space-y-6">
           <section>
             <h2 className="text-lg font-bold text-foreground">1. Aceptación de los Términos</h2>
-            <p>Al acceder, registrarse o utilizar la plataforma RutApp ("el Servicio"), usted acepta estos Términos y Condiciones en su totalidad. Si no está de acuerdo con alguna parte, no debe utilizar el Servicio. Estos términos constituyen un acuerdo legalmente vinculante entre usted ("el Usuario") y RutApp ("la Empresa"). El uso continuado del Servicio después de la publicación de cambios a estos Términos implica su aceptación.</p>
+            <p>Al acceder, registrarse o utilizar la plataforma OctoApp ("el Servicio"), usted acepta estos Términos y Condiciones en su totalidad. Si no está de acuerdo con alguna parte, no debe utilizar el Servicio. Estos términos constituyen un acuerdo legalmente vinculante entre usted ("el Usuario") y OctoApp ("la Empresa"). El uso continuado del Servicio después de la publicación de cambios a estos Términos implica su aceptación.</p>
           </section>
 
           <section>
             <h2 className="text-lg font-bold text-foreground">2. Descripción del Servicio</h2>
-            <p>RutApp es una plataforma de gestión empresarial en la nube (SaaS) que incluye, entre otras funcionalidades: gestión de ventas, inventario, facturación electrónica CFDI 4.0, logística de entregas, control de rutas, cobranza, punto de venta, reportes y comunicación por WhatsApp. El Servicio se ofrece "tal cual" y puede ser actualizado, modificado o discontinuado en cualquier momento.</p>
+            <p>OctoApp es una plataforma de gestión empresarial en la nube (SaaS) que incluye, entre otras funcionalidades: gestión de ventas, inventario, facturación electrónica CFDI 4.0, logística de entregas, control de rutas, cobranza, punto de venta, reportes y comunicación por WhatsApp. El Servicio se ofrece "tal cual" y puede ser actualizado, modificado o discontinuado en cualquier momento.</p>
           </section>
 
           <section>
@@ -119,7 +119,7 @@ export default function TerminosPage() {
 
           <section>
             <h2 className="text-lg font-bold text-foreground">10. Propiedad Intelectual</h2>
-            <p>Todo el software, diseño, código fuente, logos, marcas y contenido del Servicio son propiedad exclusiva de RutApp y están protegidos por las leyes de propiedad intelectual aplicables. El Usuario retiene la propiedad de sus datos comerciales pero otorga una licencia limitada para que RutApp los procese conforme al Servicio.</p>
+            <p>Todo el software, diseño, código fuente, logos, marcas y contenido del Servicio son propiedad exclusiva de OctoApp y están protegidos por las leyes de propiedad intelectual aplicables. El Usuario retiene la propiedad de sus datos comerciales pero otorga una licencia limitada para que OctoApp los procese conforme al Servicio.</p>
           </section>
 
           <section>
@@ -167,7 +167,7 @@ export default function TerminosPage() {
 
           <section>
             <h2 className="text-lg font-bold text-foreground">16. Contacto</h2>
-            <p>Para consultas relacionadas con estos Términos, puede contactarnos a través de los canales de soporte disponibles en la plataforma o enviando un correo electrónico a soporte@rutapp.com.</p>
+            <p>Para consultas relacionadas con estos Términos, puede contactarnos a través de los canales de soporte disponibles en la plataforma o enviando un correo electrónico a soporte@octoapp.mx.</p>
           </section>
         </div>
       </div>

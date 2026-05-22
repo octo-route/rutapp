@@ -498,7 +498,7 @@ function SuscribirEmpresaSection() {
                           disabled={sendingWa || !custPhone}
                           onClick={() => {
                             const msg = lastResult.type === 'link'
-                              ? `💳 *Enlace de pago — ${selectedEmpresa?.nombre}*\n\nPlan: *${lastResult.planName}*\nMonto: *$${lastResult.amount} MXN*\n\nRegistra tu tarjeta aquí:\n${lastResult.url}\n\nEs un enlace seguro donde tú mismo ingresas tus datos de pago. 🔒\n\n¡Gracias por confiar en Rutapp! 🚀`
+                              ? `💳 *Enlace de pago — ${selectedEmpresa?.nombre}*\n\nPlan: *${lastResult.planName}*\nMonto: *$${lastResult.amount} MXN*\n\nRegistra tu tarjeta aquí:\n${lastResult.url}\n\nEs un enlace seguro donde tú mismo ingresas tus datos de pago. 🔒\n\n¡Gracias por confiar en OctoApp! 🚀`
                               : lastResult.type === 'store'
                               ? `🏪 *Referencia de pago — ${selectedEmpresa?.nombre}*\n\nPlan: *${lastResult.planName}*\nMonto: *$${lastResult.amount} MXN*\n\nReferencia:\n*${lastResult.reference}*\n\nPaga en OXXO, 7-Eleven o tienda de conveniencia.\n\n¡Gracias! 🚀`
                               : `💳 *Link de pago — ${selectedEmpresa?.nombre}*\n\nPlan: *${lastResult.planName}*\nMonto: *$${lastResult.amount} MXN*\n\nPaga aquí:\n${lastResult.url}\n\n¡Gracias! 🚀`;

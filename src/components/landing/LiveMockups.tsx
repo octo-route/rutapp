@@ -258,7 +258,7 @@ export function LiveDashboardMockup() {
         </div>
         <div className="flex-1 mx-3">
           <div className="bg-white border border-gray-200 rounded-md px-2 py-0.5 text-[10px] text-gray-400 max-w-xs mx-auto">
-            rutapp.mx/dashboard
+            octoapp.mx/dashboard
           </div>
         </div>
       </div>
@@ -269,8 +269,8 @@ export function LiveDashboardMockup() {
         <aside className="w-44 bg-white border-r border-gray-100 p-3 hidden sm:block">
           <div className="flex items-center gap-1.5 mb-4">
             <div className="w-6 h-6 rounded-md flex items-center justify-center text-white text-[10px] font-black"
-              style={{ background: 'hsl(230, 55%, 52%)' }}>R</div>
-            <span className="text-xs font-black" style={{ color: 'hsl(230, 55%, 52%)' }}>Rutapp</span>
+              style={{ background: 'hsl(230, 55%, 52%)' }}>O</div>
+            <span className="text-xs font-black" style={{ color: 'hsl(230, 55%, 52%)' }}>OctoApp</span>
           </div>
           <div className="space-y-0.5">
             {[

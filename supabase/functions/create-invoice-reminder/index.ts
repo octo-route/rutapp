@@ -109,8 +109,8 @@ Deno.serve(async (req) => {
 
         const amount = plan ? Math.round(plan.precio_por_usuario * 100) : 30000; // default $300 MXN
         const description = sub.status === "trial"
-          ? "Suscripción Rutapp - Fin de prueba gratuita"
-          : `Renovación Rutapp - ${plan?.nombre || "Mensual"}`;
+          ? "Suscripción OctoApp - Fin de prueba gratuita"
+          : `Renovación OctoApp - ${plan?.nombre || "Mensual"}`;
 
         await stripe.invoiceItems.create({
           customer: customerId,

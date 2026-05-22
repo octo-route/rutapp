@@ -107,7 +107,7 @@ function TicketPreview({ form, logoPreview, campos, ticketAncho = '80' }: Previe
       )}
       <div className="border-t border-dashed border-gray-300 mx-3" />
       <div className="px-4 py-2 text-center text-[8px] text-gray-400">
-        rutapp.mx
+        octoapp.mx
       </div>
     </div>
   );
@@ -205,7 +205,7 @@ function NotaVentaPreview({ form, logoPreview, campos }: PreviewProps) {
       )}
 
       <div className="text-center py-2 text-[8px] text-gray-300">
-        rutapp.mx
+        octoapp.mx
       </div>
     </div>
   );

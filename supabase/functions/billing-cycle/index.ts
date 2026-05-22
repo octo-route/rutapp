@@ -336,14 +336,14 @@ Deno.serve(async (req) => {
           await sendWhatsApp(
             supabase,
             sub.empresa_id,
-            `👋 *Te extrañamos en Rutapp*\n\nHola, tu periodo de prueba de *${empresaNombre}* terminó y tu acceso ha sido pausado temporalmente.\n\nPero no te preocupes, *todos tus datos están guardados*. Solo activa tu plan y todo estará como lo dejaste:\n\n💳 *Activar mi plan:* https://rutapps.netlify.app/facturacion\n\n📺 Descubre todo lo que Rutapp puede hacer por tu negocio: https://www.youtube.com/@RutAppMx\n\n¿Tienes dudas? Escríbenos, con gusto te ayudamos. 😊`,
+            `👋 *Te extrañamos en OctoApp*\n\nHola, tu periodo de prueba de *${empresaNombre}* terminó y tu acceso ha sido pausado temporalmente.\n\nPero no te preocupes, *todos tus datos están guardados*. Solo activa tu plan y todo estará como lo dejaste:\n\n💳 *Activar mi plan:* https://octoapp.mx/facturacion\n\n📺 Descubre todo lo que OctoApp puede hacer por tu negocio: https://www.youtube.com/@OctoAppMx\n\n¿Tienes dudas? Escríbenos, con gusto te ayudamos. 😊`,
           );
         } else {
           // Was paying → account suspended message
           await sendWhatsApp(
             supabase,
             sub.empresa_id,
-            `⚠️ *Suscripción suspendida — Rutapp*\n\nHola, la suscripción de *${empresaNombre}* ha sido *suspendida* por falta de pago.\n\n🔒 Tu acceso ha sido restringido temporalmente.\nPara reactivar:\n1️⃣ Abre la app → *Mi Suscripción*\n2️⃣ Actualiza tu método de pago\n3️⃣ Tu acceso se restaurará al instante ✅\n\nTus datos están seguros. 🔐`,
+            `⚠️ *Suscripción suspendida — OctoApp*\n\nHola, la suscripción de *${empresaNombre}* ha sido *suspendida* por falta de pago.\n\n🔒 Tu acceso ha sido restringido temporalmente.\nPara reactivar:\n1️⃣ Abre la app → *Mi Suscripción*\n2️⃣ Actualiza tu método de pago\n3️⃣ Tu acceso se restaurará al instante ✅\n\nTus datos están seguros. 🔐`,
           );
         }
 
@@ -360,7 +360,7 @@ Deno.serve(async (req) => {
           await sendWhatsApp(
             supabase,
             sub.empresa_id,
-            `👋 *Tu prueba de Rutapp terminó*\n\nHola, el periodo de prueba de *${empresaNombre}* ha finalizado.\n\n⏳ Te quedan *${diasRestantes} día${diasRestantes !== 1 ? "s" : ""}* antes de que tu acceso sea pausado.\n\n💳 Activa tu plan ahora: https://rutapps.netlify.app/facturacion\n\nTus datos están seguros y listos para cuando actives. 😊`,
+            `👋 *Tu prueba de OctoApp terminó*\n\nHola, el periodo de prueba de *${empresaNombre}* ha finalizado.\n\n⏳ Te quedan *${diasRestantes} día${diasRestantes !== 1 ? "s" : ""}* antes de que tu acceso sea pausado.\n\n💳 Activa tu plan ahora: https://octoapp.mx/facturacion\n\nTus datos están seguros y listos para cuando actives. 😊`,
           );
         } else {
           await sendWhatsApp(

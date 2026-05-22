@@ -46,7 +46,7 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-sm bg-card border border-border rounded p-6">
         <div className="text-center mb-6">
-          <h1 className="text-xl font-bold text-primary">Rutapp</h1>
+          <h1 className="text-xl font-bold text-primary">OctoApp</h1>
           <p className="text-xs text-muted-foreground mt-1">Nueva contraseña</p>
         </div>
         {!ready ? (
