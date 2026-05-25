@@ -475,26 +475,37 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   const applySwUpdate = async () => {
+    const reloadFromRoot = () => {
+      window.location.assign(`${window.location.origin}/`);
+    };
+
     try {
-      // Unregister all service workers
       if ('serviceWorker' in navigator) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        for (const reg of registrations) {
-          if (reg.waiting) {
-            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-          }
-          await reg.unregister();
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg?.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+
+          await new Promise<void>((resolve) => {
+            const timeout = window.setTimeout(resolve, 1500);
+            navigator.serviceWorker.addEventListener(
+              'controllerchange',
+              () => {
+                clearTimeout(timeout);
+                resolve();
+              },
+              { once: true }
+            );
+          });
         }
       }
-      // Clear all caches
-      if ('caches' in window) {
-        const cacheNames = await caches.keys();
-        await Promise.all(cacheNames.map(name => caches.delete(name)));
-      }
+
       setSwUpdateAvailable(false);
-      window.location.reload();
-    } catch {
-      window.location.reload();
+      reloadFromRoot();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('applySwUpdate failed', err);
+      setSwUpdateAvailable(false);
+      reloadFromRoot();
     }
   };
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ShoppingCart, Users, MapPin, BarChart3, Package, Wallet,
@@ -6,7 +6,7 @@ import {
   ArrowRight, Star, Menu, X, Route, CreditCard, Radio,
   FileText, ClipboardCheck, RefreshCw, Receipt, Bell,
   WifiOff, MessageCircle, TrendingUp, Eye, Layers,
-  Tag, Building2, Calculator, ScanLine, Activity,
+  Tag, Building2, Calculator, ScanLine, Activity, Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LiveSupervisorMap, LiveMobileApp, LiveDashboardMockup } from '@/components/landing/LiveMockups';
@@ -107,6 +107,7 @@ const TESTIMONIALS = [
 ];
 
 const PRICE_MONTHLY = 300;
+const DEMO_LOGIN_PENDING_KEY = 'demo_login_pending';
 const PLANS = [
   { name: 'Mensual', period: '/mes', price: PRICE_MONTHLY, discount: 0, tag: null, popular: false },
   { name: 'Semestral', period: '/mes', price: Math.round(PRICE_MONTHLY * 0.9), discount: 10, tag: '10% OFF', popular: false },
@@ -115,9 +116,61 @@ const PLANS = [
 
 export default function LandingPage() {
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [demoRedirectPending, setDemoRedirectPending] = useState(
+    () => sessionStorage.getItem(DEMO_LOGIN_PENDING_KEY) === '1'
+  );
+
+  useEffect(() => {
+    const syncPendingState = () => {
+      setDemoRedirectPending(sessionStorage.getItem(DEMO_LOGIN_PENDING_KEY) === '1');
+    };
+
+    syncPendingState();
+    window.addEventListener('demo-login-pending-change', syncPendingState);
+
+    return () => {
+      window.removeEventListener('demo-login-pending-change', syncPendingState);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-white text-gray-900 overflow-x-hidden">
+      {demoRedirectPending && (
+        <div className="fixed z-[60] top-5 left-1/2 -translate-x-1/2 w-[min(94vw,680px)]">
+          <div
+            className="relative overflow-hidden rounded-2xl border border-indigo-200/80 bg-white/95 backdrop-blur-md shadow-2xl"
+            style={{ boxShadow: '0 20px 55px -20px hsl(230, 55%, 52% / 0.45)' }}
+          >
+            <div
+              className="absolute inset-x-0 top-0 h-1.5"
+              style={{ background: 'linear-gradient(90deg, hsl(230, 55%, 52%), hsl(260, 45%, 60%), hsl(152, 56%, 45%))' }}
+            />
+            <div className="px-5 py-4 md:px-6 md:py-5 flex items-start gap-4">
+              <div
+                className="mt-0.5 w-11 h-11 rounded-xl shrink-0 flex items-center justify-center"
+                style={{ background: 'hsl(230, 55%, 95%)' }}
+              >
+                <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'hsl(230, 55%, 52%)' }} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm md:text-base font-bold tracking-tight text-gray-900">
+                  Iniciando entorno demo
+                </p>
+                <p className="text-xs md:text-sm text-gray-600 mt-1 leading-relaxed">
+                  Estamos preparando tus datos de prueba. Te redirigiremos automaticamente en unos segundos.
+                </p>
+                <div className="mt-3 h-1.5 w-full rounded-full bg-indigo-100/80 overflow-hidden">
+                  <div
+                    className="h-full w-1/2 rounded-full animate-pulse"
+                    style={{ background: 'linear-gradient(90deg, hsl(230, 55%, 52%), hsl(260, 45%, 60%))' }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Nav */}
       <nav className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100 pt-[env(safe-area-inset-top)]">
         <div className="max-w-7xl mx-auto flex items-center justify-between px-[max(1.5rem,env(safe-area-inset-left))] h-16">

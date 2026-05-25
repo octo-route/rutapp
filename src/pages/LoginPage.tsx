@@ -6,6 +6,8 @@ import { Eye, EyeOff, Play, Package, Users, Warehouse, Truck, BarChart3, MapPin 
 import { Progress } from '@/components/ui/progress';
 import { translateError } from '@/lib/errorTranslator';
 
+const DEMO_LOGIN_PENDING_KEY = 'demo_login_pending';
+
 const DEMO_STEPS = [
   { icon: Warehouse, label: 'Creando almacenes y zonas...' },
   { icon: Package, label: 'Cargando catálogo de productos...' },
@@ -59,6 +61,8 @@ export default function LoginPage() {
   const handleDemo = async () => {
     setDemoLoading(true);
     setDemoStep(0);
+    sessionStorage.setItem(DEMO_LOGIN_PENDING_KEY, '1');
+    window.dispatchEvent(new Event('demo-login-pending-change'));
     try {
       const { data, error } = await supabase.functions.invoke('demo-login');
       if (error) throw error;
@@ -76,6 +80,8 @@ export default function LoginPage() {
       const t = translateError(err);
       toast.error(t.title, { description: t.suggestion });
     } finally {
+      sessionStorage.removeItem(DEMO_LOGIN_PENDING_KEY);
+      window.dispatchEvent(new Event('demo-login-pending-change'));
       setDemoLoading(false);
     }
   };

@@ -74,21 +74,38 @@ export default function MobileLayout() {
   const forceUpdate = async () => {
     if (!navigator.onLine) return;
     setIsUpdating(true);
+
+    const reloadFromRoot = () => {
+      window.location.assign(`${window.location.origin}/`);
+    };
+
     try {
       if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map(r => r.unregister()));
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg?.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+
+          await new Promise<void>((resolve) => {
+            const timeout = window.setTimeout(resolve, 1500);
+            navigator.serviceWorker.addEventListener(
+              'controllerchange',
+              () => {
+                clearTimeout(timeout);
+                resolve();
+              },
+              { once: true }
+            );
+          });
+        }
       }
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
-      }
+
       setSwUpdateAvailable(false);
-      await new Promise(r => setTimeout(r, 1200));
-      window.location.reload();
-    } catch {
-      await new Promise(r => setTimeout(r, 800));
-      window.location.reload();
+      reloadFromRoot();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('forceUpdate failed', err);
+      setIsUpdating(false);
+      reloadFromRoot();
     }
   };
 
