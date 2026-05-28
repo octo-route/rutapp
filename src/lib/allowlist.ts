@@ -117,6 +117,10 @@ export const PRODUCTO_PROVEEDOR_COLUMNS = [
   'id','producto_id','proveedor_id','es_principal','precio_compra','tiempo_entrega_dias','notas','created_at',
 ] as const;
 
+export const COMBO_LINEA_COLUMNS = [
+  'id','empresa_id','combo_id','componente_id','cantidad','orden','notas','created_at','updated_at',
+] as const;
+
 /**
  * Pick only allowed columns from an object, stripping relational/virtual fields.
  */

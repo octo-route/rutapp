@@ -21,7 +21,9 @@ import {
   exportToPDF,
   type ExportColumn,
 } from "@/lib/exportUtils";
-import { useProductosPaginated } from "@/hooks/useData";
+import { useCombosPaginated, useProductosPaginated } from "@/hooks/useData";
+import ComboLineModal from '@/components/producto/ComboLineModal';
+import { Edit } from 'lucide-react';
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useListPreferences, groupData } from "@/hooks/useListPreferences";
 import { cn, fmtNum } from "@/lib/utils";
@@ -90,11 +92,16 @@ export default function ProductosListPage() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { fmt: fmtCurrency } = useCurrency();
+  const [activeTab, setActiveTab] = useState<"productos" | "combos">(
+    "productos",
+  );
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [importOpen, setImportOpen] = useState(false);
   const [mobileNewOpen, setMobileNewOpen] = useState(false);
+  const [comboModalOpen, setComboModalOpen] = useState(false);
+  const [comboModalId, setComboModalId] = useState<string | undefined>(undefined);
   const {
     filters,
     groupBy,
@@ -107,8 +114,9 @@ export default function ProductosListPage() {
   } = useListPreferences("productos");
   const { clasificaciones, marcas } = useProductoFilterOptions();
 
-  const FILTER_OPTIONS = useMemo(
-    () => [
+  const FILTER_OPTIONS = useMemo(() => {
+    if (activeTab === "combos") return STATIC_FILTER_OPTIONS;
+    return [
       ...STATIC_FILTER_OPTIONS,
       {
         key: "clasificacion",
@@ -123,9 +131,8 @@ export default function ProductosListPage() {
         label: "Marca",
         options: (marcas ?? []).map((m) => ({ value: m.id, label: m.nombre })),
       },
-    ],
-    [clasificaciones, marcas],
-  );
+    ];
+  }, [activeTab, clasificaciones, marcas]);
 
   const statusFilter = filters.status?.length
     ? filters.status.join(",")
@@ -142,9 +149,20 @@ export default function ProductosListPage() {
     clasificacionFilter,
     marcaFilter,
   );
+  const { data: combosData, isLoading: isLoadingCombos } = useCombosPaginated(
+    search,
+    statusFilter,
+    page,
+    PAGE_SIZE,
+  );
 
-  const productos = productosData?.rows ?? [];
-  const total = productosData?.total ?? 0;
+  const productos =
+    activeTab === "combos" ? combosData?.rows ?? [] : productosData?.rows ?? [];
+  const total =
+    activeTab === "combos"
+      ? combosData?.total ?? 0
+      : productosData?.total ?? 0;
+  const isLoadingTab = activeTab === "combos" ? isLoadingCombos : isLoading;
   const from = Math.min((page - 1) * PAGE_SIZE + 1, total);
   const to = Math.min(page * PAGE_SIZE, total);
   const pageData = productos;
@@ -344,6 +362,84 @@ export default function ProductosListPage() {
     </div>
   );
 
+  const renderCombosTable = (items: any[]) => (
+    <div className="bg-card border border-border rounded overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-table-border">
+            <th className="th-odoo w-10">Img</th>
+            <th className="th-odoo text-left">Código</th>
+            <th className="th-odoo text-left">Nombre combo</th>
+            <th className="th-odoo text-right">Precio</th>
+            <th className="th-odoo text-right">Sugerido</th>
+            <th className="th-odoo text-center">Status</th>
+            <th className="th-odoo text-center">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.length === 0 && (
+            <tr>
+              <td
+                colSpan={7}
+                className="text-center py-12 text-muted-foreground text-sm"
+              >
+                No hay combos. Crea el primero.
+              </td>
+            </tr>
+          )}
+          {items.map((p: any) => (
+            <tr
+              key={p.id}
+              className="border-b border-table-border cursor-pointer transition-colors hover:bg-table-hover"
+              onClick={() => {
+                setComboModalId(p.id);
+                setComboModalOpen(true);
+              }}
+            >
+              <td className="py-1.5 px-2">
+                {p.imagen_url ? (
+                  <img
+                    src={p.imagen_url}
+                    alt=""
+                    className="h-7 w-7 rounded object-cover"
+                  />
+                ) : (
+                  <div className="h-7 w-7 rounded bg-secondary flex items-center justify-center text-xxs text-muted-foreground">
+                    —
+                  </div>
+                )}
+              </td>
+              <td className="py-1.5 px-3 font-mono text-xs">{p.codigo}</td>
+              <td className="py-1.5 px-3 font-medium">{p.nombre}</td>
+              <td className="py-1.5 px-3 text-right font-medium tabular-nums">
+                {fmt(p.precio_principal)}
+              </td>
+              <td className="py-1.5 px-3 text-right text-muted-foreground tabular-nums">
+                {fmt((p as any).precio_sugerido_publico)}
+              </td>
+              <td className="py-1.5 px-3 text-center">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setComboModalId(p.id);
+                    setComboModalOpen(true);
+                  }}
+                  className="btn-ghost"
+                  title="Editar combo"
+                >
+                  <Edit className="h-4 w-4" />
+                </button>
+              </td>
+              <td className="py-1.5 px-3 text-center">
+                <StatusChip status={p.status} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <div className="p-4 space-y-3 min-h-full">
       <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
@@ -354,6 +450,39 @@ export default function ProductosListPage() {
         />{" "}
         <VideoHelpButton module="productos" />
       </h1>
+
+      <div className="flex items-center gap-2 border-b border-border pb-2">
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("productos");
+            setPage(1);
+          }}
+          className={cn(
+            "text-[12px] px-3 py-1 rounded-full border transition-colors",
+            activeTab === "productos"
+              ? "bg-primary text-primary-foreground border-primary"
+              : "border-border text-muted-foreground hover:border-primary/40",
+          )}
+        >
+          Productos
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("combos");
+            setPage(1);
+          }}
+          className={cn(
+            "text-[12px] px-3 py-1 rounded-full border transition-colors",
+            activeTab === "combos"
+              ? "bg-primary text-primary-foreground border-primary"
+              : "border-border text-muted-foreground hover:border-primary/40",
+          )}
+        >
+          Combos
+        </button>
+      </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <OdooFilterBar
@@ -389,16 +518,24 @@ export default function ProductosListPage() {
               <ExportButton
                 onExcel={async () => {
                   await exportToExcel({
-                    fileName: "Productos",
-                    title: "Catálogo de Productos",
+                    fileName:
+                      activeTab === "combos" ? "Combos" : "Productos",
+                    title:
+                      activeTab === "combos"
+                        ? "Catálogo de Combos"
+                        : "Catálogo de Productos",
                     columns: PRODUCTOS_COLUMNS,
                     data: productos ?? [],
                   });
                 }}
                 onPDF={async () => {
                   exportToPDF({
-                    fileName: "Productos",
-                    title: "Catálogo de Productos",
+                    fileName:
+                      activeTab === "combos" ? "Combos" : "Productos",
+                    title:
+                      activeTab === "combos"
+                        ? "Catálogo de Combos"
+                        : "Catálogo de Productos",
                     columns: PRODUCTOS_COLUMNS,
                     data: productos ?? [],
                   });
@@ -413,12 +550,19 @@ export default function ProductosListPage() {
             </>
           )}
           <button
-            onClick={() =>
-              isMobile ? setMobileNewOpen(true) : navigate("/productos/nuevo")
-            }
+            onClick={() => {
+              if (activeTab === 'combos') {
+                setComboModalId(undefined);
+                setComboModalOpen(true);
+                return;
+              }
+              if (isMobile) setMobileNewOpen(true);
+              else navigate("/productos/nuevo");
+            }}
             className="btn-odoo-primary shrink-0"
           >
-            <Plus className="h-3.5 w-3.5" /> Nuevo
+            <Plus className="h-3.5 w-3.5" />
+            {activeTab === "combos" ? "Nuevo combo" : "Nuevo"}
           </button>
         </div>
         <ImportDialog
@@ -433,7 +577,7 @@ export default function ProductosListPage() {
         />
       </div>
 
-      {isLoading ? (
+      {isLoadingTab ? (
         <div className="bg-card border border-border rounded p-4">
           <TableSkeleton rows={8} cols={isMobile ? 3 : 12} />
         </div>
@@ -500,12 +644,26 @@ export default function ProductosListPage() {
         </div>
       ) : (
         <>
-          <GroupedTableWrapper
-            groupBy={groupBy}
-            groups={groups}
-            renderTable={renderTable}
-          />
-          {!groupBy && total > 0 && (
+          {activeTab === "combos" ? (
+            <>
+              {renderCombosTable(pageData)}
+              <ComboLineModal
+                open={comboModalOpen}
+                onOpenChange={(v) => {
+                  setComboModalOpen(v);
+                  if (!v) setComboModalId(undefined);
+                }}
+                comboId={comboModalId}
+              />
+            </>
+          ) : (
+            <GroupedTableWrapper
+              groupBy={groupBy}
+              groups={groups}
+              renderTable={renderTable}
+            />
+          )}
+          {(activeTab === "combos" || !groupBy) && total > 0 && (
             <OdooPagination
               from={from}
               to={to}

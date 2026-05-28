@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSubscription } from '@/hooks/useSubscription';
 import { useQueryClient } from '@tanstack/react-query';
-import { Building2, X } from 'lucide-react';
+import { Building2, EyeOff } from 'lucide-react';
 
 interface EmpresaOption {
   id: string;
@@ -81,10 +81,10 @@ export default function SuperAdminEmpresaSelector() {
       {overrideEmpresaId && (
         <button
           onClick={() => handleChange('')}
-          className="p-1 rounded hover:bg-amber-500/20 text-amber-600 dark:text-amber-400"
+          className="inline-flex items-center gap-1 rounded-full border border-amber-300/70 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-500/15 dark:text-amber-200 hover:bg-amber-500/20 transition-colors"
           title="Volver a mi empresa"
         >
-          <X className="h-3.5 w-3.5" />
+          <EyeOff className="h-3.5 w-3.5" />
         </button>
       )}
     </div>
