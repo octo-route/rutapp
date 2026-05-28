@@ -23,6 +23,16 @@ export const HELP = {
     ] as HelpSection[],
   },
 
+  combos: {
+    title: '¿Cómo funcionan los Combos?',
+    sections: [
+      { title: '¿Qué es?', content: 'Un combo es un producto compuesto por otros productos con cantidades. Se guarda como un producto normal con la bandera es_combo activa.' },
+      { title: 'Flujo', content: 'Abre Nuevo combo, captura código y nombre, agrega productos a la lista del lado derecho y ajusta cantidades si hace falta. El precio sugerido se calcula automáticamente.' },
+      { title: 'Precio', content: 'El precio principal puede editarse manualmente. El precio sugerido no se edita: se calcula a partir de los componentes agregados al combo.' },
+      { title: 'Guardado', content: 'Un solo botón guarda todo: primero el producto del combo y después sus líneas de componentes, en orden, para evitar errores de sincronización.' },
+    ] as HelpSection[],
+  },
+
   clientes: {
     title: '¿Cómo gestionar Clientes?',
     sections: [

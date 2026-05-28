@@ -25,6 +25,7 @@ export interface Producto {
   clasificacion_id?: string;
   lista_id?: string;
   tarifa_id?: string;
+  usa_listas_precio?: boolean;
   imagen_url?: string;
   precio_principal: number;
   precio_sugerido_publico?: number;
@@ -98,6 +99,29 @@ export interface TarifaLinea {
   redondeo: RedondeoTarifa;
   notas?: string;
   created_at: string;
+}
+
+export interface ComboLinea {
+  id: string;
+  empresa_id: string;
+  combo_id: string;
+  componente_id: string;
+  cantidad: number;
+  orden: number;
+  notas?: string | null;
+  created_at: string;
+  updated_at?: string;
+  productos?: {
+    nombre: string;
+    codigo?: string | null;
+    precio_principal?: number | null;
+    precio_sugerido_publico?: number | null;
+    tiene_iva?: boolean;
+    iva_pct?: number | null;
+    tiene_ieps?: boolean;
+    ieps_pct?: number | null;
+    ieps_tipo?: string | null;
+  };
 }
 
 export interface Cliente {
