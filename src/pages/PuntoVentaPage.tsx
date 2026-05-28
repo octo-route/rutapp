@@ -109,6 +109,10 @@ interface PosItem {
   unidad: string;
   base_precio: BasePrecioMode;
   redondeo: string;
+  presentacion_id?: string | null;
+  presentacion_nombre?: string | null;
+  presentacion_factor?: number | null;
+  paquetes?: number | null;
 }
 
 type PayMethod = "efectivo" | "transferencia" | "tarjeta";
@@ -389,9 +393,6 @@ export default function PuntoVentaPage() {
       )
         .select("*")
         .eq("activo", true);
-
-      console.log("ERROR PRESENTACIONES QUERY", error);
-      console.log("DATA PRESENTACIONES QUERY", data);
 
       if (error) throw error;
       return data ?? [];
@@ -752,10 +753,6 @@ export default function PuntoVentaPage() {
     const productoPresentaciones = presentaciones.filter(
       (pr: any) => pr.producto_id === p.id,
     );
-
-    console.log("CLICK PRODUCTO", p.codigo, p.id);
-    console.log("PRESENTACIONES CARGADAS", presentaciones);
-    console.log("PRESENTACIONES DEL PRODUCTO", productoPresentaciones);
 
     if (productoPresentaciones.length > 0) {
       setSelectedProductoPresentacion(p);
@@ -1159,6 +1156,10 @@ export default function PuntoVentaPage() {
           ieps_monto: breakdown.ieps,
           descuento_pct: 0,
           total: chargedLineTotal,
+          presentacion_id: item.presentacion_id ?? null,
+          presentacion_nombre: item.presentacion_nombre ?? null,
+          presentacion_factor: item.presentacion_factor ?? null,
+          paquetes: item.paquetes ?? null,
         };
       });
       const { error: linErr } = await supabase
@@ -2968,6 +2969,12 @@ export default function PuntoVentaPage() {
                   ? Infinity
                   : (selectedProductoPresentacion.cantidad ?? 0),
                 _es_granel: true,
+                presentacion_id: payload.presentacion?.id ?? null,
+                presentacion_nombre: payload.presentacion?.nombre ?? null,
+                presentacion_factor: payload.presentacion?.factor_base
+                  ? Number(payload.presentacion.factor_base)
+                  : null,
+                paquetes: payload.paquetes ?? null,
               },
             ]);
 

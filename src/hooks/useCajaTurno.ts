@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/AuthContext';
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 export interface CajaTurno {
   id: string;
@@ -29,7 +29,7 @@ export interface CajaMovimiento {
   turno_id: string;
   empresa_id: string;
   user_id: string;
-  tipo: 'retiro' | 'deposito' | 'gasto' | string;
+  tipo: "retiro" | "deposito" | "gasto" | string;
   monto: number;
   motivo: string | null;
   created_at: string;
@@ -43,14 +43,14 @@ export function useCajaTurno() {
   // Fetch the empresa-level flag directly to avoid relying on the cached AuthContext object,
   // which doesn't include `pos_turnos_habilitado` in its SELECT.
   const flagQuery = useQuery({
-    queryKey: ['empresa-pos-turnos-flag', empresa?.id],
+    queryKey: ["empresa-pos-turnos-flag", empresa?.id],
     enabled: !!empresa?.id,
     staleTime: 5 * 60_000,
     queryFn: async (): Promise<boolean> => {
       const { data } = await supabase
-        .from('empresas')
-        .select('pos_turnos_habilitado')
-        .eq('id', empresa!.id)
+        .from("empresas")
+        .select("pos_turnos_habilitado")
+        .eq("id", empresa!.id)
         .maybeSingle();
       return !!(data as any)?.pos_turnos_habilitado;
     },
@@ -58,15 +58,15 @@ export function useCajaTurno() {
   const enabled = !!user?.id && !!empresa?.id && !!flagQuery.data;
 
   const turnoQuery = useQuery({
-    queryKey: ['caja-turno-activo', user?.id, empresa?.id],
+    queryKey: ["caja-turno-activo", user?.id, empresa?.id],
     queryFn: async (): Promise<CajaTurno | null> => {
       const { data, error } = await supabase
-        .from('caja_turnos')
-        .select('*')
-        .eq('empresa_id', empresa!.id)
-        .eq('cajero_id', user!.id)
-        .eq('status', 'abierto')
-        .order('abierto_at', { ascending: false })
+        .from("caja_turnos")
+        .select("*")
+        .eq("empresa_id", empresa!.id)
+        .eq("cajero_id", user!.id)
+        .eq("status", "abierto")
+        .order("abierto_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (error) throw error;
@@ -77,13 +77,13 @@ export function useCajaTurno() {
   });
 
   const movimientosQuery = useQuery({
-    queryKey: ['caja-movimientos', turnoQuery.data?.id],
+    queryKey: ["caja-movimientos", turnoQuery.data?.id],
     queryFn: async (): Promise<CajaMovimiento[]> => {
       const { data, error } = await supabase
-        .from('caja_movimientos')
-        .select('*')
-        .eq('turno_id', turnoQuery.data!.id)
-        .order('created_at', { ascending: false });
+        .from("caja_movimientos")
+        .select("*")
+        .eq("turno_id", turnoQuery.data!.id)
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as CajaMovimiento[];
     },
@@ -92,31 +92,39 @@ export function useCajaTurno() {
   });
 
   const abrirTurno = useMutation({
-    mutationFn: async (input: { caja_nombre: string; fondo_inicial: number; notas?: string }) => {
+    mutationFn: async (input: {
+      caja_nombre: string;
+      fondo_inicial: number;
+      notas?: string;
+    }) => {
       const { data, error } = await supabase
-        .from('caja_turnos')
+        .from("caja_turnos")
         .insert({
           empresa_id: empresa!.id,
           cajero_id: user!.id,
-          caja_nombre: input.caja_nombre || 'Caja Principal',
+          caja_nombre: input.caja_nombre || "Caja Principal",
           fondo_inicial: input.fondo_inicial,
           notas_apertura: input.notas ?? null,
-          status: 'abierto',
+          status: "abierto",
         })
-        .select('*')
+        .select("*")
         .single();
       if (error) throw error;
       return data as CajaTurno;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['caja-turno-activo'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["caja-turno-activo"] }),
   });
 
   const registrarMovimiento = useMutation({
-    mutationFn: async (input: { tipo: 'retiro' | 'deposito' | 'gasto'; monto: number; motivo?: string }) => {
+    mutationFn: async (input: {
+      tipo: "retiro" | "deposito" | "gasto";
+      monto: number;
+      motivo?: string;
+    }) => {
       const t = turnoQuery.data;
-      if (!t) throw new Error('No hay turno abierto');
+      if (!t) throw new Error("No hay turno abierto");
       const { data, error } = await supabase
-        .from('caja_movimientos')
+        .from("caja_movimientos")
         .insert({
           turno_id: t.id,
           empresa_id: empresa!.id,
@@ -125,12 +133,12 @@ export function useCajaTurno() {
           monto: input.monto,
           motivo: input.motivo ?? null,
         })
-        .select('*')
+        .select("*")
         .single();
       if (error) throw error;
       return data as CajaMovimiento;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['caja-movimientos'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["caja-movimientos"] }),
   });
 
   /** Compute expected totals from sales + cash movements during the shift. */
@@ -141,15 +149,21 @@ export function useCajaTurno() {
     otros_esperado: number;
   }> {
     const t = turnoQuery.data;
-    if (!t) return { efectivo_esperado: 0, tarjeta_esperado: 0, transferencia_esperado: 0, otros_esperado: 0 };
+    if (!t)
+      return {
+        efectivo_esperado: 0,
+        tarjeta_esperado: 0,
+        transferencia_esperado: 0,
+        otros_esperado: 0,
+      };
 
     // Cobros del turno (ventas POS pagadas durante el turno por este cajero)
     const { data: cobros } = await supabase
-      .from('cobros')
-      .select('monto, metodo_pago')
-      .eq('empresa_id', empresa!.id)
-      .eq('user_id', user!.id)
-      .gte('created_at', t.abierto_at);
+      .from("cobros")
+      .select("monto, metodo_pago")
+      .eq("empresa_id", empresa!.id)
+      .eq("user_id", user!.id)
+      .gte("created_at", t.abierto_at);
 
     let efectivo = Number(t.fondo_inicial) || 0;
     let tarjeta = 0;
@@ -157,22 +171,22 @@ export function useCajaTurno() {
     let otros = 0;
     (cobros ?? []).forEach((c: any) => {
       const m = Number(c.monto) || 0;
-      const mp = String(c.metodo_pago || '').toLowerCase();
-      if (mp.includes('efectivo')) efectivo += m;
-      else if (mp.includes('tarjeta')) tarjeta += m;
-      else if (mp.includes('transfer')) transferencia += m;
+      const mp = String(c.metodo_pago || "").toLowerCase();
+      if (mp.includes("efectivo")) efectivo += m;
+      else if (mp.includes("tarjeta")) tarjeta += m;
+      else if (mp.includes("transfer")) transferencia += m;
       else otros += m;
     });
 
     // Movimientos de caja (depósitos suman, retiros y gastos restan al efectivo)
     const { data: movs } = await supabase
-      .from('caja_movimientos')
-      .select('tipo, monto')
-      .eq('turno_id', t.id);
+      .from("caja_movimientos")
+      .select("tipo, monto")
+      .eq("turno_id", t.id);
     (movs ?? []).forEach((m: any) => {
       const v = Number(m.monto) || 0;
-      if (m.tipo === 'deposito') efectivo += v;
-      else if (m.tipo === 'retiro' || m.tipo === 'gasto') efectivo -= v;
+      if (m.tipo === "deposito") efectivo += v;
+      else if (m.tipo === "retiro" || m.tipo === "gasto") efectivo -= v;
     });
 
     return {
@@ -193,16 +207,22 @@ export function useCajaTurno() {
       denominaciones?: Record<string, number>;
     }) => {
       const t = turnoQuery.data;
-      if (!t) throw new Error('No hay turno abierto');
+      if (!t) throw new Error("No hay turno abierto");
       const esperado = await computeArqueo();
       const totalContado =
-        input.efectivo_contado + input.tarjeta_contado + input.transferencia_contado + input.otros_contado;
+        input.efectivo_contado +
+        input.tarjeta_contado +
+        input.transferencia_contado +
+        input.otros_contado;
       const totalEsperado =
-        esperado.efectivo_esperado + esperado.tarjeta_esperado + esperado.transferencia_esperado + esperado.otros_esperado;
+        esperado.efectivo_esperado +
+        esperado.tarjeta_esperado +
+        esperado.transferencia_esperado +
+        esperado.otros_esperado;
       const { data, error } = await supabase
-        .from('caja_turnos')
+        .from("caja_turnos")
         .update({
-          status: 'cerrado',
+          status: "cerrado",
           cerrado_at: new Date().toISOString(),
           cerrado_por: user!.id,
           total_efectivo_esperado: esperado.efectivo_esperado,
@@ -217,13 +237,13 @@ export function useCajaTurno() {
           notas_cierre: input.notas ?? null,
           arqueo_denominaciones: input.denominaciones ?? null,
         })
-        .eq('id', t.id)
-        .select('*')
+        .eq("id", t.id)
+        .select("*")
         .single();
       if (error) throw error;
       return data as CajaTurno;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['caja-turno-activo'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["caja-turno-activo"] }),
   });
 
   return {
@@ -235,6 +255,6 @@ export function useCajaTurno() {
     cerrarTurno,
     registrarMovimiento,
     computeArqueo,
-    reload: () => qc.invalidateQueries({ queryKey: ['caja-turno-activo'] }),
+    reload: () => qc.invalidateQueries({ queryKey: ["caja-turno-activo"] }),
   };
 }
