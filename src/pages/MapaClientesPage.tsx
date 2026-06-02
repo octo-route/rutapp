@@ -1,14 +1,15 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import SearchableSelect from '@/components/SearchableSelect';
 import { GoogleMap, Marker, InfoWindow, Polyline, MarkerClusterer } from '@react-google-maps/api';
 import { useClientes, useZonas, useVendedores } from '@/hooks/useClientes';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   Search, Filter, MapPin, X, Users, Loader2, CheckCircle2, Navigation,
-  Route, Info, Clock, TrendingUp, MapPinOff, Eye, EyeOff, ChevronDown, ChevronUp
+  Route, Info, Clock, TrendingUp, MapPinOff, Eye, EyeOff, ChevronDown, ChevronUp, PenLine, Check, Undo2, Trash2, UserRound, CalendarDays
 } from 'lucide-react';
 import { cn, todayInTimezone } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -40,6 +41,105 @@ const DIA_COLORS: Record<string, string> = {
 
 const mapContainerStyle = { width: '100%', height: '100%' };
 const defaultCenter = { lat: 23.6345, lng: -102.5528 };
+
+type SelectionAction = 'none' | 'assign' | 'desasignar';
+type SelectionPoint = { x: number; y: number };
+
+const MIN_SELECTION_POINTS = 4;
+const MIN_SELECTION_DISTANCE = 6;
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function projectLatLngToPoint(
+  lat: number,
+  lng: number,
+  bounds: google.maps.LatLngBounds,
+  width: number,
+  height: number,
+) {
+  const northEast = bounds.getNorthEast();
+  const southWest = bounds.getSouthWest();
+
+  const toWorld = (latitude: number, longitude: number) => {
+    const siny = Math.sin((latitude * Math.PI) / 180);
+    return {
+      x: (longitude + 180) / 360,
+      y: 0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI),
+    };
+  };
+
+  const nw = toWorld(northEast.lat(), southWest.lng());
+  const se = toWorld(southWest.lat(), northEast.lng());
+  const p = toWorld(lat, lng);
+
+  const x = ((p.x - nw.x) / (se.x - nw.x)) * width;
+  const y = ((p.y - nw.y) / (se.y - nw.y)) * height;
+
+  return { x, y };
+}
+
+function pointInPolygon(point: SelectionPoint, polygon: SelectionPoint[]) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+
+    const intersect = yi > point.y !== yj > point.y
+      && point.x < ((xj - xi) * (point.y - yi)) / (yj - yi + 0.000001) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function buildSelectionMarkerSvg({
+  label,
+  leftColor,
+  rightColor,
+  borderColor = '#ffffff',
+  active = false,
+  selected = false,
+}: {
+  label?: string;
+  leftColor: string;
+  rightColor: string;
+  borderColor?: string;
+  active?: boolean;
+  selected?: boolean;
+}) {
+  const size = selected ? 40 : active ? 36 : 32;
+  const textSize = selected ? 12 : 11;
+  const stroke = selected ? 3.5 : 2.5;
+  const shadow = selected ? '0 0 0 3px rgba(17,24,39,.12)' : '';
+  const badge = label ? `<text x="18" y="21" text-anchor="middle" fill="#fff" font-size="${textSize}" font-weight="700" font-family="Arial,sans-serif">${label}</text>` : '';
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 36 36">
+      <defs>
+        <clipPath id="leftHalf"><rect x="0" y="0" width="18" height="36" /></clipPath>
+        <clipPath id="rightHalf"><rect x="18" y="0" width="18" height="36" /></clipPath>
+      </defs>
+      <circle cx="18" cy="18" r="16" fill="#ffffff" filter="${shadow ? 'url(#shadow)' : 'none'}" />
+      <circle cx="18" cy="18" r="15" fill="${leftColor}" clip-path="url(#leftHalf)" />
+      <circle cx="18" cy="18" r="15" fill="${rightColor}" clip-path="url(#rightHalf)" />
+      <circle cx="18" cy="18" r="15" fill="none" stroke="${borderColor}" stroke-width="${stroke}" />
+      ${badge}
+      ${selected ? '<circle cx="18" cy="18" r="6" fill="rgba(255,255,255,.18)" />' : ''}
+    </svg>`;
+
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(size, size),
+    anchor: new google.maps.Point(size / 2, size / 2),
+  };
+}
 
 function decodePolyline(encoded: string): { lat: number; lng: number }[] {
   const points: { lat: number; lng: number }[] = [];
@@ -91,6 +191,7 @@ function KpiCard({ icon: Icon, label, value, sub, color }: {
 export default function MapaClientesPage() {
   const { user, empresa } = useAuth();
   const { isLoaded } = useGoogleMaps();
+  const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [zonaFilter, setZonaFilter] = useState('');
   const [vendedorFilter, setVendedorFilter] = useState('');
@@ -116,6 +217,17 @@ export default function MapaClientesPage() {
   const [routeVisibility, setRouteVisibility] = useState<Record<string, boolean>>({});
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectionAction, setSelectionAction] = useState<SelectionAction>('none');
+  const [selectionVendorId, setSelectionVendorId] = useState('');
+  const [selectionDay, setSelectionDay] = useState('');
+  const [selectionPath, setSelectionPath] = useState<SelectionPoint[]>([]);
+  const [selectionClientIds, setSelectionClientIds] = useState<string[]>([]);
+  const [selectionDragging, setSelectionDragging] = useState(false);
+  const [selectionSaving, setSelectionSaving] = useState(false);
+  const [selectionMessage, setSelectionMessage] = useState<string | null>(null);
+  const [desasignarVendor, setDesasignarVendor] = useState(true);
+  const [desasignarDay, setDesasignarDay] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
 
   const { data: isAdmin } = useQuery({
@@ -155,6 +267,33 @@ export default function MapaClientesPage() {
   const { data: clientes, isLoading } = useClientes(search, statusFilter || undefined);
   const { data: zonas } = useZonas();
   const { data: vendedores } = useVendedores();
+
+  const vendorColorMap = useMemo(() => {
+    const sortedVendors = [...(vendedores ?? [])].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    const map = new Map<string, string>();
+    sortedVendors.forEach((vendor, index) => {
+      map.set(vendor.id, getRouteColor(index));
+    });
+    return map;
+  }, [vendedores]);
+
+  const visibleClients = useMemo(() => {
+    return (clientes ?? []).filter((c: any) => c.gps_lat && c.gps_lng && (!zonaFilter || c.zona_id === zonaFilter));
+  }, [clientes, zonaFilter]);
+
+  const selectionCandidates = useMemo(() => {
+    let result = visibleClients;
+    if (vendedorFilter) result = result.filter((c: any) => c.vendedor_id === vendedorFilter);
+    if (diaFilter) result = result.filter((c: any) => c.dia_visita?.includes(diaFilter));
+    return result;
+  }, [visibleClients, vendedorFilter, diaFilter]);
+
+  const markerDisplayMode = useMemo(() => {
+    if (colorMode !== 'dia') return colorMode;
+    if (vendedorFilter) return 'day-dominant' as const;
+    if (diaFilter) return 'vendor-dominant' as const;
+    return 'split' as const;
+  }, [colorMode, vendedorFilter, diaFilter]);
 
   // Load saved route order for current day/vendedor combination
   const { data: savedOrder, refetch: refetchSavedOrder } = useQuery({
@@ -350,6 +489,261 @@ export default function MapaClientesPage() {
   }, [todayClients, ventasHoy]);
 
   const activeFiltersCount = [zonaFilter, vendedorFilter, diaFilter, statusFilter].filter(Boolean).length;
+
+  const clearSelection = useCallback(() => {
+    setSelectionPath([]);
+    setSelectionClientIds([]);
+    setSelectionDragging(false);
+    setSelectionMessage(null);
+    setSelectionAction('none');
+    setSelectionVendorId('');
+    setSelectionDay('');
+    setDesasignarVendor(true);
+    setDesasignarDay(false);
+  }, []);
+
+  const projectSelectionPath = useCallback((path: SelectionPoint[]) => {
+    const map = mapRef.current;
+    if (!map || path.length < MIN_SELECTION_POINTS) return [];
+    const bounds = map.getBounds();
+    if (!bounds) return [];
+    const rect = map.getDiv().getBoundingClientRect();
+    return selectionCandidates.filter((client: any) => {
+      const point = projectLatLngToPoint(Number(client.gps_lat), Number(client.gps_lng), bounds, rect.width, rect.height);
+      return pointInPolygon(point, path);
+    }).map((client: any) => client.id as string);
+  }, [selectionCandidates]);
+
+  const finalizeSelection = useCallback((path: SelectionPoint[]) => {
+    if (path.length < MIN_SELECTION_POINTS) {
+      setSelectionMessage('Traza un área un poco más grande para seleccionar clientes.');
+      setSelectionClientIds([]);
+      return;
+    }
+    const ids = projectSelectionPath(path);
+    setSelectionClientIds(ids);
+    setSelectionMessage(ids.length > 0
+      ? `Se seleccionaron ${ids.length} clientes.`
+      : 'No hay clientes dentro del área dibujada.');
+  }, [projectSelectionPath]);
+
+  const handleSelectionPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!selectionMode) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    setSelectionDragging(true);
+    setSelectionPath([point]);
+    setSelectionClientIds([]);
+    setSelectionMessage('');
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, [selectionMode]);
+
+  const handleSelectionPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!selectionMode || !selectionDragging) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    setSelectionPath(prev => {
+      const last = prev[prev.length - 1];
+      if (last) {
+        const dx = last.x - point.x;
+        const dy = last.y - point.y;
+        if (Math.sqrt(dx * dx + dy * dy) < MIN_SELECTION_DISTANCE) return prev;
+      }
+      const next = [...prev, point];
+      if (selectionMode) finalizeSelection(next);
+      return next;
+    });
+  }, [selectionMode, selectionDragging, finalizeSelection]);
+
+  const handleSelectionPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!selectionMode) return;
+    setSelectionDragging(false);
+    setSelectionPath(prev => {
+      finalizeSelection(prev);
+      return prev;
+    });
+    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch {}
+  }, [selectionMode, finalizeSelection]);
+
+  const applySelectionAction = useCallback(async () => {
+    if (!empresa?.id) return;
+    if (selectionClientIds.length === 0) {
+      setSelectionMessage('Primero dibuja una zona con clientes dentro.');
+      return;
+    }
+    if (selectionAction === 'none') {
+      setSelectionMessage('Elige una acción para aplicar a la selección.');
+      return;
+    }
+
+    setSelectionSaving(true);
+    try {
+      let changedVendor = false;
+      let changedDay = false;
+
+      if (selectionAction === 'assign') {
+        if (!selectionVendorId && !selectionDay) {
+          setSelectionMessage('Selecciona al menos un vendedor o un día.');
+          return;
+        }
+
+        const payload: Record<string, any> = {};
+        if (selectionVendorId) {
+          payload.vendedor_id = selectionVendorId;
+          changedVendor = true;
+        }
+
+        if (Object.keys(payload).length > 0) {
+          const { error } = await supabase
+            .from('clientes')
+            .update(payload as any)
+            .eq('empresa_id', empresa.id)
+            .in('id', selectionClientIds);
+          if (error) throw error;
+        }
+
+        if (selectionDay) {
+          const { error } = await supabase
+            .from('clientes')
+            .update({ dia_visita: [selectionDay] } as any)
+            .eq('empresa_id', empresa.id)
+            .in('id', selectionClientIds);
+          if (error) throw error;
+          changedDay = true;
+        }
+
+        if (changedVendor) {
+          await (supabase.from('cliente_orden_ruta' as any) as any)
+            .delete()
+            .eq('empresa_id', empresa.id)
+            .in('cliente_id', selectionClientIds);
+        }
+      }
+
+      if (selectionAction === 'desasignar') {
+        if (!desasignarVendor && !desasignarDay) {
+          setSelectionMessage('Selecciona al menos una opción para desasignar.');
+          return;
+        }
+
+        const payload: Record<string, any> = {};
+        if (desasignarVendor) {
+          payload.vendedor_id = null;
+        }
+        if (desasignarDay) {
+          payload.dia_visita = null;
+        }
+
+        if (Object.keys(payload).length > 0) {
+          const { error } = await supabase
+            .from('clientes')
+            .update(payload as any)
+            .eq('empresa_id', empresa.id)
+            .in('id', selectionClientIds);
+          if (error) throw error;
+        }
+
+        if (desasignarVendor || desasignarDay) {
+          await (supabase.from('cliente_orden_ruta' as any) as any)
+            .delete()
+            .eq('empresa_id', empresa.id)
+            .in('cliente_id', selectionClientIds);
+        }
+      }
+
+      qc.invalidateQueries({ queryKey: ['clientes'] });
+      qc.invalidateQueries({ queryKey: ['clientes-page'] });
+      qc.invalidateQueries({ queryKey: ['cliente-orden-ruta'] });
+      qc.invalidateQueries({ queryKey: ['ventas'] });
+      
+      const parts: string[] = [];
+      if (selectionAction === 'assign') {
+        if (changedVendor) parts.push('vendedor');
+        if (changedDay) parts.push('día');
+      } else if (selectionAction === 'desasignar') {
+        if (desasignarVendor) parts.push('vendedor');
+        if (desasignarDay) parts.push('día');
+      }
+
+      let message = '';
+      if (selectionAction === 'desasignar') {
+        message = `Se desasignó ${parts.join(' y ')} para ${selectionClientIds.length} clientes.`;
+      } else {
+        message = `Se actualizaron ${selectionClientIds.length} clientes (${parts.join(' y ') || 'sin cambios'}).`;
+      }
+      toast.success(message);
+      
+      setSelectionMode(false);
+      clearSelection();
+    } catch (error: any) {
+      toast.error(error?.message || 'No se pudo aplicar la selección');
+    } finally {
+      setSelectionSaving(false);
+    }
+  }, [clearSelection, empresa?.id, qc, selectionAction, selectionClientIds, selectionDay, selectionMode, selectionVendorId, desasignarVendor, desasignarDay]);
+
+  useEffect(() => {
+    if (!selectionMode) {
+      clearSelection();
+    }
+  }, [selectionMode, clearSelection]);
+
+  const getClientPalette = useCallback((cliente: any) => {
+    const vendorId = cliente.vendedor_id || '__sin_vendedor__';
+    const vendorColor = cliente.vendedor_id ? (vendorColorMap.get(vendorId) ?? '#9ca3af') : '#9ca3af';
+    const dayCandidates = Array.isArray(cliente.dia_visita) ? cliente.dia_visita : [];
+    const preferredDay = diaFilter && dayCandidates.includes(diaFilter)
+      ? diaFilter
+      : (dayCandidates.includes(DIA_HOY) ? DIA_HOY : dayCandidates[0]);
+    const dayColor = preferredDay ? (DIA_COLORS[preferredDay] ?? '#9ca3af') : '#9ca3af';
+
+    if (colorMode === 'visitado') {
+      return { left: ventasHoy?.has(cliente.id) ? '#22c55e' : '#ef4444', right: ventasHoy?.has(cliente.id) ? '#22c55e' : '#ef4444', labelColor: '#fff' };
+    }
+
+    if (colorMode === 'status') {
+      const s = cliente.status ?? 'activo';
+      const statusColor = s === 'activo' ? '#22c55e' : s === 'suspendido' ? '#ef4444' : '#9ca3af';
+      return { left: statusColor, right: statusColor, labelColor: '#fff' };
+    }
+
+    if (markerDisplayMode === 'day-dominant') {
+      return { left: dayColor, right: dayColor, accent: vendorColor, labelColor: '#fff' };
+    }
+
+    if (markerDisplayMode === 'vendor-dominant') {
+      return { left: vendorColor, right: vendorColor, accent: dayColor, labelColor: '#fff' };
+    }
+
+    return { left: dayColor, right: vendorColor, accent: null, labelColor: '#fff' };
+  }, [colorMode, diaFilter, markerDisplayMode, vendorColorMap, ventasHoy]);
+
+  const getClientMarkerIcon = useCallback((cliente: any, options?: { selected?: boolean; active?: boolean; label?: string }) => {
+    const palette = getClientPalette(cliente);
+    const selected = !!options?.selected;
+    const active = !!options?.active;
+    const label = options?.label;
+
+    if (colorMode === 'dia' && markerDisplayMode === 'split') {
+      return buildSelectionMarkerSvg({
+        label,
+        leftColor: palette.left,
+        rightColor: palette.right,
+        selected,
+        active,
+        borderColor: cliente.vendedor_id ? '#ffffff' : '#cbd5e1',
+      });
+    }
+
+    return buildSelectionMarkerSvg({
+      label,
+      leftColor: palette.left,
+      rightColor: palette.right,
+      selected,
+      active,
+      borderColor: palette.accent ?? '#ffffff',
+    });
+  }, [colorMode, getClientPalette, markerDisplayMode]);
 
   const onMapLoad = useCallback((map: google.maps.Map) => { mapRef.current = map; }, []);
 
@@ -595,48 +989,9 @@ export default function MapaClientesPage() {
     return h > 0 ? `${h}h ${m}min` : `${m} min`;
   };
 
-  const getMarkerColor = (cliente: any): string => {
-    if (colorMode === 'visitado') {
-      const visited = ventasHoy?.has(cliente.id);
-      return visited ? '#22c55e' : '#ef4444';
-    }
-    if (colorMode === 'dia') {
-      const dias: string[] = cliente.dia_visita ?? [];
-      if (diaFilter && dias.includes(diaFilter)) return DIA_COLORS[diaFilter] ?? '#6366f1';
-      const todayMatch = dias.includes(DIA_HOY);
-      if (todayMatch) return DIA_COLORS[DIA_HOY] ?? '#6366f1';
-      if (dias.length > 0) return DIA_COLORS[dias[0]] ?? '#6366f1';
-      return '#9ca3af';
-    }
-    // status
-    const s = cliente.status ?? 'activo';
-    if (s === 'activo') return '#22c55e';
-    if (s === 'suspendido') return '#ef4444';
-    return '#9ca3af';
-  };
-
-  const getMarkerIcon = (cliente: any) => {
-    const color = getMarkerColor(cliente);
-    const visited = ventasHoy?.has(cliente.id);
-    return {
-      path: google.maps.SymbolPath.CIRCLE,
-      fillColor: color,
-      fillOpacity: visited && colorMode === 'visitado' ? 1 : 0.85,
-      strokeColor: '#fff',
-      strokeWeight: visited && colorMode === 'visitado' ? 3 : 2,
-      scale: visited && colorMode === 'visitado' ? 12 : 9,
-    };
-  };
-
-  const createNumberedLabel = (): google.maps.Symbol => ({
-    path: google.maps.SymbolPath.CIRCLE,
-    fillColor: 'hsl(230, 55%, 52%)',
-    fillOpacity: 1,
-    strokeColor: '#fff',
-    strokeWeight: 3,
-    scale: 16,
-    labelOrigin: new google.maps.Point(0, 0),
-  });
+  const getMapMarkerIcon = useCallback((cliente: any, label?: string, selected = false) => {
+    return getClientMarkerIcon(cliente, { label, selected, active: selectionMode && selectionClientIds.includes(cliente.id) });
+  }, [getClientMarkerIcon, selectionClientIds, selectionMode]);
 
   // Cluster styles
   const clusterStyles = [
@@ -665,18 +1020,47 @@ export default function MapaClientesPage() {
           {/* Always-visible quick filters: Día + Vendedor (key for route optimization) */}
           <div className="min-w-[150px]">
             <SearchableSelect
-              options={[{ value: '', label: '📅 Todos los días' }, ...DIAS.map(d => ({ value: d, label: d === DIA_HOY ? `${d} (hoy)` : d }))]}
+              options={[{ value: '', label: '📅 Todos los días' }, ...DIAS.map(d => ({ value: d, label: d === DIA_HOY ? `${d} (hoy)` : d, searchText: d }))]}
               value={diaFilter}
               onChange={val => { setDiaFilter(val); setRouteResult(null); }}
               placeholder="Día visita..."
+              renderOption={(option, { selected }) => (
+                <div className="flex items-center gap-2 w-full">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: option.value ? (DIA_COLORS[option.value] ?? '#9ca3af') : '#94a3b8' }} />
+                  <span className={cn("truncate", selected && "font-semibold")}>{option.label}</span>
+                </div>
+              )}
+              renderValue={(option) => (
+                option ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: option.value ? (DIA_COLORS[option.value] ?? '#9ca3af') : '#94a3b8' }} />
+                    <span className="truncate">{option.label}</span>
+                  </span>
+                ) : null
+              )}
             />
           </div>
           <div className="min-w-[160px]">
             <SearchableSelect
-              options={[{ value: '', label: '👤 Todos vendedores' }, ...(vendedores ?? []).map(v => ({ value: v.id, label: v.nombre }))]}
+              options={[{ value: '', label: '👤 Todos vendedores', searchText: 'Todos vendedores' }, ...(vendedores ?? []).map(v => ({ value: v.id, label: v.nombre, searchText: v.nombre }))]}
               value={vendedorFilter}
               onChange={val => { setVendedorFilter(val); setRouteResult(null); }}
               placeholder="Vendedor..."
+              renderOption={(option, { selected }) => {
+                const color = option.value ? (vendorColorMap.get(option.value) ?? '#9ca3af') : '#94a3b8';
+                return (
+                  <div className="flex items-center gap-2 w-full">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                    <span className={cn("truncate", selected && "font-semibold")}>{option.label}</span>
+                  </div>
+                );
+              }}
+              renderValue={(option) => option ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: option.value ? (vendorColorMap.get(option.value) ?? '#9ca3af') : '#94a3b8' }} />
+                  <span className="truncate">{option.label}</span>
+                </span>
+              ) : null}
             />
           </div>
 
@@ -712,6 +1096,17 @@ export default function MapaClientesPage() {
                 ))}
               </div>
             )}
+            <button
+              onClick={() => { setSelectionMode(v => !v); setSelectionMessage(null); }}
+              className={cn(
+                "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors",
+                selectionMode ? "bg-amber-500/10 border-amber-500/30 text-amber-600" : "bg-background border-border text-muted-foreground"
+              )}
+              title="Seleccionar clientes con lápiz"
+            >
+              <PenLine className="h-3.5 w-3.5" />
+              Lápiz
+            </button>
             <button
               onClick={() => setShowOriginPicker(s => !s)}
               className={cn("flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors",
@@ -813,6 +1208,35 @@ export default function MapaClientesPage() {
           <RouteOptimizationQuotaWidget />
         </div>
 
+        {selectionMode && (
+          <div className="absolute inset-0 z-[60]">
+            <div
+              className="absolute inset-0 cursor-crosshair"
+              onPointerDown={handleSelectionPointerDown}
+              onPointerMove={handleSelectionPointerMove}
+              onPointerUp={handleSelectionPointerUp}
+              onPointerCancel={handleSelectionPointerUp}
+            />
+            <svg className="absolute inset-0 h-full w-full pointer-events-none">
+              {selectionPath.length > 1 && (
+                <>
+                  <path
+                    d={`M ${selectionPath.map(p => `${p.x} ${p.y}`).join(' L ')} Z`}
+                    fill="rgba(99, 102, 241, 0.12)"
+                    stroke="#6366f1"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  {selectionPath.map((point, idx) => (
+                    <circle key={`${point.x}-${point.y}-${idx}`} cx={point.x} cy={point.y} r="2.5" fill="#6366f1" opacity="0.85" />
+                  ))}
+                </>
+              )}
+            </svg>
+          </div>
+        )}
+
         {/* Color legend */}
         <div className="absolute bottom-2 left-2 md:bottom-3 md:left-3 z-10 bg-card/95 backdrop-blur-sm border border-border rounded-xl px-2 py-1.5 md:px-3 md:py-2 shadow-sm max-w-[calc(100vw-1rem)] overflow-x-auto hidden md:block">
           {colorMode === 'dia' && (
@@ -898,8 +1322,7 @@ export default function MapaClientesPage() {
                 <Marker
                   key={c.id}
                   position={{ lat: c.gps_lat, lng: c.gps_lng }}
-                  icon={createNumberedLabel()}
-                  label={{ text: `${idx + 1}`, color: '#fff', fontSize: '11px', fontWeight: '700' }}
+                  icon={getMapMarkerIcon(c, `${idx + 1}`, selectionMode && selectionClientIds.includes(c.id))}
                   onClick={() => setSelectedCliente(c)}
                 />
               ))
@@ -910,16 +1333,7 @@ export default function MapaClientesPage() {
                   <Marker
                     key={c.id}
                     position={{ lat: c.gps_lat, lng: c.gps_lng }}
-                    icon={{
-                      path: google.maps.SymbolPath.CIRCLE,
-                      fillColor: getMarkerColor(c),
-                      fillOpacity: 1,
-                      strokeColor: '#fff',
-                      strokeWeight: 2.5,
-                      scale: 14,
-                      labelOrigin: new google.maps.Point(0, 0),
-                    }}
-                    label={{ text: `${c.orden}`, color: '#fff', fontSize: '10px', fontWeight: '700' }}
+                    icon={getMapMarkerIcon(c, `${c.orden}`, selectionMode && selectionClientIds.includes(c.id))}
                     onClick={() => setSelectedCliente(c)}
                     title={c.nombre}
                   />
@@ -938,7 +1352,7 @@ export default function MapaClientesPage() {
                         <Marker
                           key={c.id}
                           position={{ lat: c.gps_lat, lng: c.gps_lng }}
-                          icon={getMarkerIcon(c)}
+                          icon={getMapMarkerIcon(c, undefined, selectionMode && selectionClientIds.includes(c.id))}
                           onClick={() => setSelectedCliente(c)}
                           title={c.nombre}
                           clusterer={clusterer}
@@ -994,6 +1408,156 @@ export default function MapaClientesPage() {
           </GoogleMap>
         )}
         <MapRecenterButton onClick={handleRecenter} className="bottom-6 left-3" />
+
+        {selectionMode && (
+          <div className="absolute bottom-3 right-3 z-[70] w-[min(28rem,calc(100vw-1.5rem))] bg-card/95 backdrop-blur-sm border border-border rounded-2xl shadow-xl p-3 space-y-3">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <PenLine className="h-4 w-4 text-amber-500" />
+                  Modo lápiz
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Arrastra sobre el mapa para seleccionar clientes y poder asignarles dias o vendedores de una forma facil y sencilla.
+                </div>
+              </div>
+              <button onClick={() => { setSelectionMode(false); clearSelection(); }} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-foreground">
+              <Badge className="bg-primary/10 text-primary border-primary/20">{selectionClientIds.length} clientes</Badge>
+              <span className="text-muted-foreground">
+                {selectionDragging ? 'dibujando' : selectionMessage || 'dibuja un área para continuar'}
+              </span>
+            </div>
+
+            <div className="flex gap-1.5 flex-wrap">
+              {(['assign', 'desasignar'] as SelectionAction[]).map(action => (
+                <button
+                  key={action}
+                  onClick={() => setSelectionAction(action)}
+                  className={cn(
+                    "px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors",
+                    selectionAction === action ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground"
+                  )}
+                >
+                  {action === 'assign' ? 'Asignar' : 'Desasignar'}
+                </button>
+              ))}
+            </div>
+
+            {selectionAction === 'assign' && (
+              <div className="space-y-2">
+                <div className="text-[10px] font-medium text-muted-foreground">
+                  Deja en "No modificar" para conservar el valor actual del cliente:
+                </div>
+                <SearchableSelect
+                  options={[{ value: '', label: '— No modificar vendedor —' }, ...(vendedores ?? []).map(v => ({ value: v.id, label: v.nombre, searchText: v.nombre }))]}
+                  value={selectionVendorId}
+                  onChange={setSelectionVendorId}
+                  placeholder="Vendedor..."
+                  renderOption={(option, { selected }) => {
+                    const color = option.value ? (vendorColorMap.get(option.value) ?? '#9ca3af') : '#94a3b8';
+                    return (
+                      <div className="flex items-center gap-2 w-full">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                        <span className={cn("truncate", selected && "font-semibold")}>{option.label}</span>
+                      </div>
+                    );
+                  }}
+                  renderValue={(option) => option ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: option.value ? (vendorColorMap.get(option.value) ?? '#9ca3af') : '#94a3b8' }} />
+                      <span className="truncate">{option.label}</span>
+                    </span>
+                  ) : null}
+                />
+
+                <SearchableSelect
+                  options={[{ value: '', label: '— No modificar día —' }, ...DIAS.map(d => ({ value: d, label: d }))]}
+                  value={selectionDay}
+                  onChange={setSelectionDay}
+                  placeholder="Día..."
+                  renderOption={(option, { selected }) => (
+                    <div className="flex items-center gap-2 w-full">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: option.value ? (DIA_COLORS[option.value] ?? '#9ca3af') : '#94a3b8' }} />
+                      <span className={cn("truncate", selected && "font-semibold")}>{option.label}</span>
+                    </div>
+                  )}
+                  renderValue={(option) => option ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: option.value ? (DIA_COLORS[option.value] ?? '#9ca3af') : '#94a3b8' }} />
+                      <span className="truncate">{option.label}</span>
+                    </span>
+                  ) : null}
+                />
+              </div>
+            )}
+
+            {selectionAction === 'desasignar' && (
+              <div className="space-y-2 bg-background/50 border border-border p-2.5 rounded-xl">
+                <div className="text-[11px] font-medium text-muted-foreground mb-1">Selecciona qué deseas quitar de los clientes seleccionados:</div>
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={desasignarVendor}
+                      onChange={e => setDesasignarVendor(e.target.checked)}
+                      className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5 bg-background"
+                    />
+                    <span>Quitar Vendedor</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={desasignarDay}
+                      onChange={e => setDesasignarDay(e.target.checked)}
+                      className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5 bg-background"
+                    />
+                    <span>Quitar Día de visita</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <button onClick={clearSelection} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground">
+                <Undo2 className="h-3.5 w-3.5" /> Limpiar
+              </button>
+              <button
+                onClick={applySelectionAction}
+                disabled={
+                  selectionSaving ||
+                  selectionClientIds.length === 0 ||
+                  selectionAction === 'none' ||
+                  (selectionAction === 'assign' && !selectionVendorId && !selectionDay) ||
+                  (selectionAction === 'desasignar' && !desasignarVendor && !desasignarDay)
+                }
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors",
+                  (selectionSaving ||
+                  selectionClientIds.length === 0 ||
+                  selectionAction === 'none' ||
+                  (selectionAction === 'assign' && !selectionVendorId && !selectionDay) ||
+                  (selectionAction === 'desasignar' && !desasignarVendor && !desasignarDay))
+                    ? "bg-muted text-muted-foreground cursor-not-allowed"
+                    : "bg-primary text-primary-foreground hover:bg-primary/90"
+                )}
+              >
+                {selectionSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                Confirmar
+              </button>
+              {selectionAction === 'desasignar' && (desasignarVendor || desasignarDay) && (
+                <div className="text-[11px] text-muted-foreground ml-auto flex items-center gap-1.5">
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Se quitará el {desasignarVendor && desasignarDay ? 'vendedor y día' : desasignarVendor ? 'vendedor' : 'día'} seleccionado.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Route order sidebar (single route, hidden when multi-route panel is active) */}
         {orderedClients && orderedClients.length > 0 && !multiResults && (

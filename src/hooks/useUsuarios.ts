@@ -153,6 +153,10 @@ export function useUsuarios() {
     const newEstado = p.estado === 'activo' ? 'baja' : 'activo';
     if (newEstado === 'baja' && !confirm(`¿Dar de baja a ${p.nombre || email}? No podrá acceder al sistema y no generará costo.`)) return;
     await supabase.from('profiles').update({ estado: newEstado }).eq('id', p.id);
+    if (newEstado === 'baja' && empresa?.id) {
+      await supabase.from('clientes').update({ vendedor_id: null } as any).eq('empresa_id', empresa.id).eq('vendedor_id', p.id);
+      await (supabase.from('cliente_orden_ruta' as any) as any).delete().eq('empresa_id', empresa.id).eq('vendedor_id', p.id);
+    }
     toast.success(newEstado === 'baja' ? 'Usuario dado de baja' : 'Usuario reactivado');
     loadUsuarios();
   }, [loadUsuarios]);

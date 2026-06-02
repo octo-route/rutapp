@@ -385,6 +385,16 @@ Catálogo de productos. Es una de las tablas más amplias.
 - **Comisiones:** `tiene_comision`, `tipo_comision` (enum), `pct_comision`.
 - **Otros:** `se_puede_vender`, `se_puede_comprar`, `proveedor_id`, `tarifa_id`.
 
+#### `combos`
+Los *combos* se modelan como productos que agrupan varios componentes (otros productos). Implementación y reglas principales:
+
+- Almacenamiento: un combo es una fila en `productos` con `es_combo = true`. Las líneas de componente se normalizan en la tabla `combo_lineas` (ver migración `supabase/migrations/20260526110000_create_combo_lineas.sql`). Las columnas principales de `combo_lineas` son: `id`, `empresa_id`, `combo_id` (→ `productos.id`), `componente_id` (→ `productos.id`), `cantidad`, `orden`, `notas`, `created_at`, `updated_at`.
+- Semántica: el combo tiene sus propios campos de precio (`precio_principal`, `precio_sugerido_publico`) sobre la fila de `productos`. El precio sugerido se calcula a partir de los precios unitarios de los componentes, pero el `precio_principal` es editable en el combo.
+- Paridad de precios: los combos soportan `usa_listas_precio`, `tarifa_id` y `lista_id` igual que los productos individuales; el motor de precios aplica las mismas reglas/funciones de tarifa/lista.
+- Flujo de guardado: la UI realiza un único guardado — primero inserta/actualiza la fila en `productos` y luego reemplaza las filas en `combo_lineas` (operación delete + insert desde el frontend). Esto garantiza consistencia y evita estados intermedios.
+- Frontend: el editor de combos se implementó como un modal con UX de "staged list" (`src/components/producto/ComboLineModal.tsx`). La búsqueda de componentes es server-side y debounced para catálogos grandes; al añadir un componente se guarda una instantánea mínima de precio para evitar valores 0 mientras se carga metadata.
+- Hooks y tipos: se añadieron/ajustaron hooks y tipos relevantes: `useComboLineas`, `useSaveProducto` (usado para combos), y la interfaz `ComboLinea` en `src/types/index.ts`. Se agregó el campo `usa_listas_precio?: boolean` al tipo `Producto`.
+
 #### `producto_lotes`
 Lotes de producto (caducidades). `producto_id`, `almacen_id`, `lote`, `cantidad`, `fecha_caducidad`, `fecha_produccion`.
 

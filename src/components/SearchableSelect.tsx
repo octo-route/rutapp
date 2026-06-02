@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, ChevronDown, X, Plus, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -18,6 +19,8 @@ interface SearchableSelectProps {
   autoOpen?: boolean;
   /** When provided, shows a "Crear nuevo" option. Should return the new item's id. */
   onCreateNew?: (name: string) => Promise<string | undefined>;
+  renderOption?: (option: Option, state: { selected: boolean; active: boolean }) => ReactNode;
+  renderValue?: (option: Option | undefined) => ReactNode;
 }
 
 export default function SearchableSelect({
@@ -28,6 +31,8 @@ export default function SearchableSelect({
   placeholder = 'Buscar...',
   autoOpen = false,
   onCreateNew,
+  renderOption,
+  renderValue,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(autoOpen);
   const [search, setSearch] = useState('');
@@ -37,9 +42,10 @@ export default function SearchableSelect({
   const triggerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; width: number; strategy: 'fixed' | 'absolute' } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; strategy: 'fixed' | 'absolute'; maxHeight: number } | null>(null);
 
-  const selectedLabel = options.find(o => o.value === value)?.label ?? '';
+  const selectedOption = options.find(o => o.value === value);
+  const selectedLabel = selectedOption?.label ?? '';
 
   const filtered = useMemo(() => {
     if (!search.trim()) return options;
@@ -59,22 +65,35 @@ export default function SearchableSelect({
 
     const triggerRect = trigger.getBoundingClientRect();
     const dialogContainer = trigger.closest('[role="dialog"]') as HTMLElement | null;
+    const estimatedHeight = 320;
 
     if (dialogContainer) {
       const containerRect = dialogContainer.getBoundingClientRect();
+      const spaceBelow = containerRect.bottom - triggerRect.bottom - 8;
+      const spaceAbove = triggerRect.top - containerRect.top - 8;
+      const openUp = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+      const maxHeight = Math.max(160, Math.min(estimatedHeight, openUp ? spaceAbove : spaceBelow));
       setPos({
-        top: triggerRect.bottom - containerRect.top + dialogContainer.scrollTop - dialogContainer.clientTop + 2,
+        top: openUp
+          ? triggerRect.top - containerRect.top + dialogContainer.scrollTop - dialogContainer.clientTop - maxHeight - 2
+          : triggerRect.bottom - containerRect.top + dialogContainer.scrollTop - dialogContainer.clientTop + 2,
         left: triggerRect.left - containerRect.left + dialogContainer.scrollLeft - dialogContainer.clientLeft,
         width: Math.max(triggerRect.width, 220),
+        maxHeight,
         strategy: 'absolute',
       });
       return;
     }
 
+    const spaceBelow = window.innerHeight - triggerRect.bottom - 8;
+    const spaceAbove = triggerRect.top - 8;
+    const openUp = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(160, Math.min(estimatedHeight, openUp ? spaceAbove : spaceBelow));
     setPos({
-      top: triggerRect.bottom + 2,
+      top: openUp ? triggerRect.top - maxHeight - 2 : triggerRect.bottom + 2,
       left: triggerRect.left,
       width: Math.max(triggerRect.width, 220),
+      maxHeight,
       strategy: 'fixed',
     });
   }, []);
@@ -166,7 +185,9 @@ export default function SearchableSelect({
           !value && "text-muted-foreground"
         )}
       >
-        <span className="truncate flex-1">{selectedLabel || placeholder || '—'}</span>
+        <span className="truncate flex-1">
+          {renderValue ? (renderValue(selectedOption) ?? (selectedLabel || placeholder || '—')) : (selectedLabel || placeholder || '—')}
+        </span>
         <div className="flex items-center gap-0.5 shrink-0">
           {value && (
             <button
@@ -194,7 +215,7 @@ export default function SearchableSelect({
             width: pos.width,
             zIndex: 99999,
           }}
-          className="bg-popover border border-border rounded-md shadow-xl flex flex-col max-h-[280px]"
+          className="bg-popover border border-border rounded-md shadow-xl flex flex-col overflow-hidden"
         >
           <div className="flex items-center gap-2 px-2.5 py-2 border-b border-border">
             <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -210,7 +231,7 @@ export default function SearchableSelect({
             />
           </div>
 
-          <div className="overflow-y-auto flex-1">
+          <div className="overflow-y-auto flex-1" style={{ maxHeight: pos.maxHeight }}>
             {filtered.length === 0 && !onCreateNew ? (
               <div className="px-3 py-3 text-[12px] text-muted-foreground text-center">Sin resultados</div>
             ) : filtered.length === 0 && onCreateNew && !search.trim() ? (
@@ -229,7 +250,9 @@ export default function SearchableSelect({
                       o.value === value && 'font-semibold'
                     )}
                   >
-                    {highlightMatch(o.label, search)}
+                    {renderOption
+                      ? renderOption(o, { selected: o.value === value, active: i === highlightIdx })
+                      : highlightMatch(o.label, search)}
                   </div>
                 ))}
                 {onCreateNew && search.trim() && !filtered.some(o => o.label.toLowerCase() === search.trim().toLowerCase()) && (
