@@ -633,7 +633,13 @@ export function useSaveListaPrecio() {
   return useMutation({
     mutationFn: async (lp: { id?: string; tarifa_id?: string; nombre: string; es_principal?: boolean; activa?: boolean }) => {
       const { id, ...rest } = lp;
+      if (!empresa?.id) throw new Error('Sin empresa');
+
       if (id) {
+        const { data: existing } = await supabase.from('lista_precios')
+          .select('id').eq('empresa_id', empresa.id).ilike('nombre', rest.nombre).neq('id', id);
+        if (existing && existing.length > 0) throw new Error('Ya existe una lista con ese nombre');
+
         if (rest.es_principal && rest.tarifa_id) {
           await supabase.from('lista_precios').update({ es_principal: false }).eq('tarifa_id', rest.tarifa_id);
         }
@@ -641,7 +647,9 @@ export function useSaveListaPrecio() {
         if (error) throw error;
         return data;
       } else {
-        if (!empresa?.id) throw new Error('Sin empresa');
+        const { data: existing } = await supabase.from('lista_precios')
+          .select('id').eq('empresa_id', empresa.id).ilike('nombre', rest.nombre);
+        if (existing && existing.length > 0) throw new Error('Ya existe una lista con ese nombre');
 
         let tarifaId = rest.tarifa_id;
         if (!tarifaId) {

@@ -252,7 +252,7 @@ export default function LandingPage() {
                 Comenzar gratis <ArrowRight className="h-5 w-5" />
               </Link>
               <a href="#realtime" className="w-full sm:w-auto px-8 py-4 text-base font-semibold text-gray-700 rounded-xl border-2 border-gray-200 hover:border-gray-300 transition-all flex items-center justify-center gap-2">
-                Ver seguimiento en vivo <ChevronRight className="h-5 w-5" />
+                Conoce más <ChevronRight className="h-5 w-5" />
               </a>
             </div>
             <p className="text-xs text-gray-400 mt-4">Sin tarjeta · Configuración en 5 minutos · 14 días de prueba</p>

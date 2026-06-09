@@ -18,13 +18,15 @@ interface OdooFieldProps {
   readOnly?: boolean;
   alwaysEdit?: boolean;
   required?: boolean;
+  /** Extra content rendered inline after the label text (e.g. a badge) */
+  labelSuffix?: ReactNode;
   /** Quick-create handler for select fields. Should return the new item's id. */
   onCreateNew?: (name: string) => Promise<string | undefined>;
 }
 
 export function OdooField({
   label, value, onChange, type = 'text', options, placeholder,
-  help, teal, format, readOnly, alwaysEdit, required, onCreateNew,
+  help, teal, format, readOnly, alwaysEdit, required, onCreateNew, labelSuffix,
 }: OdooFieldProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -123,8 +125,9 @@ export function OdooField({
   if (type === 'select' && options) {
     return (
       <div className="odoo-field-row">
-        <span className={cn("odoo-field-label", required && "label-required")}>
+      <span className={cn("odoo-field-label", required && "label-required")}>
           {label}
+          {labelSuffix}
           {help && <HelpCircle className="h-3 w-3 odoo-help-icon" />}
         </span>
         {readOnly ? (
@@ -167,6 +170,7 @@ export function OdooField({
     <div className="odoo-field-row">
       <span className={cn("odoo-field-label", required && "label-required")}>
         {label}
+        {labelSuffix}
         {help && <HelpCircle className="h-3 w-3 odoo-help-icon" />}
       </span>
       {readOnly ? (

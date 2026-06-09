@@ -9,7 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   Search, Filter, MapPin, X, Users, Loader2, CheckCircle2, Navigation,
-  Route, Info, Clock, TrendingUp, MapPinOff, Eye, EyeOff, ChevronDown, ChevronUp, PenLine, Check, Undo2, Trash2, UserRound, CalendarDays
+  Route, Info, Clock, TrendingUp, MapPinOff, Eye, EyeOff, ChevronDown, ChevronUp, PenLine, Check, Undo2, Trash2, UserRound, CalendarDays, AlertCircle
 } from 'lucide-react';
 import { cn, todayInTimezone } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -30,7 +30,7 @@ const DIA_HOY = (() => {
 
 // Color palette for each day
 const DIA_COLORS: Record<string, string> = {
-  Lunes: '#6366f1',      // indigo
+  Lunes: '#0004f2',      // indigo
   Martes: '#f59e0b',     // amber
   Miércoles: '#10b981',  // emerald
   Jueves: '#ef4444',     // red
@@ -38,6 +38,19 @@ const DIA_COLORS: Record<string, string> = {
   Sábado: '#06b6d4',     // cyan
   Domingo: '#f97316',    // orange
 };
+
+function getDiaColor(day?: string) {
+  if (!day) return '#9ca3af';
+  const lower = day.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (lower.startsWith('lu')) return '#0004f2';      // Lunes
+  if (lower.startsWith('ma')) return '#f59e0b';      // Martes
+  if (lower.startsWith('mi')) return '#10b981';      // Miércoles
+  if (lower.startsWith('ju')) return '#ef4444';      // Jueves
+  if (lower.startsWith('vi')) return '#8b5cf6';      // Viernes
+  if (lower.startsWith('sa')) return '#06b6d4';      // Sábado
+  if (lower.startsWith('do')) return '#f97316';      // Domingo
+  return '#9ca3af';
+}
 
 const mapContainerStyle = { width: '100%', height: '100%' };
 const defaultCenter = { lat: 23.6345, lng: -102.5528 };
@@ -229,6 +242,13 @@ export default function MapaClientesPage() {
   const [desasignarVendor, setDesasignarVendor] = useState(true);
   const [desasignarDay, setDesasignarDay] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
+  const activePointersRef = useRef<Map<number, { clientX: number; clientY: number }>>(new Map());
+  const isPanningRef = useRef<boolean>(false);
+  const lastPanPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const initialPinchDistanceRef = useRef<number | null>(null);
+  const initialPinchZoomRef = useRef<number | null>(null);
+  const pinchMidpointRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const wasPinchingRef = useRef<boolean>(false);
 
   const { data: isAdmin } = useQuery({
     queryKey: ['is-admin', user?.id],
@@ -284,7 +304,7 @@ export default function MapaClientesPage() {
   const selectionCandidates = useMemo(() => {
     let result = visibleClients;
     if (vendedorFilter) result = result.filter((c: any) => c.vendedor_id === vendedorFilter);
-    if (diaFilter) result = result.filter((c: any) => c.dia_visita?.includes(diaFilter));
+    if (diaFilter) result = result.filter((c: any) => c.dia_visita?.some((d: string) => d.toLowerCase() === diaFilter.toLowerCase()));
     return result;
   }, [visibleClients, vendedorFilter, diaFilter]);
 
@@ -298,7 +318,7 @@ export default function MapaClientesPage() {
   // Load saved route order for current day/vendedor combination
   const { data: savedOrder, refetch: refetchSavedOrder } = useQuery({
     queryKey: ['cliente-orden-ruta', empresa?.id, diaFilter, vendedorFilter],
-    enabled: !!empresa?.id,
+    enabled: !!empresa?.id && !!diaFilter,
     queryFn: async () => {
       let q = supabase
         .from('cliente_orden_ruta' as any)
@@ -475,14 +495,18 @@ export default function MapaClientesPage() {
     let result = clientes ?? [];
     if (zonaFilter) result = result.filter((c: any) => c.zona_id === zonaFilter);
     if (vendedorFilter) result = result.filter((c: any) => c.vendedor_id === vendedorFilter);
-    if (diaFilter) result = result.filter((c: any) => c.dia_visita?.includes(diaFilter));
+    if (diaFilter) result = result.filter((c: any) => c.dia_visita?.some((d: string) => d.toLowerCase() === diaFilter.toLowerCase()));
     return result;
   }, [clientes, zonaFilter, vendedorFilter, diaFilter]);
 
   const withGps = useMemo(() => filtered.filter((c: any) => c.gps_lat && c.gps_lng), [filtered]);
+
+  const mapCenter = useMemo(() => {
+    return withGps.length > 0 ? { lat: withGps[0].gps_lat, lng: withGps[0].gps_lng } : defaultCenter;
+  }, [withGps[0]?.gps_lat, withGps[0]?.gps_lng]);
   const withoutGps = useMemo(() => filtered.filter((c: any) => !c.gps_lat || !c.gps_lng), [filtered]);
 
-  const todayClients = useMemo(() => filtered.filter((c: any) => c.dia_visita?.includes(DIA_HOY)), [filtered]);
+  const todayClients = useMemo(() => filtered.filter((c: any) => c.dia_visita?.some((d: string) => d.toLowerCase() === DIA_HOY.toLowerCase())), [filtered]);
   const visitedCount = useMemo(() => {
     if (!ventasHoy) return 0;
     return todayClients.filter((c: any) => ventasHoy.has(c.id)).length;
@@ -529,41 +553,174 @@ export default function MapaClientesPage() {
 
   const handleSelectionPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!selectionMode) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    setSelectionDragging(true);
-    setSelectionPath([point]);
-    setSelectionClientIds([]);
-    setSelectionMessage('');
-    event.currentTarget.setPointerCapture(event.pointerId);
+    
+    // Add pointer to active pointers tracking
+    activePointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    
+    // Capture pointer
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch (err) {
+      console.warn('Could not set pointer capture:', err);
+    }
+
+    // Check if right-click panning
+    if (event.button === 2 || (event.buttons & 2) !== 0) {
+      isPanningRef.current = true;
+      lastPanPointRef.current = { clientX: event.clientX, clientY: event.clientY };
+      setSelectionDragging(false);
+      setSelectionPath([]);
+      setSelectionClientIds([]);
+      setSelectionMessage('');
+      return;
+    }
+
+    // Multi-touch gestures (pinch/pan on touch screens)
+    if (activePointersRef.current.size >= 2) {
+      wasPinchingRef.current = true;
+      setSelectionDragging(false);
+      setSelectionPath([]); // Clear any erratic selection path drawing
+      
+      const pointers = Array.from(activePointersRef.current.values());
+      const p1 = pointers[0];
+      const p2 = pointers[1];
+      
+      initialPinchDistanceRef.current = Math.hypot(p1.clientX - p2.clientX, p1.clientY - p2.clientY);
+      pinchMidpointRef.current = {
+        clientX: (p1.clientX + p2.clientX) / 2,
+        clientY: (p1.clientY + p2.clientY) / 2,
+      };
+      if (mapRef.current) {
+        initialPinchZoomRef.current = mapRef.current.getZoom() ?? 15;
+      }
+      return;
+    }
+
+    // Single touch / Left-click drawing mode
+    if (activePointersRef.current.size === 1 && event.button === 0) {
+      isPanningRef.current = false;
+      
+      if (!wasPinchingRef.current) {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+        setSelectionDragging(true);
+        setSelectionPath([point]);
+        setSelectionClientIds([]);
+        setSelectionMessage('');
+      }
+    }
   }, [selectionMode]);
 
   const handleSelectionPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!selectionMode || !selectionDragging) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    setSelectionPath(prev => {
-      const last = prev[prev.length - 1];
-      if (last) {
-        const dx = last.x - point.x;
-        const dy = last.y - point.y;
-        if (Math.sqrt(dx * dx + dy * dy) < MIN_SELECTION_DISTANCE) return prev;
+    if (!selectionMode) return;
+
+    // Update active pointer location
+    activePointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+
+    // 1. Right-click Panning
+    if (isPanningRef.current || event.button === 2 || (event.buttons & 2) !== 0) {
+      if (!isPanningRef.current) {
+        setSelectionDragging(false);
+        setSelectionPath([]);
+        setSelectionClientIds([]);
+        setSelectionMessage('');
       }
-      const next = [...prev, point];
-      if (selectionMode) finalizeSelection(next);
-      return next;
-    });
+      isPanningRef.current = true;
+      if (lastPanPointRef.current && mapRef.current) {
+        const dx = event.clientX - lastPanPointRef.current.clientX;
+        const dy = event.clientY - lastPanPointRef.current.clientY;
+        mapRef.current.panBy(-dx, -dy);
+      }
+      lastPanPointRef.current = { clientX: event.clientX, clientY: event.clientY };
+      return;
+    }
+
+    // 2. Multi-touch gesture handling (pinch to zoom and pan)
+    if (activePointersRef.current.size >= 2) {
+      wasPinchingRef.current = true;
+      
+      const pointers = Array.from(activePointersRef.current.values());
+      const p1 = pointers[0];
+      const p2 = pointers[1];
+
+      // Pan by tracking midpoint changes
+      const currentMidpoint = {
+        clientX: (p1.clientX + p2.clientX) / 2,
+        clientY: (p1.clientY + p2.clientY) / 2,
+      };
+      
+      if (pinchMidpointRef.current && mapRef.current) {
+        const dx = currentMidpoint.clientX - pinchMidpointRef.current.clientX;
+        const dy = currentMidpoint.clientY - pinchMidpointRef.current.clientY;
+        mapRef.current.panBy(-dx, -dy);
+      }
+      pinchMidpointRef.current = currentMidpoint;
+
+      // Pinch to zoom
+      const currentDistance = Math.hypot(p1.clientX - p2.clientX, p1.clientY - p2.clientY);
+      if (initialPinchDistanceRef.current && initialPinchDistanceRef.current > 0 && initialPinchZoomRef.current !== null && mapRef.current) {
+        const scale = currentDistance / initialPinchDistanceRef.current;
+        const zoomDiff = Math.log2(scale);
+        const newZoom = initialPinchZoomRef.current + zoomDiff;
+        mapRef.current.setZoom(Math.max(1, Math.min(21, newZoom)));
+      }
+      return;
+    }
+
+    // 3. Selection Drawing (Left-click or single touch)
+    if (selectionDragging && activePointersRef.current.size === 1) {
+      if (wasPinchingRef.current) return; // Ignore draw gestures after pinching
+      
+      const rect = event.currentTarget.getBoundingClientRect();
+      const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      
+      setSelectionPath(prev => {
+        const last = prev[prev.length - 1];
+        if (last) {
+          const dx = last.x - point.x;
+          const dy = last.y - point.y;
+          if (Math.sqrt(dx * dx + dy * dy) < MIN_SELECTION_DISTANCE) return prev;
+        }
+        const next = [...prev, point];
+        if (selectionMode) finalizeSelection(next);
+        return next;
+      });
+    }
   }, [selectionMode, selectionDragging, finalizeSelection]);
 
   const handleSelectionPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!selectionMode) return;
-    setSelectionDragging(false);
-    setSelectionPath(prev => {
-      finalizeSelection(prev);
-      return prev;
-    });
-    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch {}
-  }, [selectionMode, finalizeSelection]);
+    // Remove pointer from tracker
+    activePointersRef.current.delete(event.pointerId);
+    
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {}
+
+    // When all contacts are lifted, reset everything
+    if (activePointersRef.current.size === 0) {
+      isPanningRef.current = false;
+      lastPanPointRef.current = null;
+      initialPinchDistanceRef.current = null;
+      initialPinchZoomRef.current = null;
+      pinchMidpointRef.current = null;
+      
+      if (selectionDragging && !wasPinchingRef.current) {
+        setSelectionDragging(false);
+        setSelectionPath(prev => {
+          finalizeSelection(prev);
+          return prev;
+        });
+      } else {
+        setSelectionDragging(false);
+      }
+      wasPinchingRef.current = false;
+    } else {
+      // If we are down to 1 pointer, clear pinch helpers, but keep wasPinching flag so it doesn't draw
+      initialPinchDistanceRef.current = null;
+      initialPinchZoomRef.current = null;
+      pinchMidpointRef.current = null;
+    }
+  }, [finalizeSelection, selectionDragging]);
 
   const applySelectionAction = useCallback(async () => {
     if (!empresa?.id) return;
@@ -685,6 +842,13 @@ export default function MapaClientesPage() {
   useEffect(() => {
     if (!selectionMode) {
       clearSelection();
+      activePointersRef.current.clear();
+      isPanningRef.current = false;
+      lastPanPointRef.current = null;
+      initialPinchDistanceRef.current = null;
+      initialPinchZoomRef.current = null;
+      pinchMidpointRef.current = null;
+      wasPinchingRef.current = false;
     }
   }, [selectionMode, clearSelection]);
 
@@ -692,10 +856,12 @@ export default function MapaClientesPage() {
     const vendorId = cliente.vendedor_id || '__sin_vendedor__';
     const vendorColor = cliente.vendedor_id ? (vendorColorMap.get(vendorId) ?? '#9ca3af') : '#9ca3af';
     const dayCandidates = Array.isArray(cliente.dia_visita) ? cliente.dia_visita : [];
-    const preferredDay = diaFilter && dayCandidates.includes(diaFilter)
+    const hasFilterDay = diaFilter && dayCandidates.some((d: string) => d.toLowerCase() === diaFilter.toLowerCase());
+    const hasToday = dayCandidates.some((d: string) => d.toLowerCase() === DIA_HOY.toLowerCase());
+    const preferredDay = diaFilter && hasFilterDay
       ? diaFilter
-      : (dayCandidates.includes(DIA_HOY) ? DIA_HOY : dayCandidates[0]);
-    const dayColor = preferredDay ? (DIA_COLORS[preferredDay] ?? '#9ca3af') : '#9ca3af';
+      : (hasToday ? DIA_HOY : dayCandidates[0]);
+    const dayColor = getDiaColor(preferredDay);
 
     if (colorMode === 'visitado') {
       return { left: ventasHoy?.has(cliente.id) ? '#22c55e' : '#ef4444', right: ventasHoy?.has(cliente.id) ? '#22c55e' : '#ef4444', labelColor: '#fff' };
@@ -1166,6 +1332,22 @@ export default function MapaClientesPage() {
         )}
       </div>
 
+      {activeFiltersCount > 0 && filtered.length === 0 && (
+        <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2.5 flex items-center gap-2 text-amber-800 dark:text-amber-400 text-xs font-medium animate-in slide-in-from-top duration-200 shrink-0">
+          <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
+          <span>No se encontraron clientes para los filtros seleccionados ({[
+            diaFilter && `Día: ${diaFilter}`,
+            vendedorFilter && `Vendedor: ${vendedores?.find(v => v.id === vendedorFilter)?.nombre ?? 'Seleccionado'}`,
+            zonaFilter && `Zona: ${zonas?.find(z => z.id === zonaFilter)?.nombre ?? 'Seleccionada'}`,
+            statusFilter && `Status: ${statusFilter}`
+          ].filter(Boolean).join(', ')}).</span>
+          <button onClick={() => { setZonaFilter(''); setVendedorFilter(''); setDiaFilter(''); setStatusFilter(''); }}
+            className="ml-auto underline hover:text-amber-950 dark:hover:text-amber-200 transition-colors font-semibold shrink-0">
+            Limpiar filtros
+          </button>
+        </div>
+      )}
+
       {/* Map area */}
       <div className="flex-1 relative">
         {(isLoading || !isLoaded) && (
@@ -1209,13 +1391,14 @@ export default function MapaClientesPage() {
         </div>
 
         {selectionMode && (
-          <div className="absolute inset-0 z-[60]">
+          <div className="absolute inset-0 z-[60] touch-none" onContextMenu={(e) => e.preventDefault()}>
             <div
-              className="absolute inset-0 cursor-crosshair"
+              className="absolute inset-0 cursor-crosshair touch-none"
               onPointerDown={handleSelectionPointerDown}
               onPointerMove={handleSelectionPointerMove}
               onPointerUp={handleSelectionPointerUp}
               onPointerCancel={handleSelectionPointerUp}
+              onContextMenu={(e) => e.preventDefault()}
             />
             <svg className="absolute inset-0 h-full w-full pointer-events-none">
               {selectionPath.length > 1 && (
@@ -1273,7 +1456,7 @@ export default function MapaClientesPage() {
         {isLoaded && (
           <GoogleMap
             mapContainerStyle={mapContainerStyle}
-            center={withGps.length > 0 ? { lat: withGps[0].gps_lat, lng: withGps[0].gps_lng } : defaultCenter}
+            center={mapCenter}
             zoom={6}
             onLoad={onMapLoad}
             onClick={handleMapClick}
@@ -1374,7 +1557,7 @@ export default function MapaClientesPage() {
                     <div className="font-bold text-sm flex-1">{selectedCliente.nombre}</div>
                     {ventasHoy?.has(selectedCliente.id) ? (
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">Visitado</span>
-                    ) : selectedCliente.dia_visita?.includes(DIA_HOY) ? (
+                    ) : selectedCliente.dia_visita?.some((d: string) => d.toLowerCase() === DIA_HOY.toLowerCase()) ? (
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-semibold">Pendiente</span>
                     ) : null}
                   </div>
@@ -1388,12 +1571,15 @@ export default function MapaClientesPage() {
                   )}
                   {selectedCliente.dia_visita?.length > 0 && (
                     <div className="flex gap-1 flex-wrap mb-2">
-                      {selectedCliente.dia_visita.map((d: string) => (
-                        <span key={d} className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold"
-                          style={{ backgroundColor: `${DIA_COLORS[d]}20`, color: DIA_COLORS[d] }}>
-                          {d.slice(0, 3)}
-                        </span>
-                      ))}
+                      {selectedCliente.dia_visita.map((d: string) => {
+                        const dColor = getDiaColor(d);
+                        return (
+                          <span key={d} className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold"
+                            style={{ backgroundColor: `${dColor}20`, color: dColor }}>
+                            {d.slice(0, 3)}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                   <div className="flex gap-2 mt-1 pt-1 border-t border-gray-100">

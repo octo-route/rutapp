@@ -145,7 +145,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Demo button */}
+        {/* Demo button (Hidden per user request)
         {!isForgot && (
           <button
             type="button"
@@ -157,7 +157,7 @@ export default function LoginPage() {
             {demoLoading ? 'Preparando demo...' : 'Probar Demo (sin registro)'}
           </button>
         )}
-
+        */}
         {!isForgot && (
           <p className="text-center text-xs text-muted-foreground mt-3">
             <button onClick={() => setIsForgot(true)} className="odoo-link">

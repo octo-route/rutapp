@@ -1408,17 +1408,6 @@ export default function PuntoVentaPage() {
           <div className="flex-1" />
           {/* Shift controls */}
           <TurnoControls />
-          {/* Sin impuestos switch */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-muted-foreground font-medium hidden sm:inline">
-              Sin imp.
-            </span>
-            <Switch
-              checked={sinImpuestos}
-              onCheckedChange={setSinImpuestos}
-              className="scale-75"
-            />
-          </div>
           {/* Client selector */}
           <button
             onClick={() => setShowClientes(true)}

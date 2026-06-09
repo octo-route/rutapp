@@ -76,7 +76,12 @@ export default function EntregaFormPage() {
   useEffect(() => {
     if (entrega) {
       setForm(entrega);
-      setLineas((entrega as any).entrega_lineas ?? []);
+      const defaultAlmacenId = (entrega as any).almacen_id ?? '';
+      const initialLines = ((entrega as any).entrega_lineas ?? []).map((l: any) => ({
+        ...l,
+        almacen_origen_id: l.almacen_origen_id || defaultAlmacenId,
+      }));
+      setLineas(initialLines);
     }
   }, [entrega]);
 
@@ -229,6 +234,14 @@ export default function EntregaFormPage() {
     });
   };
 
+  const handleAlmacenDefaultChange = (newAlmacenId: string) => {
+    setForm((p: any) => ({ ...p, almacen_id: newAlmacenId }));
+    setLineas(prev => prev.map(l => {
+      if (l.hecho) return l;
+      return { ...l, almacen_origen_id: newAlmacenId };
+    }));
+  };
+
   const handleGenerarEntregaPdf = async () => {
     const blob = await generarEntregaPdf({
       empresa: {
@@ -270,7 +283,13 @@ export default function EntregaFormPage() {
   };
 
   const addLine = () => {
-    setLineas(prev => [...prev, { producto_id: '', cantidad_pedida: 0, cantidad_entregada: 0, hecho: false }]);
+    setLineas(prev => [...prev, {
+      producto_id: '',
+      cantidad_pedida: 0,
+      cantidad_entregada: 0,
+      hecho: false,
+      almacen_origen_id: form.almacen_id ?? ''
+    }]);
   };
 
   const { data: stockAlmacenSurtir } = useQuery({
@@ -446,7 +465,7 @@ export default function EntregaFormPage() {
                 {readOnly || !isNew ? (
                   <div className="text-[13px] py-1.5 px-1 text-foreground">{form.almacenes?.nombre ?? almacenesList?.find(a => a.id === form.almacen_id)?.nombre ?? '—'}</div>
                 ) : (
-                  <SearchableSelect options={almacenOptions} value={form.almacen_id ?? ''} onChange={v => setForm((p: any) => ({ ...p, almacen_id: v }))} placeholder="Almacén..." />
+                  <SearchableSelect options={almacenOptions} value={form.almacen_id ?? ''} onChange={v => handleAlmacenDefaultChange(v || '')} placeholder="Almacén..." />
                 )}
               </div>
               <div>

@@ -41,8 +41,18 @@ export function useDashboardCobros(range: DateRange, vendedorId?: string) {
     queryKey: ['dashboard-cobros', empresa?.id, fmt(range.from), fmt(range.to), vendedorId],
     enabled: !!empresa?.id,
     queryFn: async () => {
+      let targetUserId: string | null = null;
+      if (vendedorId) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('user_id')
+          .eq('id', vendedorId)
+          .maybeSingle();
+        targetUserId = data?.user_id || null;
+      }
+
       return fetchAllPages((from, to) => {
-        const q = supabase
+        let q = supabase
           .from('cobros')
           .select('id, fecha, monto, metodo_pago, cliente_id')
           .eq('empresa_id', empresa!.id)
@@ -50,6 +60,9 @@ export function useDashboardCobros(range: DateRange, vendedorId?: string) {
           .gte('fecha', fmt(range.from))
           .lte('fecha', fmt(range.to))
           .range(from, to);
+        if (vendedorId) {
+          q = q.eq('user_id', targetUserId || '00000000-0000-0000-0000-000000000000');
+        }
         return q;
       });
     },

@@ -109,7 +109,9 @@ export default function ListasPrecioListPage() {
                 </label>
                 <div className="flex gap-2">
                   <button onClick={() => setShowNew(false)} className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent">Cancelar</button>
-                  <button onClick={handleCreate} className="px-3 py-1.5 rounded-lg text-xs bg-primary text-primary-foreground font-semibold">Crear</button>
+                  <button disabled={saveMutation.isPending} onClick={handleCreate} className="px-3 py-1.5 rounded-lg text-xs bg-primary text-primary-foreground font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
+                    {saveMutation.isPending ? 'Creando...' : 'Crear'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -172,7 +174,7 @@ export default function ListasPrecioListPage() {
                   <td className="py-1.5 px-3 text-center text-muted-foreground text-xs">—</td>
                   <td className="py-1.5 px-3 text-center">
                     <div className="flex items-center justify-center gap-1">
-                      <button onClick={handleCreate} className="text-primary hover:text-primary/80 p-1"><Check className="h-3.5 w-3.5" /></button>
+                      <button disabled={saveMutation.isPending} onClick={handleCreate} className="text-primary hover:text-primary/80 p-1 disabled:opacity-50"><Check className="h-3.5 w-3.5" /></button>
                       <button onClick={() => setShowNew(false)} className="text-muted-foreground hover:text-destructive p-1"><X className="h-3.5 w-3.5" /></button>
                     </div>
                   </td>

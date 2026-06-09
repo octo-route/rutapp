@@ -48,6 +48,38 @@ export function useCompraForm() {
           return { ...cl, _tiene_iva: prod?.tiene_iva ?? false, _iva_pct: prod?.iva_pct ?? 16, _tiene_ieps: prod?.tiene_ieps ?? false, _ieps_pct: prod?.ieps_pct ?? 0, _ieps_tipo: prod?.ieps_tipo ?? 'porcentaje', _unidad_compra: prod?.unidades_compra?.abreviatura ?? prod?.unidades_venta?.abreviatura ?? 'pz', _factor_conversion: prod?.factor_conversion ?? 1, _piezas_total: (cl.cantidad ?? 1) * (prod?.factor_conversion ?? 1) };
         });
         setLineas(enrichedLines);
+
+        // Fetch previous prices for view mode
+        const productIds = enrichedLines.map((l: any) => l.producto_id).filter(Boolean);
+        if (productIds.length > 0) {
+          supabase
+            .from('compra_lineas')
+            .select('precio_unitario, producto_id, compras!inner(id, fecha, created_at, status)')
+            .in('producto_id', productIds)
+            .in('compras.status', ['recibida', 'pagada'])
+            .neq('compras.id', existingCompra.id)
+            .then(({ data }) => {
+              if (data && data.length > 0) {
+                setLineas(cur => {
+                  const newLines = [...cur];
+                  for (let i = 0; i < newLines.length; i++) {
+                    const l = newLines[i];
+                    if (!l.producto_id) continue;
+                    const history = data.filter((d: any) => d.producto_id === l.producto_id);
+                    if (history.length > 0) {
+                      const sorted = history.sort((a: any, b: any) => {
+                        const timeA = new Date(a.compras?.created_at || a.compras?.fecha || 0).getTime();
+                        const timeB = new Date(b.compras?.created_at || b.compras?.fecha || 0).getTime();
+                        return timeB - timeA;
+                      });
+                      newLines[i] = { ...l, _precio_anterior: sorted[0].precio_unitario };
+                    }
+                  }
+                  return newLines;
+                });
+              }
+            });
+        }
       }
     }
   }, [existingCompra, productosList]);
@@ -78,10 +110,64 @@ export function useCompraForm() {
     setLineas(prev => {
       const next = [...prev];
       const line = { ...next[idx], [key]: val };
+
       if (key === 'producto_id' && productosList) {
         const p = productosList.find((x: any) => x.id === val) as any;
-        if (p) { line.precio_unitario = p.costo ?? 0; line.productos = { id: p.id, codigo: p.codigo, nombre: p.nombre, nombre_compra: p.nombre_compra ?? null, costo: p.costo ?? 0 } as any; line._tiene_iva = p.tiene_iva ?? false; line._iva_pct = p.iva_pct ?? 16; line._tiene_ieps = p.tiene_ieps ?? false; line._ieps_pct = p.ieps_pct ?? 0; line._ieps_tipo = p.ieps_tipo ?? 'porcentaje'; line._unidad_compra = p.unidades_compra?.abreviatura ?? p.unidades_venta?.abreviatura ?? 'pz'; line._factor_conversion = p.factor_conversion ?? 1; }
+        if (p) {
+          line.precio_unitario = p.costo ?? 0;
+          line.productos = { id: p.id, codigo: p.codigo, nombre: p.nombre, nombre_compra: p.nombre_compra ?? null, costo: p.costo ?? 0 } as any;
+          line._tiene_iva = p.tiene_iva ?? false;
+          line._iva_pct = p.iva_pct ?? 16;
+          line._tiene_ieps = p.tiene_ieps ?? false;
+          line._ieps_pct = p.ieps_pct ?? 0;
+          line._ieps_tipo = p.ieps_tipo ?? 'porcentaje';
+          line._unidad_compra = p.unidades_compra?.abreviatura ?? p.unidades_venta?.abreviatura ?? 'pz';
+          line._factor_conversion = p.factor_conversion ?? 1;
+          // Leer precio de la última compra recibida/pagada (asíncrono, no bloquea)
+          supabase
+            .from('compra_lineas')
+            .select('precio_unitario, compras!inner(fecha, created_at, status)')
+            .eq('producto_id', val)
+            .in('compras.status', ['recibida', 'pagada'])
+            .then(({ data }) => {
+              if (data && data.length > 0) {
+                // Ordenar en JS por created_at (o fecha como fallback) descendente
+                const sorted = data.sort((a: any, b: any) => {
+                  const timeA = new Date(a.compras?.created_at || a.compras?.fecha || 0).getTime();
+                  const timeB = new Date(b.compras?.created_at || b.compras?.fecha || 0).getTime();
+                  return timeB - timeA;
+                });
+                
+                const precio = sorted[0].precio_unitario;
+                if (precio != null) {
+                  setLineas(cur => {
+                    const c = [...cur];
+                    if (c[idx]?.producto_id === val) {
+                      c[idx] = { ...c[idx], _precio_anterior: precio };
+                    }
+                    return c;
+                  });
+                }
+              }
+            });
+        }
       }
+
+      // Sincronización bidireccional costo_caja ↔ precio_unitario
+      if (key === '_costo_caja') {
+        const factor = Number(line._factor_conversion) || 1;
+        line.precio_unitario = Math.round((Number(val) / factor) * 10000) / 10000;
+      }
+      if (key === 'precio_unitario') {
+        const factor = Number(line._factor_conversion) || 1;
+        line._costo_caja = Math.round(Number(val) * factor * 100) / 100;
+      }
+      // Si cambia el factor, recalcular costo_caja en base al precio_unitario actual
+      if (key === '_factor_conversion') {
+        const newFactor = Math.max(1, Number(val) || 1);
+        line._costo_caja = Math.round((Number(line.precio_unitario) || 0) * newFactor * 100) / 100;
+      }
+
       calcLineTotals(line);
       next[idx] = line;
       return next;
@@ -112,6 +198,50 @@ export function useCompraForm() {
     try { await supabase.from('compra_lineas').delete().eq('compra_id', form.id); const { error } = await supabase.from('compras').delete().eq('id', form.id); if (error) throw error; toast.success('Compra eliminada'); qc.invalidateQueries({ queryKey: ['compras'] }); navigate('/almacen/compras'); } catch (err: any) { toast.error(err.message); }
   };
 
+  const procesarRecepcion = async () => {
+    const validLines = lineas.filter(l => l.producto_id);
+    const almacenId = form.almacen_id;
+    for (const l of validLines) {
+      const factor = Number(l._factor_conversion) || 1;
+      const piezas = (Number(l.cantidad) || 0) * factor;
+      const precioUnitario = Number(l.precio_unitario) || 0;
+
+      const { error: rpcErr } = await supabase.rpc('recibir_linea_compra', {
+        p_producto_id: l.producto_id!,
+        p_piezas: piezas,
+        p_almacen_id: almacenId || null,
+        p_empresa_id: empresa!.id,
+        p_compra_id: form.id,
+        p_folio: form.folio ?? form.id.slice(0, 8),
+        p_user_id: user?.id,
+      });
+      if (rpcErr) throw new Error(rpcErr.message);
+
+      const { data: prod } = await supabase
+        .from('productos')
+        .select('costo, costo_manual, cantidad')
+        .eq('id', l.producto_id!)
+        .maybeSingle();
+
+      if (prod && !prod.costo_manual) {
+        const costoActual = Number(prod.costo) || 0;
+        const stockPrevio = Math.max(0, (Number(prod.cantidad) || 0) - piezas);
+        const totalPiezas = stockPrevio + piezas;
+        const nuevoCosto = totalPiezas > 0
+          ? Math.round(((costoActual * stockPrevio) + (precioUnitario * piezas)) / totalPiezas * 10000) / 10000
+          : precioUnitario;
+
+        await supabase
+          .from('productos')
+          .update({ costo: nuevoCosto } as any)
+          .eq('id', l.producto_id!);
+      }
+    }
+    qc.invalidateQueries({ queryKey: ['inventario'] });
+    qc.invalidateQueries({ queryKey: ['productos'] });
+    qc.invalidateQueries({ queryKey: ['stock-almacen'] });
+  };
+
   const handleStatusChange = async (newStatus: string) => {
     if (isNew || form.status === 'cancelada' || newStatus === 'cancelada') return;
     const order = ['borrador', 'confirmada', 'recibida', 'pagada'];
@@ -122,26 +252,9 @@ export function useCompraForm() {
       if (newStatus === 'confirmada') updates.saldo_pendiente = Math.max(0, totals.total - (pagos?.reduce((s, p) => s + (p.monto ?? 0), 0) ?? 0));
       const { error } = await supabase.from('compras').update(updates).eq('id', form.id); if (error) throw error;
       if (newStatus === 'recibida') {
-        const validLines = lineas.filter(l => l.producto_id);
-        const almacenId = form.almacen_id;
-        for (const l of validLines) {
-          const factor = Number(l._factor_conversion) || 1;
-          const piezas = (Number(l.cantidad) || 0) * factor;
-
-          // Atomic stock addition via DB function (prevents race conditions)
-          const { error: rpcErr } = await supabase.rpc('recibir_linea_compra', {
-            p_producto_id: l.producto_id!,
-            p_piezas: piezas,
-            p_almacen_id: almacenId || null,
-            p_empresa_id: empresa!.id,
-            p_compra_id: form.id,
-            p_folio: form.folio ?? form.id.slice(0, 8),
-            p_user_id: user?.id,
-          });
-          if (rpcErr) throw new Error(rpcErr.message);
-        }
-        qc.invalidateQueries({ queryKey: ['inventario'] }); qc.invalidateQueries({ queryKey: ['productos'] }); qc.invalidateQueries({ queryKey: ['stock-almacen'] });
+        await procesarRecepcion();
       }
+
       setForm(f => ({ ...f, ...updates })); toast.success(`Compra ${newStatus}`); qc.invalidateQueries({ queryKey: ['compras'] }); qc.invalidateQueries({ queryKey: ['compra', form.id] });
     } catch (err: any) { toast.error(err.message); }
   };
@@ -209,7 +322,17 @@ export function useCompraForm() {
     try {
       const montoFinal = Math.min(newPago.monto, saldoActual);
       const { error } = await supabase.from('pago_compras').insert({ empresa_id: empresa!.id, compra_id: form.id, proveedor_id: form.proveedor_id || null, monto: montoFinal, metodo_pago: newPago.metodo_pago, fecha: newPago.fecha, referencia: newPago.referencia || null, notas: newPago.notas || null, user_id: user?.id } as any); if (error) throw error;
-      const nuevoSaldo = Math.max(0, saldoActual - montoFinal); const updates: any = { saldo_pendiente: nuevoSaldo }; if (nuevoSaldo === 0) updates.status = 'pagada';
+      const nuevoSaldo = Math.max(0, saldoActual - montoFinal); 
+      const updates: any = { saldo_pendiente: nuevoSaldo }; 
+      
+      if (nuevoSaldo === 0) {
+        updates.status = 'pagada';
+        // Si brinca de confirmada a pagada directamente por el pago, procesamos la recepción automáticamente
+        if (form.status === 'confirmada') {
+          await procesarRecepcion();
+        }
+      }
+      
       await supabase.from('compras').update(updates).eq('id', form.id); setForm(f => ({ ...f, ...updates })); setAddingPago(false);
       toast.success(nuevoSaldo === 0 ? 'Pago registrado — Compra pagada' : 'Pago registrado'); qc.invalidateQueries({ queryKey: ['pagos-compra', form.id] }); qc.invalidateQueries({ queryKey: ['compra', form.id] }); qc.invalidateQueries({ queryKey: ['compras'] });
     } catch (err: any) { toast.error(err.message); }

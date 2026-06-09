@@ -94,26 +94,39 @@ Deno.serve(async (req) => {
       "conteo_entradas", "conteo_lineas", "conteos_fisicos",
       "carga_pedidos", "carga_lineas", "cargas",
       "cobro_aplicaciones", "cobros",
+      "factura_lineas", "facturas",
+      "devolucion_lineas", "devoluciones",
+      "traspaso_lineas", "traspasos",
       "venta_pagos", "venta_lineas", "ventas",
       "entregas",
+      "combo_lineas", "producto_presentaciones",
       "movimientos_inventario", "ajustes_inventario",
       "stock_almacen",
       "compra_lineas", "compras",
       "lista_precios_lineas",
       "tarifa_lineas",
       "cliente_pedido_sugerido",
+      "optimizacion_rutas_log",
     ];
+    
+    const deleteOp = async (table: string) => {
+      const { error } = await admin.from(table).delete().eq("empresa_id", eid);
+      if (error && error.code !== "42P01") { // 42P01 is undefined_table
+        throw new Error(`Error deleting from ${table}: ${error.message} (${error.code})`);
+      }
+    };
+
     for (const table of tablesToClean) {
-      await admin.from(table).delete().eq("empresa_id", eid);
+      await deleteOp(table);
     }
-    await admin.from("clientes").delete().eq("empresa_id", eid);
-    await admin.from("productos").delete().eq("empresa_id", eid);
-    await admin.from("almacenes").delete().eq("empresa_id", eid);
-    await admin.from("zonas").delete().eq("empresa_id", eid);
-    await admin.from("clasificaciones").delete().eq("empresa_id", eid);
-    await admin.from("marcas").delete().eq("empresa_id", eid);
-    await admin.from("lista_precios").delete().eq("empresa_id", eid);
-    await admin.from("proveedores").delete().eq("empresa_id", eid);
+    await deleteOp("clientes");
+    await deleteOp("productos");
+    await deleteOp("almacenes");
+    await deleteOp("zonas");
+    await deleteOp("clasificaciones");
+    await deleteOp("marcas");
+    await deleteOp("lista_precios");
+    await deleteOp("proveedores");
 
     // ── 5) Almacenes ──
     const { data: almGeneral } = await admin.from("almacenes").insert({
@@ -206,6 +219,52 @@ Deno.serve(async (req) => {
         se_puede_inventariar: true,
       }).select("id").single();
       if (data) insertedProducts.push({ ...data, ...p });
+    }
+
+    // ── 12.5) Combos de prueba ──
+    const coca = insertedProducts.find(p => p.codigo === "BEB-001");
+    const sabritas = insertedProducts.find(p => p.codigo === "BOT-001");
+    const roma = insertedProducts.find(p => p.codigo === "LIM-001");
+    const zote = insertedProducts.find(p => p.codigo === "LIM-002");
+    const cloralex = insertedProducts.find(p => p.codigo === "LIM-003");
+
+    if (coca && sabritas) {
+      const { data: combo1 } = await admin.from("productos").insert({
+        empresa_id: eid, codigo: "CMB-001", nombre: "Combo Fiesta", 
+        precio_principal: 70, precio_sugerido_publico: (coca.precio * 2) + (sabritas.precio * 2),
+        costo: (coca.costo * 2) + (sabritas.costo * 2),
+        cantidad: 0, iva_pct: 16, tiene_iva: true,
+        status: "activo", se_puede_vender: true, se_puede_comprar: false, se_puede_inventariar: false,
+        es_combo: true, usa_listas_precio: true
+      }).select("id").single();
+      
+      if (combo1) {
+        insertedProducts.push({ ...combo1, precio: 70, cant: 0 });
+        await admin.from("combo_lineas").insert([
+          { empresa_id: eid, combo_id: combo1.id, componente_id: coca.id, cantidad: 2, orden: 1 },
+          { empresa_id: eid, combo_id: combo1.id, componente_id: sabritas.id, cantidad: 2, orden: 2 }
+        ]);
+      }
+    }
+
+    if (roma && zote && cloralex) {
+      const { data: combo2 } = await admin.from("productos").insert({
+        empresa_id: eid, codigo: "CMB-002", nombre: "Combo Limpieza Total",
+        precio_principal: 65, precio_sugerido_publico: roma.precio + zote.precio + cloralex.precio,
+        costo: roma.costo + zote.costo + cloralex.costo,
+        cantidad: 0, iva_pct: 16, tiene_iva: true,
+        status: "activo", se_puede_vender: true, se_puede_comprar: false, se_puede_inventariar: false,
+        es_combo: true, usa_listas_precio: true
+      }).select("id").single();
+
+      if (combo2) {
+        insertedProducts.push({ ...combo2, precio: 65, cant: 0 });
+        await admin.from("combo_lineas").insert([
+          { empresa_id: eid, combo_id: combo2.id, componente_id: roma.id, cantidad: 1, orden: 1 },
+          { empresa_id: eid, combo_id: combo2.id, componente_id: zote.id, cantidad: 1, orden: 2 },
+          { empresa_id: eid, combo_id: combo2.id, componente_id: cloralex.id, cantidad: 1, orden: 3 }
+        ]);
+      }
     }
 
     // ── 13) Stock en almacén general + rutas ──

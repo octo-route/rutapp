@@ -342,6 +342,37 @@ function NavegacionContent({ onBack }: { onBack?: () => void }) {
         ...stop.entregaRef, status: 'hecho', validado_at: new Date().toISOString(),
       });
       refetchEntregas();
+    } else if (stop.tipo === 'cliente') {
+      const realClientId = stop.id.replace('cli-', '');
+      
+      // Save visita in the sync queue / local offline DB
+      try {
+        await offlineMutate('visitas', 'insert', {
+          id: crypto.randomUUID(),
+          empresa_id: empresa!.id,
+          cliente_id: realClientId,
+          user_id: profile!.id,
+          tipo: 'sin_compra',
+          motivo: 'No especificó',
+          gps_lat: userLocation?.lat ?? null,
+          gps_lng: userLocation?.lng ?? null,
+          fecha: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        console.error('Error saving visita offline:', err);
+      }
+
+      // Mark as visited in localStorage so RutaClientes syncs immediately
+      try {
+        const VISITED_KEY = `octoapp_visited_${todayLocal()}`;
+        const raw = localStorage.getItem(VISITED_KEY);
+        const set = raw ? new Set(JSON.parse(raw)) : new Set();
+        set.add(realClientId);
+        localStorage.setItem(VISITED_KEY, JSON.stringify([...set]));
+      } catch (err) {
+        console.error('Error writing visited key to localStorage:', err);
+      }
     }
     setCompletedIds(prev => new Set([...prev, stop.id]));
     toast.success(stop.tipo === 'entrega' ? '¡Entregado!' : '¡Visitado!');
@@ -722,23 +753,18 @@ function NavegacionContent({ onBack }: { onBack?: () => void }) {
             <div className="overflow-auto max-h-[45vh]">
               {stops.map((stop, idx) => {
                 const isCompleted = completedIds.has(stop.id);
+                if (isCompleted) return null;
                 return (
                   <button
                     key={stop.id}
-                    disabled={isCompleted}
                     onClick={() => startNavigation(stop)}
-                    className={cn(
-                      "flex items-center gap-3 w-full px-4 py-3 border-b border-border/50 text-left transition-colors",
-                      isCompleted ? "opacity-40" : "active:bg-card"
-                    )}
+                    className="flex items-center gap-3 w-full px-4 py-3 border-b border-border/50 text-left transition-colors active:bg-card"
                   >
                     <div className={cn(
                       "w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold",
-                      isCompleted
-                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                        : stop.tipo === 'entrega' ? "bg-amber-500/15 text-amber-600" : "bg-primary/10 text-primary"
+                      stop.tipo === 'entrega' ? "bg-amber-500/15 text-amber-600" : "bg-primary/10 text-primary"
                     )}>
-                      {isCompleted ? <Check className="h-3.5 w-3.5" /> : stop.tipo === 'entrega' ? <Truck className="h-3.5 w-3.5" /> : idx + 1}
+                      {stop.tipo === 'entrega' ? <Truck className="h-3.5 w-3.5" /> : idx + 1}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
@@ -749,7 +775,7 @@ function NavegacionContent({ onBack }: { onBack?: () => void }) {
                           {stop.tipo === 'entrega' ? 'Entrega' : 'Visita'}
                         </span>
                       </div>
-                      <p className={cn("text-sm font-medium truncate", isCompleted ? "line-through text-muted-foreground" : "text-foreground")}>
+                      <p className="text-sm font-medium truncate text-foreground">
                         {stop.nombre}
                       </p>
                       {(stop.direccion || stop.colonia) && (
@@ -758,11 +784,9 @@ function NavegacionContent({ onBack }: { onBack?: () => void }) {
                         </p>
                       )}
                     </div>
-                    {!isCompleted && (
-                      <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground shrink-0">
-                        <Navigation className="h-4 w-4" />
-                      </div>
-                    )}
+                    <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground shrink-0">
+                      <Navigation className="h-4 w-4" />
+                    </div>
                   </button>
                 );
               })}
