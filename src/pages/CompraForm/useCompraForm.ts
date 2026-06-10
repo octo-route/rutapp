@@ -1,26 +1,56 @@
-import { todayLocal } from '@/lib/utils';
-import { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { useProductosForSelect, useProveedores, useAlmacenes } from '@/hooks/useData';
-import { supabase } from '@/lib/supabase';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { usePinAuth } from '@/hooks/usePinAuth';
-import { emptyLine, calcLineTotals, type CompraLinea } from './types';
+import { todayLocal } from "@/lib/utils";
+import { useState, useEffect, useMemo } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  useProductosForSelect,
+  useProveedores,
+  useAlmacenes,
+} from "@/hooks/useData";
+import { supabase } from "@/lib/supabase";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { usePinAuth } from "@/hooks/usePinAuth";
+import { emptyLine, calcLineTotals, type CompraLinea } from "./types";
 
 function useCompra(id?: string) {
-  return useQuery({ queryKey: ['compra', id], queryFn: async () => { const { data, error } = await supabase.from('compras').select('*, proveedores(nombre), almacenes(nombre), compra_lineas(*, productos(id, codigo, nombre, nombre_compra, costo))').eq('id', id!).single(); if (error) throw error; return data; }, enabled: !!id });
+  return useQuery({
+    queryKey: ["compra", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("compras")
+        .select(
+          "*, proveedores(nombre), almacenes(nombre), compra_lineas(*, productos(id, codigo, nombre, nombre_compra, costo))",
+        )
+        .eq("id", id!)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
 }
 
 function usePagosCompra(compraId?: string) {
-  return useQuery({ queryKey: ['pagos-compra', compraId], queryFn: async () => { const { data, error } = await supabase.from('pago_compras').select('*').eq('compra_id', compraId!).order('fecha', { ascending: false }); if (error) throw error; return data ?? []; }, enabled: !!compraId });
+  return useQuery({
+    queryKey: ["pagos-compra", compraId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("pago_compras")
+        .select("*")
+        .eq("compra_id", compraId!)
+        .order("fecha", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!compraId,
+  });
 }
 
 export function useCompraForm() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const isNew = id === 'nueva';
+  const isNew = id === "nueva";
   const { empresa, user } = useAuth();
   const qc = useQueryClient();
   const { data: existingCompra, isLoading } = useCompra(isNew ? undefined : id);
@@ -29,13 +59,33 @@ export function useCompraForm() {
   const { data: productosList } = useProductosForSelect();
   const { data: almacenesList } = useAlmacenes();
 
-  const [form, setForm] = useState<Record<string, any>>({ status: 'borrador', condicion_pago: 'contado', fecha: todayLocal(), dias_credito: 0, subtotal: 0, iva_total: 0, total: 0, saldo_pendiente: 0 });
+  const [form, setForm] = useState<Record<string, any>>({
+    status: "borrador",
+    condicion_pago: "contado",
+    fecha: todayLocal(),
+    dias_credito: 0,
+    subtotal: 0,
+    iva_total: 0,
+    total: 0,
+    saldo_pendiente: 0,
+  });
   const [lineas, setLineas] = useState<Partial<CompraLinea>[]>([emptyLine()]);
   const [dirty, setDirty] = useState(false);
   const [showPago, setShowPago] = useState(false);
   const [addingPago, setAddingPago] = useState(false);
-  const [newPago, setNewPago] = useState({ fecha: todayLocal(), metodo_pago: 'transferencia', referencia: '', notas: '', monto: 0 });
-  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; action: string; title: string; description: string } | null>(null);
+  const [newPago, setNewPago] = useState({
+    fecha: todayLocal(),
+    metodo_pago: "transferencia",
+    referencia: "",
+    notas: "",
+    monto: 0,
+  });
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    action: string;
+    title: string;
+    description: string;
+  } | null>(null);
   const { requestPin, PinDialog } = usePinAuth();
 
   useEffect(() => {
@@ -44,35 +94,63 @@ export function useCompraForm() {
       setForm(rest);
       if (compra_lineas?.length) {
         const enrichedLines = compra_lineas.map((cl: any) => {
-          const prod = productosList.find((p: any) => p.id === cl.producto_id) as any;
-          return { ...cl, _tiene_iva: prod?.tiene_iva ?? false, _iva_pct: prod?.iva_pct ?? 16, _tiene_ieps: prod?.tiene_ieps ?? false, _ieps_pct: prod?.ieps_pct ?? 0, _ieps_tipo: prod?.ieps_tipo ?? 'porcentaje', _unidad_compra: prod?.unidades_compra?.abreviatura ?? prod?.unidades_venta?.abreviatura ?? 'pz', _factor_conversion: prod?.factor_conversion ?? 1, _piezas_total: (cl.cantidad ?? 1) * (prod?.factor_conversion ?? 1) };
+          const prod = productosList.find(
+            (p: any) => p.id === cl.producto_id,
+          ) as any;
+          return {
+            ...cl,
+            _tiene_iva: prod?.tiene_iva ?? false,
+            _iva_pct: prod?.iva_pct ?? 16,
+            _tiene_ieps: prod?.tiene_ieps ?? false,
+            _ieps_pct: prod?.ieps_pct ?? 0,
+            _ieps_tipo: prod?.ieps_tipo ?? "porcentaje",
+            _unidad_compra:
+              prod?.unidades_compra?.abreviatura ??
+              prod?.unidades_venta?.abreviatura ??
+              "pz",
+            _factor_conversion: prod?.factor_conversion ?? 1,
+            _piezas_total: (cl.cantidad ?? 1) * (prod?.factor_conversion ?? 1),
+          };
         });
         setLineas(enrichedLines);
 
         // Fetch previous prices for view mode
-        const productIds = enrichedLines.map((l: any) => l.producto_id).filter(Boolean);
+        const productIds = enrichedLines
+          .map((l: any) => l.producto_id)
+          .filter(Boolean);
         if (productIds.length > 0) {
           supabase
-            .from('compra_lineas')
-            .select('precio_unitario, producto_id, compras!inner(id, fecha, created_at, status)')
-            .in('producto_id', productIds)
-            .in('compras.status', ['recibida', 'pagada'])
-            .neq('compras.id', existingCompra.id)
+            .from("compra_lineas")
+            .select(
+              "precio_unitario, producto_id, compras!inner(id, fecha, created_at, status)",
+            )
+            .in("producto_id", productIds)
+            .in("compras.status", ["recibida", "pagada"])
+            .neq("compras.id", existingCompra.id)
             .then(({ data }) => {
               if (data && data.length > 0) {
-                setLineas(cur => {
+                setLineas((cur) => {
                   const newLines = [...cur];
                   for (let i = 0; i < newLines.length; i++) {
                     const l = newLines[i];
                     if (!l.producto_id) continue;
-                    const history = data.filter((d: any) => d.producto_id === l.producto_id);
+                    const history = data.filter(
+                      (d: any) => d.producto_id === l.producto_id,
+                    );
                     if (history.length > 0) {
                       const sorted = history.sort((a: any, b: any) => {
-                        const timeA = new Date(a.compras?.created_at || a.compras?.fecha || 0).getTime();
-                        const timeB = new Date(b.compras?.created_at || b.compras?.fecha || 0).getTime();
+                        const timeA = new Date(
+                          a.compras?.created_at || a.compras?.fecha || 0,
+                        ).getTime();
+                        const timeB = new Date(
+                          b.compras?.created_at || b.compras?.fecha || 0,
+                        ).getTime();
                         return timeB - timeA;
                       });
-                      newLines[i] = { ...l, _precio_anterior: sorted[0].precio_unitario };
+                      newLines[i] = {
+                        ...l,
+                        _precio_anterior: sorted[0].precio_unitario,
+                      };
                     }
                   }
                   return newLines;
@@ -91,13 +169,25 @@ export function useCompraForm() {
   }, [lineas]);
 
   const updateField = (key: string, val: any) => {
-    setForm(f => {
+    setForm((f) => {
       const updated = { ...f, [key]: val };
-      if (key === 'condicion_pago' && val === 'credito' && f.proveedor_id && proveedoresList) {
-        const prov = proveedoresList.find((p: any) => p.id === f.proveedor_id) as any;
+      if (
+        key === "condicion_pago" &&
+        val === "credito" &&
+        f.proveedor_id &&
+        proveedoresList
+      ) {
+        const prov = proveedoresList.find(
+          (p: any) => p.id === f.proveedor_id,
+        ) as any;
         if (prov?.dias_credito) updated.dias_credito = prov.dias_credito;
       }
-      if (key === 'proveedor_id' && val && f.condicion_pago === 'credito' && proveedoresList) {
+      if (
+        key === "proveedor_id" &&
+        val &&
+        f.condicion_pago === "credito" &&
+        proveedoresList
+      ) {
         const prov = proveedoresList.find((p: any) => p.id === val) as any;
         if (prov?.dias_credito) updated.dias_credito = prov.dias_credito;
       }
@@ -107,40 +197,54 @@ export function useCompraForm() {
   };
 
   const updateLinea = (idx: number, key: string, val: any) => {
-    setLineas(prev => {
+    setLineas((prev) => {
       const next = [...prev];
       const line = { ...next[idx], [key]: val };
 
-      if (key === 'producto_id' && productosList) {
+      if (key === "producto_id" && productosList) {
         const p = productosList.find((x: any) => x.id === val) as any;
         if (p) {
           line.precio_unitario = p.costo ?? 0;
-          line.productos = { id: p.id, codigo: p.codigo, nombre: p.nombre, nombre_compra: p.nombre_compra ?? null, costo: p.costo ?? 0 } as any;
+          line.productos = {
+            id: p.id,
+            codigo: p.codigo,
+            nombre: p.nombre,
+            nombre_compra: p.nombre_compra ?? null,
+            costo: p.costo ?? 0,
+          } as any;
           line._tiene_iva = p.tiene_iva ?? false;
           line._iva_pct = p.iva_pct ?? 16;
+          line._precio_incluye_iva = !!p.costo_incluye_impuestos;
           line._tiene_ieps = p.tiene_ieps ?? false;
           line._ieps_pct = p.ieps_pct ?? 0;
-          line._ieps_tipo = p.ieps_tipo ?? 'porcentaje';
-          line._unidad_compra = p.unidades_compra?.abreviatura ?? p.unidades_venta?.abreviatura ?? 'pz';
+          line._ieps_tipo = p.ieps_tipo ?? "porcentaje";
+          line._unidad_compra =
+            p.unidades_compra?.abreviatura ??
+            p.unidades_venta?.abreviatura ??
+            "pz";
           line._factor_conversion = p.factor_conversion ?? 1;
           // Leer precio de la última compra recibida/pagada (asíncrono, no bloquea)
           supabase
-            .from('compra_lineas')
-            .select('precio_unitario, compras!inner(fecha, created_at, status)')
-            .eq('producto_id', val)
-            .in('compras.status', ['recibida', 'pagada'])
+            .from("compra_lineas")
+            .select("precio_unitario, compras!inner(fecha, created_at, status)")
+            .eq("producto_id", val)
+            .in("compras.status", ["recibida", "pagada"])
             .then(({ data }) => {
               if (data && data.length > 0) {
                 // Ordenar en JS por created_at (o fecha como fallback) descendente
                 const sorted = data.sort((a: any, b: any) => {
-                  const timeA = new Date(a.compras?.created_at || a.compras?.fecha || 0).getTime();
-                  const timeB = new Date(b.compras?.created_at || b.compras?.fecha || 0).getTime();
+                  const timeA = new Date(
+                    a.compras?.created_at || a.compras?.fecha || 0,
+                  ).getTime();
+                  const timeB = new Date(
+                    b.compras?.created_at || b.compras?.fecha || 0,
+                  ).getTime();
                   return timeB - timeA;
                 });
-                
+
                 const precio = sorted[0].precio_unitario;
                 if (precio != null) {
-                  setLineas(cur => {
+                  setLineas((cur) => {
                     const c = [...cur];
                     if (c[idx]?.producto_id === val) {
                       c[idx] = { ...c[idx], _precio_anterior: precio };
@@ -154,18 +258,21 @@ export function useCompraForm() {
       }
 
       // Sincronización bidireccional costo_caja ↔ precio_unitario
-      if (key === '_costo_caja') {
+      if (key === "_costo_caja") {
         const factor = Number(line._factor_conversion) || 1;
-        line.precio_unitario = Math.round((Number(val) / factor) * 10000) / 10000;
+        line.precio_unitario =
+          Math.round((Number(val) / factor) * 10000) / 10000;
       }
-      if (key === 'precio_unitario') {
+      if (key === "precio_unitario") {
         const factor = Number(line._factor_conversion) || 1;
         line._costo_caja = Math.round(Number(val) * factor * 100) / 100;
       }
       // Si cambia el factor, recalcular costo_caja en base al precio_unitario actual
-      if (key === '_factor_conversion') {
+      if (key === "_factor_conversion") {
         const newFactor = Math.max(1, Number(val) || 1);
-        line._costo_caja = Math.round((Number(line.precio_unitario) || 0) * newFactor * 100) / 100;
+        line._costo_caja =
+          Math.round((Number(line.precio_unitario) || 0) * newFactor * 100) /
+          100;
       }
 
       calcLineTotals(line);
@@ -175,38 +282,108 @@ export function useCompraForm() {
     setDirty(true);
   };
 
-  const addLine = () => { setLineas(prev => [...prev, emptyLine()]); setDirty(true); };
-  const removeLine = (idx: number) => { setLineas(prev => prev.filter((_, i) => i !== idx)); setDirty(true); };
+  const addLine = () => {
+    setLineas((prev) => [...prev, emptyLine()]);
+    setDirty(true);
+  };
+  const removeLine = (idx: number) => {
+    setLineas((prev) => prev.filter((_, i) => i !== idx));
+    setDirty(true);
+  };
 
   const handleSave = async () => {
     if (!empresa?.id) return;
-    if (!form.almacen_id) { toast.error('Selecciona un almacén destino'); return; }
+    if (!form.almacen_id) {
+      toast.error("Selecciona un almacén destino");
+      return;
+    }
     try {
       const totalPagado = pagos?.reduce((s, p) => s + (p.monto ?? 0), 0) ?? 0;
-      const compraData = { empresa_id: empresa.id, proveedor_id: form.proveedor_id || null, almacen_id: form.almacen_id || null, fecha: form.fecha, condicion_pago: form.condicion_pago, dias_credito: form.condicion_pago === 'credito' ? (form.dias_credito ?? 0) : 0, status: form.status, subtotal: totals.subtotal, iva_total: totals.iva_total, total: totals.total, saldo_pendiente: Math.max(0, totals.total - totalPagado), notas: form.notas || null, notas_pago: form.notas_pago || null };
+      const compraData = {
+        empresa_id: empresa.id,
+        proveedor_id: form.proveedor_id || null,
+        almacen_id: form.almacen_id || null,
+        fecha: form.fecha,
+        condicion_pago: form.condicion_pago,
+        dias_credito:
+          form.condicion_pago === "credito" ? (form.dias_credito ?? 0) : 0,
+        status: form.status,
+        subtotal: totals.subtotal,
+        iva_total: totals.iva_total,
+        total: totals.total,
+        saldo_pendiente: Math.max(0, totals.total - totalPagado),
+        notas: form.notas || null,
+        notas_pago: form.notas_pago || null,
+      };
       let compraId = form.id;
-      if (isNew) { const { data, error } = await supabase.from('compras').insert(compraData as any).select().single(); if (error) throw error; compraId = (data as any).id; } else { const { empresa_id, ...updateData } = compraData; const { error } = await supabase.from('compras').update(updateData as any).eq('id', compraId); if (error) throw error; await supabase.from('compra_lineas').delete().eq('compra_id', compraId); }
-      const validLines = lineas.filter(l => l.producto_id);
-      if (validLines.length) { const rows = validLines.map(l => ({ compra_id: compraId, producto_id: l.producto_id!, cantidad: l.cantidad ?? 1, precio_unitario: l.precio_unitario ?? 0, subtotal: l.subtotal ?? 0, total: l.total ?? 0 })); const { error } = await supabase.from('compra_lineas').insert(rows as any); if (error) throw error; }
-      toast.success('Compra guardada'); qc.invalidateQueries({ queryKey: ['compras'] }); qc.invalidateQueries({ queryKey: ['compra', compraId] }); setDirty(false);
+      if (isNew) {
+        const { data, error } = await supabase
+          .from("compras")
+          .insert(compraData as any)
+          .select()
+          .single();
+        if (error) throw error;
+        compraId = (data as any).id;
+      } else {
+        const { empresa_id, ...updateData } = compraData;
+        const { error } = await supabase
+          .from("compras")
+          .update(updateData as any)
+          .eq("id", compraId);
+        if (error) throw error;
+        await supabase.from("compra_lineas").delete().eq("compra_id", compraId);
+      }
+      const validLines = lineas.filter((l) => l.producto_id);
+      if (validLines.length) {
+        const rows = validLines.map((l) => ({
+          compra_id: compraId,
+          producto_id: l.producto_id!,
+          cantidad: l.cantidad ?? 1,
+          precio_unitario: l.precio_unitario ?? 0,
+          subtotal: l.subtotal ?? 0,
+          total: l.total ?? 0,
+        }));
+        const { error } = await supabase
+          .from("compra_lineas")
+          .insert(rows as any);
+        if (error) throw error;
+      }
+      toast.success("Compra guardada");
+      qc.invalidateQueries({ queryKey: ["compras"] });
+      qc.invalidateQueries({ queryKey: ["compra", compraId] });
+      setDirty(false);
       if (isNew) navigate(`/almacen/compras/${compraId}`, { replace: true });
-    } catch (err: any) { toast.error(err.message || 'Error al guardar'); }
+    } catch (err: any) {
+      toast.error(err.message || "Error al guardar");
+    }
   };
 
   const handleDelete = async () => {
-    if (!form.id || !confirm('¿Eliminar esta compra?')) return;
-    try { await supabase.from('compra_lineas').delete().eq('compra_id', form.id); const { error } = await supabase.from('compras').delete().eq('id', form.id); if (error) throw error; toast.success('Compra eliminada'); qc.invalidateQueries({ queryKey: ['compras'] }); navigate('/almacen/compras'); } catch (err: any) { toast.error(err.message); }
+    if (!form.id || !confirm("¿Eliminar esta compra?")) return;
+    try {
+      await supabase.from("compra_lineas").delete().eq("compra_id", form.id);
+      const { error } = await supabase
+        .from("compras")
+        .delete()
+        .eq("id", form.id);
+      if (error) throw error;
+      toast.success("Compra eliminada");
+      qc.invalidateQueries({ queryKey: ["compras"] });
+      navigate("/almacen/compras");
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const procesarRecepcion = async () => {
-    const validLines = lineas.filter(l => l.producto_id);
+    const validLines = lineas.filter((l) => l.producto_id);
     const almacenId = form.almacen_id;
     for (const l of validLines) {
       const factor = Number(l._factor_conversion) || 1;
       const piezas = (Number(l.cantidad) || 0) * factor;
       const precioUnitario = Number(l.precio_unitario) || 0;
 
-      const { error: rpcErr } = await supabase.rpc('recibir_linea_compra', {
+      const { error: rpcErr } = await supabase.rpc("recibir_linea_compra", {
         p_producto_id: l.producto_id!,
         p_piezas: piezas,
         p_almacen_id: almacenId || null,
@@ -218,52 +395,73 @@ export function useCompraForm() {
       if (rpcErr) throw new Error(rpcErr.message);
 
       const { data: prod } = await supabase
-        .from('productos')
-        .select('costo, costo_manual, cantidad')
-        .eq('id', l.producto_id!)
+        .from("productos")
+        .select("costo, costo_manual, cantidad")
+        .eq("id", l.producto_id!)
         .maybeSingle();
 
       if (prod && !prod.costo_manual) {
         const costoActual = Number(prod.costo) || 0;
         const stockPrevio = Math.max(0, (Number(prod.cantidad) || 0) - piezas);
         const totalPiezas = stockPrevio + piezas;
-        const nuevoCosto = totalPiezas > 0
-          ? Math.round(((costoActual * stockPrevio) + (precioUnitario * piezas)) / totalPiezas * 10000) / 10000
-          : precioUnitario;
+        const nuevoCosto =
+          totalPiezas > 0
+            ? Math.round(
+                ((costoActual * stockPrevio + precioUnitario * piezas) /
+                  totalPiezas) *
+                  10000,
+              ) / 10000
+            : precioUnitario;
 
         await supabase
-          .from('productos')
+          .from("productos")
           .update({ costo: nuevoCosto } as any)
-          .eq('id', l.producto_id!);
+          .eq("id", l.producto_id!);
       }
     }
-    qc.invalidateQueries({ queryKey: ['inventario'] });
-    qc.invalidateQueries({ queryKey: ['productos'] });
-    qc.invalidateQueries({ queryKey: ['stock-almacen'] });
+    qc.invalidateQueries({ queryKey: ["inventario"] });
+    qc.invalidateQueries({ queryKey: ["productos"] });
+    qc.invalidateQueries({ queryKey: ["stock-almacen"] });
   };
 
   const handleStatusChange = async (newStatus: string) => {
-    if (isNew || form.status === 'cancelada' || newStatus === 'cancelada') return;
-    const order = ['borrador', 'confirmada', 'recibida', 'pagada'];
-    const curIdx = order.indexOf(form.status); const newIdx = order.indexOf(newStatus);
+    if (isNew || form.status === "cancelada" || newStatus === "cancelada")
+      return;
+    const order = ["borrador", "confirmada", "recibida", "pagada"];
+    const curIdx = order.indexOf(form.status);
+    const newIdx = order.indexOf(newStatus);
     if (newIdx <= curIdx || newIdx > curIdx + 1) return;
     try {
       const updates: any = { status: newStatus };
-      if (newStatus === 'confirmada') updates.saldo_pendiente = Math.max(0, totals.total - (pagos?.reduce((s, p) => s + (p.monto ?? 0), 0) ?? 0));
-      const { error } = await supabase.from('compras').update(updates).eq('id', form.id); if (error) throw error;
-      if (newStatus === 'recibida') {
+      if (newStatus === "confirmada")
+        updates.saldo_pendiente = Math.max(
+          0,
+          totals.total - (pagos?.reduce((s, p) => s + (p.monto ?? 0), 0) ?? 0),
+        );
+      const { error } = await supabase
+        .from("compras")
+        .update(updates)
+        .eq("id", form.id);
+      if (error) throw error;
+      if (newStatus === "recibida") {
         await procesarRecepcion();
       }
 
-      setForm(f => ({ ...f, ...updates })); toast.success(`Compra ${newStatus}`); qc.invalidateQueries({ queryKey: ['compras'] }); qc.invalidateQueries({ queryKey: ['compra', form.id] });
-    } catch (err: any) { toast.error(err.message); }
+      setForm((f) => ({ ...f, ...updates }));
+      toast.success(`Compra ${newStatus}`);
+      qc.invalidateQueries({ queryKey: ["compras"] });
+      qc.invalidateQueries({ queryKey: ["compra", form.id] });
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const handleCancel = async () => {
     if (!form.id) return;
     try {
-      if (['recibida', 'pagada'].includes(form.status)) {
-        const validLines = lineas.filter(l => l.producto_id); const today = todayLocal();
+      if (["recibida", "pagada"].includes(form.status)) {
+        const validLines = lineas.filter((l) => l.producto_id);
+        const today = todayLocal();
         const updates: Array<Promise<void>> = [];
         for (const l of validLines) {
           const factor = Number(l._factor_conversion) || 1;
@@ -271,78 +469,164 @@ export function useCompraForm() {
 
           // Deduct from stock_almacen (trigger auto-recalcs productos.cantidad)
           if (form.almacen_id) {
-            updates.push((async () => {
-              const { data: sa } = await supabase.from('stock_almacen')
-                .select('id, cantidad')
-                .eq('almacen_id', form.almacen_id)
-                .eq('producto_id', l.producto_id!)
-                .maybeSingle();
-              if (sa) {
-                const nuevoStock = (sa.cantidad ?? 0) - piezas;
-                if (nuevoStock < 0) {
-                  const { data: prod } = await supabase.from('productos').select('nombre, vender_sin_stock').eq('id', l.producto_id!).maybeSingle();
-                  if (!prod?.vender_sin_stock) {
-                    throw new Error(`Stock insuficiente para "${prod?.nombre ?? l.producto_id}". Disponible: ${sa.cantidad ?? 0}, solicitado: ${piezas}`);
+            updates.push(
+              (async () => {
+                const { data: sa } = await supabase
+                  .from("stock_almacen")
+                  .select("id, cantidad")
+                  .eq("almacen_id", form.almacen_id)
+                  .eq("producto_id", l.producto_id!)
+                  .maybeSingle();
+                if (sa) {
+                  const nuevoStock = (sa.cantidad ?? 0) - piezas;
+                  if (nuevoStock < 0) {
+                    const { data: prod } = await supabase
+                      .from("productos")
+                      .select("nombre, vender_sin_stock")
+                      .eq("id", l.producto_id!)
+                      .maybeSingle();
+                    if (!prod?.vender_sin_stock) {
+                      throw new Error(
+                        `Stock insuficiente para "${prod?.nombre ?? l.producto_id}". Disponible: ${sa.cantidad ?? 0}, solicitado: ${piezas}`,
+                      );
+                    }
                   }
+                  await supabase
+                    .from("stock_almacen")
+                    .update({
+                      cantidad: nuevoStock,
+                      updated_at: new Date().toISOString(),
+                    } as any)
+                    .eq("id", sa.id);
                 }
-                await supabase.from('stock_almacen').update({
-                  cantidad: nuevoStock,
-                  updated_at: new Date().toISOString(),
-                } as any).eq('id', sa.id);
-              }
-            })());
+              })(),
+            );
           }
 
-          updates.push((async () => {
-            await supabase.from('movimientos_inventario').insert({
-              empresa_id: empresa!.id, tipo: 'salida',
-              producto_id: l.producto_id!, cantidad: piezas,
-              almacen_origen_id: form.almacen_id,
-              referencia_tipo: 'compra', referencia_id: form.id,
-              user_id: user?.id, fecha: today,
-              notas: `Cancelación compra ${form.folio ?? form.id.slice(0, 8)}`
-            } as any);
-          })());
+          updates.push(
+            (async () => {
+              await supabase.from("movimientos_inventario").insert({
+                empresa_id: empresa!.id,
+                tipo: "salida",
+                producto_id: l.producto_id!,
+                cantidad: piezas,
+                almacen_origen_id: form.almacen_id,
+                referencia_tipo: "compra",
+                referencia_id: form.id,
+                user_id: user?.id,
+                fecha: today,
+                notas: `Cancelación compra ${form.folio ?? form.id.slice(0, 8)}`,
+              } as any);
+            })(),
+          );
         }
         await Promise.all(updates);
       }
-      await Promise.all([supabase.from('pago_compras').delete().eq('compra_id', form.id), supabase.from('compras').update({ status: 'cancelada', saldo_pendiente: 0 } as any).eq('id', form.id)]);
-      setForm(f => ({ ...f, status: 'cancelada', saldo_pendiente: 0 })); toast.success('Compra cancelada');
-      await Promise.all([qc.refetchQueries({ queryKey: ['compra', form.id] }), qc.refetchQueries({ queryKey: ['pagos-compra', form.id] }), qc.refetchQueries({ queryKey: ['compras'] }), qc.refetchQueries({ queryKey: ['inventario'] }), qc.refetchQueries({ queryKey: ['productos'] })]);
-    } catch (err: any) { toast.error(err.message || 'Error al cancelar'); }
+      await Promise.all([
+        supabase.from("pago_compras").delete().eq("compra_id", form.id),
+        supabase
+          .from("compras")
+          .update({ status: "cancelada", saldo_pendiente: 0 } as any)
+          .eq("id", form.id),
+      ]);
+      setForm((f) => ({ ...f, status: "cancelada", saldo_pendiente: 0 }));
+      toast.success("Compra cancelada");
+      await Promise.all([
+        qc.refetchQueries({ queryKey: ["compra", form.id] }),
+        qc.refetchQueries({ queryKey: ["pagos-compra", form.id] }),
+        qc.refetchQueries({ queryKey: ["compras"] }),
+        qc.refetchQueries({ queryKey: ["inventario"] }),
+        qc.refetchQueries({ queryKey: ["productos"] }),
+      ]);
+    } catch (err: any) {
+      toast.error(err.message || "Error al cancelar");
+    }
   };
 
   const totalPagado = pagos?.reduce((s, p) => s + (p.monto ?? 0), 0) ?? 0;
   const saldoActual = Math.max(0, totals.total - totalPagado);
-  const isEditable = form.status === 'borrador';
+  const isEditable = form.status === "borrador";
 
   const handleSavePago = async () => {
-    if (newPago.monto <= 0) return toast.error('Ingresa un monto válido');
-    if (newPago.monto > saldoActual + 0.01) return toast.error('El monto excede el saldo pendiente');
+    if (newPago.monto <= 0) return toast.error("Ingresa un monto válido");
+    if (newPago.monto > saldoActual + 0.01)
+      return toast.error("El monto excede el saldo pendiente");
     try {
       const montoFinal = Math.min(newPago.monto, saldoActual);
-      const { error } = await supabase.from('pago_compras').insert({ empresa_id: empresa!.id, compra_id: form.id, proveedor_id: form.proveedor_id || null, monto: montoFinal, metodo_pago: newPago.metodo_pago, fecha: newPago.fecha, referencia: newPago.referencia || null, notas: newPago.notas || null, user_id: user?.id } as any); if (error) throw error;
-      const nuevoSaldo = Math.max(0, saldoActual - montoFinal); 
-      const updates: any = { saldo_pendiente: nuevoSaldo }; 
-      
+      const { error } = await supabase.from("pago_compras").insert({
+        empresa_id: empresa!.id,
+        compra_id: form.id,
+        proveedor_id: form.proveedor_id || null,
+        monto: montoFinal,
+        metodo_pago: newPago.metodo_pago,
+        fecha: newPago.fecha,
+        referencia: newPago.referencia || null,
+        notas: newPago.notas || null,
+        user_id: user?.id,
+      } as any);
+      if (error) throw error;
+      const nuevoSaldo = Math.max(0, saldoActual - montoFinal);
+      const updates: any = { saldo_pendiente: nuevoSaldo };
+
       if (nuevoSaldo === 0) {
-        updates.status = 'pagada';
+        updates.status = "pagada";
         // Si brinca de confirmada a pagada directamente por el pago, procesamos la recepción automáticamente
-        if (form.status === 'confirmada') {
+        if (form.status === "confirmada") {
           await procesarRecepcion();
         }
       }
-      
-      await supabase.from('compras').update(updates).eq('id', form.id); setForm(f => ({ ...f, ...updates })); setAddingPago(false);
-      toast.success(nuevoSaldo === 0 ? 'Pago registrado — Compra pagada' : 'Pago registrado'); qc.invalidateQueries({ queryKey: ['pagos-compra', form.id] }); qc.invalidateQueries({ queryKey: ['compra', form.id] }); qc.invalidateQueries({ queryKey: ['compras'] });
-    } catch (err: any) { toast.error(err.message); }
+
+      await supabase.from("compras").update(updates).eq("id", form.id);
+      setForm((f) => ({ ...f, ...updates }));
+      setAddingPago(false);
+      toast.success(
+        nuevoSaldo === 0
+          ? "Pago registrado — Compra pagada"
+          : "Pago registrado",
+      );
+      qc.invalidateQueries({ queryKey: ["pagos-compra", form.id] });
+      qc.invalidateQueries({ queryKey: ["compra", form.id] });
+      qc.invalidateQueries({ queryKey: ["compras"] });
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   return {
-    id, navigate, isNew, empresa, form, setForm, lineas, setLineas, dirty, isEditable,
-    totals, totalPagado, saldoActual, pagos, proveedoresList, productosList, almacenesList,
-    isLoading, addingPago, setAddingPago, newPago, setNewPago, confirmDialog, setConfirmDialog,
-    requestPin, PinDialog, updateField, updateLinea, addLine, removeLine,
-    handleSave, handleDelete, handleStatusChange, handleCancel, handleSavePago,
+    id,
+    navigate,
+    isNew,
+    empresa,
+    form,
+    setForm,
+    lineas,
+    setLineas,
+    dirty,
+    isEditable,
+    totals,
+    totalPagado,
+    saldoActual,
+    pagos,
+    proveedoresList,
+    productosList,
+    almacenesList,
+    isLoading,
+    addingPago,
+    setAddingPago,
+    newPago,
+    setNewPago,
+    confirmDialog,
+    setConfirmDialog,
+    requestPin,
+    PinDialog,
+    updateField,
+    updateLinea,
+    addLine,
+    removeLine,
+    handleSave,
+    handleDelete,
+    handleStatusChange,
+    handleCancel,
+    handleSavePago,
   };
 }
