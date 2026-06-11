@@ -53,27 +53,41 @@ export function calcLineTotals(line: Partial<CompraLinea>) {
   const cant = Number(line.cantidad) || 0;
   const precio = Number(line.precio_unitario) || 0;
   const factor = Number(line._factor_conversion) || 1;
-  const ivaPct = Number(line._iva_pct) || 0;
+  const ivaPct = line._tiene_iva ? (Number(line._iva_pct) || 0) : 0;
+  const iepsPct = line._tiene_ieps ? (Number(line._ieps_pct) || 0) : 0;
+  const isCuota = line._ieps_tipo === "cuota";
 
-  const importe = r2(cant * precio);
-  let subtotal = importe;
+  const totalBase = cant * precio * factor;
+
+  let subtotal = 0;
+  let iepsAmount = 0;
   let ivaAmount = 0;
+  let total = 0;
 
   if (line._precio_incluye_iva) {
-    if (line._tiene_iva) {
-      subtotal = r2(importe / (1 + ivaPct / 100));
-      ivaAmount = r2(importe - subtotal);
-      line.total = importe;
+    if (isCuota) {
+      const iepsTotal = iepsPct * cant;
+      const baseConIeps = totalBase / (1 + ivaPct / 100);
+      ivaAmount = totalBase - baseConIeps;
+      subtotal = baseConIeps - iepsTotal;
+      iepsAmount = iepsTotal;
+      total = totalBase;
     } else {
-      subtotal = r2(importe / (1 + ivaPct / 100));
-      line.total = subtotal;
+      const taxFactor = (1 + iepsPct / 100) * (1 + ivaPct / 100);
+      subtotal = taxFactor > 0 ? totalBase / taxFactor : totalBase;
+      iepsAmount = subtotal * (iepsPct / 100);
+      ivaAmount = (subtotal + iepsAmount) * (ivaPct / 100);
+      total = totalBase;
     }
   } else {
-    ivaAmount = line._tiene_iva ? r2(importe * (ivaPct / 100)) : 0;
-    line.total = r2(importe + ivaAmount);
+    subtotal = totalBase;
+    iepsAmount = isCuota ? iepsPct * cant : totalBase * (iepsPct / 100);
+    ivaAmount = (totalBase + iepsAmount) * (ivaPct / 100);
+    total = totalBase + iepsAmount + ivaAmount;
   }
 
-  line.subtotal = subtotal;
+  line.subtotal = r2(subtotal);
+  line.total = r2(total);
   line._piezas_total = r2(cant * factor);
   line._costo_caja = r2(precio * factor);
 

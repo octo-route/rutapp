@@ -393,31 +393,6 @@ export function useCompraForm() {
         p_user_id: user?.id,
       });
       if (rpcErr) throw new Error(rpcErr.message);
-
-      const { data: prod } = await supabase
-        .from("productos")
-        .select("costo, costo_manual, cantidad")
-        .eq("id", l.producto_id!)
-        .maybeSingle();
-
-      if (prod && !prod.costo_manual) {
-        const costoActual = Number(prod.costo) || 0;
-        const stockPrevio = Math.max(0, (Number(prod.cantidad) || 0) - piezas);
-        const totalPiezas = stockPrevio + piezas;
-        const nuevoCosto =
-          totalPiezas > 0
-            ? Math.round(
-                ((costoActual * stockPrevio + precioUnitario * piezas) /
-                  totalPiezas) *
-                  10000,
-              ) / 10000
-            : precioUnitario;
-
-        await supabase
-          .from("productos")
-          .update({ costo: nuevoCosto } as any)
-          .eq("id", l.producto_id!);
-      }
     }
     qc.invalidateQueries({ queryKey: ["inventario"] });
     qc.invalidateQueries({ queryKey: ["productos"] });

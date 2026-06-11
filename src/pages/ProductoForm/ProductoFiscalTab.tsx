@@ -23,6 +23,7 @@ export function ProductoFiscalTab({ form, set, unidadesSat }: Props) {
           label="Código SAT"
           value={form.codigo_sat}
           help
+          helpText="Código de catálogo del SAT para identificar la categoría de este producto."
           onChange={(v) => set("codigo_sat", v)}
         />
         <OdooField

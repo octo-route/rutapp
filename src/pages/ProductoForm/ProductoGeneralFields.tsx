@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, X } from 'lucide-react';
 import { OdooField } from '@/components/OdooFormField';
 import SearchableSelect from '@/components/SearchableSelect';
@@ -39,44 +40,50 @@ const costLabels: Record<string, string> = {
   ultimo_proveedor: 'Último costo del proveedor principal',
 };
 
+const isMethodAuto = (method: string) => method !== 'manual' && method !== 'estandar';
+
 export function ProductoGeneralFields({ form, set, setForm, marcas, clasificaciones, listas, tarifasDisp, unidades, unidadesSat, createMarca, createClasificacion, createUnidad, createLista }: Props) {
   const { fmt, symbol } = useCurrency();
   const isNew = !form.id;
 
-  // Modal de confirmación para editar costo manualmente
-  const [showCostoModal, setShowCostoModal] = useState(false);
-  const [pendingCosto, setPendingCosto] = useState<number | null>(null);
+  // Modal de confirmación para cambios de cálculo de costo
+  const [modalConfig, setModalConfig] = useState<{ type: 'to_manual' | 'to_auto'; pendingVal: any } | null>(null);
 
-  const costoEsAutomatico = !(form as any).costo_manual && (form.calculo_costo ?? 'promedio') !== 'manual';
+  const handleCalculoCostoChange = (newVal: any) => {
+    const prevVal = form.calculo_costo ?? 'promedio';
+    if (isNew) {
+      set('calculo_costo', newVal);
+      return;
+    }
 
-  const handleCostoChange = (val: string | number) => {
-    const num = +val;
-    if (costoEsAutomatico && !isNew) {
-      // Guardar el valor pendiente y mostrar modal
-      setPendingCosto(num);
-      setShowCostoModal(true);
+    const prevIsAuto = isMethodAuto(prevVal);
+    const newIsAuto = isMethodAuto(newVal);
+
+    if (prevIsAuto && !newIsAuto) {
+      setModalConfig({ type: 'to_manual', pendingVal: newVal });
+    } else if (!prevIsAuto && newIsAuto) {
+      setModalConfig({ type: 'to_auto', pendingVal: newVal });
     } else {
-      set('costo', num);
+      set('calculo_costo', newVal);
     }
   };
 
-  const confirmEditarCosto = () => {
-    if (pendingCosto !== null) set('costo', pendingCosto);
-    setForm(f => ({ ...f, costo_manual: true, calculo_costo: 'manual' } as any));
-    setPendingCosto(null);
-    setShowCostoModal(false);
+  const confirmModal = () => {
+    if (modalConfig) {
+      set('calculo_costo', modalConfig.pendingVal);
+      setModalConfig(null);
+    }
   };
 
-  const cancelEditarCosto = () => {
-    setPendingCosto(null);
-    setShowCostoModal(false);
+  const cancelModal = () => {
+    setModalConfig(null);
   };
 
   return (
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 mb-4 pb-4 border-b border-border">
         <div>
-          <OdooField label="Código" value={form.codigo} help onChange={v => set('codigo', v)} alwaysEdit={isNew} required />
+          <OdooField label="Código" value={form.codigo} help helpText="Código de barras o identificador único del producto. Debe ser único en el sistema." onChange={v => set('codigo', v)} alwaysEdit={isNew} required />
           <OdooField label="Clave alterna" value={form.clave_alterna} onChange={v => set('clave_alterna', v)} />
           <OdooField label="Nombre en Compras" value={(form as any).nombre_compra ?? ''} onChange={v => set('nombre_compra' as any, v || null)} placeholder={form.nombre || 'Usa el nombre principal'} />
           <OdooField label="Nombre en Ventas" value={(form as any).nombre_venta ?? ''} onChange={v => set('nombre_venta' as any, v || null)} placeholder={form.nombre || 'Usa el nombre principal'} />
@@ -124,6 +131,7 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
             type="number"
             teal
             help
+            helpText="Precio de venta base al público para una unidad (pieza) de este producto."
             onChange={v => set('precio_principal', +v)}
             format={v => `${symbol} ${(v ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           />
@@ -135,9 +143,11 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
             type="number"
             teal
             help
-            onChange={handleCostoChange}
+            helpText="Costo unitario del producto (por pieza). Si el cálculo es automático, este campo se bloqueará al guardar y se actualizará con cada compra. Para productos nuevos, este valor sirve como costo inicial."
+            readOnly={isMethodAuto(form.calculo_costo ?? 'promedio') && !isNew}
+            onChange={v => set('costo', +v)}
             format={v => `${symbol} ${(v ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            labelSuffix={costoEsAutomatico && !isNew
+            labelSuffix={isMethodAuto(form.calculo_costo ?? 'promedio') && !isNew
               ? <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">Auto</span>
               : undefined
             }
@@ -148,10 +158,16 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
             value={(form as any).precio_sugerido_publico}
             type="number"
             help
+            helpText="Precio de venta sugerido por el proveedor o fabricante para el público general."
             onChange={v => set('precio_sugerido_publico' as any, +v)}
             format={v => `${symbol} ${(Number(v) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           />
-          <OdooField label="Cálculo costo" value={form.calculo_costo} type="select" help
+          <OdooField
+            label="Cálculo costo"
+            value={form.calculo_costo}
+            type="select"
+            help
+            helpText="Determina cómo se calcula el costo de forma automática al recibir compras (Promedio ponderado móvil, Último costo, etc.). Si seleccionas Manual, el costo no se actualizará con las compras."
             options={[
               { value: 'manual', label: 'Manual' },
               { value: 'ultimo', label: 'Último costo de compra' },
@@ -160,12 +176,7 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
               { value: 'estandar', label: 'Estándar' },
               { value: 'ultimo_compra', label: 'Último costo (compra directa)' },
             ]}
-            onChange={v => {
-              set('calculo_costo', v);
-              // Si cambian a manual desde el selector, también marcar costo_manual
-              if (v === 'manual') setForm(f => ({ ...f, costo_manual: true } as any));
-              else setForm(f => ({ ...f, costo_manual: false } as any));
-            }}
+            onChange={handleCalculoCostoChange}
             format={() => costLabels[form.calculo_costo ?? 'promedio'] ?? ''}
           />
           <OdooField label="Stock mínimo" value={form.min ?? 0} type="number" onChange={v => setForm(f => ({ ...f, min: Number(v) }))} placeholder="0" />
@@ -173,49 +184,61 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
         </div>
       </div>
 
-      {/* Modal de confirmación: editar costo manual */}
-      {showCostoModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      {/* Modal de confirmación: cambio de método de costeo */}
+      {modalConfig && createPortal(
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[99999] flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-amber-500" />
-                <h3 className="text-[15px] font-semibold">Editar costo manualmente</h3>
+                <h3 className="text-[15px] font-semibold">
+                  {modalConfig.type === 'to_manual' ? 'Cambiar a cálculo manual' : 'Cambiar a cálculo automático'}
+                </h3>
               </div>
-              <button onClick={cancelEditarCosto} className="text-muted-foreground hover:text-foreground transition-colors">
+              <button onClick={cancelModal} className="text-muted-foreground hover:text-foreground transition-colors">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="px-5 py-5 space-y-3">
-              <p className="text-[13px] text-foreground">
-                Editar el costo manualmente <strong>eliminará el historial de cálculo basado en compras</strong> para este producto.
-              </p>
-              <p className="text-[13px] text-muted-foreground">
-                A partir de este momento el costo no se actualizará automáticamente al recibir compras. Puedes restaurar el cálculo automático cambiando la opción "Cálculo costo" a <em>Promedio</em> u otra.
-              </p>
-              {pendingCosto !== null && (
-                <div className="flex items-center gap-2 p-2 bg-muted rounded-lg text-[13px]">
-                  <span className="text-muted-foreground">Nuevo costo:</span>
-                  <span className="font-semibold text-foreground">{symbol} {pendingCosto.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
+              {modalConfig.type === 'to_manual' ? (
+                <>
+                  <p className="text-[13px] text-foreground">
+                    ¿Estás seguro de cambiar a cálculo manual?
+                  </p>
+                  <p className="text-[13px] text-muted-foreground">
+                    A partir de este momento el costo no se actualizará automáticamente al recibir compras. Tendrás que capturarlo tú mismo.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[13px] text-foreground">
+                    El cálculo automático se activará y recalculará el costo en base al historial de compras cuando guardes los cambios del producto.
+                  </p>
+                  <p className="text-[13px] text-muted-foreground">
+                    Al cambiar de modo, puede tardar en actualizarce, ya que se hace el calculo completo desde la base de datos. 
+                    <br/><br/>
+                    Durante la edición, el campo de costo se bloqueará.
+                  </p>
+                </>
               )}
             </div>
             <div className="flex items-center gap-2 px-5 py-4 border-t border-border">
               <button
-                onClick={confirmEditarCosto}
+                onClick={confirmModal}
                 className="btn-odoo-primary"
               >
-                Confirmar y editar
+                Confirmar
               </button>
               <button
-                onClick={cancelEditarCosto}
+                onClick={cancelModal}
                 className="btn-odoo-secondary"
               >
                 Cancelar
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

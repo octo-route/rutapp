@@ -417,6 +417,20 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
     return Number(total.toFixed(2));
   }, [stagedLines, productMap]);
 
+  const [costModeModal, setCostModeModal] = useState<{ type: 'to_manual' | 'to_auto' } | null>(null);
+
+  const confirmCostModeChange = () => {
+    if (costModeModal) {
+      const toAuto = costModeModal.type === 'to_auto';
+      setForm((prev) => ({
+        ...prev,
+        calculo_costo: toAuto ? 'promedio' : 'manual',
+        costo: toAuto ? costSummary : prev.costo || 0,
+      }));
+      setCostModeModal(null);
+    }
+  };
+
   useEffect(() => {
     if (form.calculo_costo === 'manual') return;
     setForm((prev) => ({
@@ -896,11 +910,18 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
                     checked={form.calculo_costo !== 'manual'}
                     onChange={(e) => {
                       const auto = e.target.checked;
-                      setForm((prev) => ({
-                        ...prev,
-                        calculo_costo: auto ? 'promedio' : 'manual',
-                        costo: auto ? costSummary : prev.costo || 0,
-                      }));
+                      if (!comboId) {
+                        // Combo nuevo, cambiar directamente
+                        setForm((prev) => ({
+                          ...prev,
+                          calculo_costo: auto ? 'promedio' : 'manual',
+                          costo: auto ? costSummary : prev.costo || 0,
+                        }));
+                        return;
+                      }
+                      
+                      // Combo existente, pedir confirmación
+                      setCostModeModal({ type: auto ? 'to_auto' : 'to_manual' });
                     }}
                     className="rounded border-input h-3.5 w-3.5"
                   />
@@ -1537,6 +1558,58 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
               Guardar combo
             </Button>
           </div>
+          {costModeModal && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-amber-500" />
+                    <h3 className="text-[15px] font-semibold">
+                      {costModeModal.type === 'to_manual' ? 'Cambiar a costo manual' : 'Cambiar a costo automático'}
+                    </h3>
+                  </div>
+                  <button onClick={() => setCostModeModal(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="px-5 py-5 space-y-3">
+                  {costModeModal.type === 'to_manual' ? (
+                    <>
+                      <p className="text-[13px] text-foreground">
+                        ¿Estás seguro de desactivar el costo automático?
+                      </p>
+                      <p className="text-[13px] text-muted-foreground">
+                        El costo del combo ya no se actualizará automáticamente cuando cambies los componentes. Tendrás que capturarlo tú mismo.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[13px] text-foreground">
+                        El costo automático se activará y recalculará el costo en base a los componentes del combo cuando guardes los cambios.
+                      </p>
+                      <p className="text-[13px] text-muted-foreground">
+                        Durante la edición, el campo de costo se bloqueará.
+                      </p>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 px-5 py-4 border-t border-border">
+                  <button
+                    onClick={confirmCostModeChange}
+                    className="btn-odoo-primary"
+                  >
+                    Confirmar
+                  </button>
+                  <button
+                    onClick={() => setCostModeModal(null)}
+                    className="btn-odoo-secondary"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

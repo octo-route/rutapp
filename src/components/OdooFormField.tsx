@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, ReactNode } from 'react';
 import { HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import SearchableSelect from '@/components/SearchableSelect';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 // ===== Inline editable field (single click → edit) =====
 
@@ -20,13 +21,14 @@ interface OdooFieldProps {
   required?: boolean;
   /** Extra content rendered inline after the label text (e.g. a badge) */
   labelSuffix?: ReactNode;
+  helpText?: string;
   /** Quick-create handler for select fields. Should return the new item's id. */
   onCreateNew?: (name: string) => Promise<string | undefined>;
 }
 
 export function OdooField({
   label, value, onChange, type = 'text', options, placeholder,
-  help, teal, format, readOnly, alwaysEdit, required, onCreateNew, labelSuffix,
+  help, teal, format, readOnly, alwaysEdit, required, onCreateNew, labelSuffix, helpText,
 }: OdooFieldProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -125,10 +127,25 @@ export function OdooField({
   if (type === 'select' && options) {
     return (
       <div className="odoo-field-row">
-      <span className={cn("odoo-field-label", required && "label-required")}>
+      <span className={cn("odoo-field-label items-start", required && "label-required")}>
           {label}
           {labelSuffix}
-          {help && <HelpCircle className="h-3 w-3 odoo-help-icon" />}
+          {help && helpText && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center p-0.5 border-0 bg-transparent text-muted-foreground hover:text-foreground transition-colors cursor-help focus:outline-none"
+                  onClick={e => e.preventDefault()}
+                >
+                  <HelpCircle className="h-3 w-3 odoo-help-icon" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" align="center" className="max-w-[250px] text-xs leading-normal bg-popover text-popover-foreground border border-border shadow-lg p-2 rounded-md">
+                {helpText}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </span>
         {readOnly ? (
           <span className={cn("inline-edit-cell inline-edit-readonly", isEmpty && "text-muted-foreground", teal && !isEmpty && "odoo-field-value-teal")}>
@@ -168,10 +185,25 @@ export function OdooField({
   // Text / Number fields (unchanged logic)
   return (
     <div className="odoo-field-row">
-      <span className={cn("odoo-field-label", required && "label-required")}>
+      <span className={cn("odoo-field-label items-start", required && "label-required")}>
         {label}
         {labelSuffix}
-        {help && <HelpCircle className="h-3 w-3 odoo-help-icon" />}
+        {help && helpText && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center p-0.5 border-0 bg-transparent text-muted-foreground hover:text-foreground transition-colors cursor-help focus:outline-none"
+                onClick={e => e.preventDefault()}
+              >
+                <HelpCircle className="h-3 w-3 odoo-help-icon" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="center" className="max-w-[250px] text-xs leading-normal bg-popover text-popover-foreground border border-border shadow-lg p-2 rounded-md">
+              {helpText}
+            </TooltipContent>
+          </Tooltip>
+        )}
       </span>
       {readOnly ? (
         <span className={cn("inline-edit-cell inline-edit-readonly", isEmpty && "text-muted-foreground", teal && !isEmpty && "odoo-field-value-teal")}>
