@@ -136,7 +136,26 @@ async function fetchTurnos(empresaId: string, soloCerrados = false) {
     ? await supabase.from('profiles').select('user_id, nombre').in('user_id', cajeroIds)
     : { data: [] as any[] };
   const nameMap = new Map((profiles ?? []).map((p: any) => [p.user_id, p.nombre]));
-  return (turnos ?? []).map((t: any) => ({ ...t, cajero_nombre: nameMap.get(t.cajero_id) ?? '—' }));
+  
+  return Promise.all((turnos ?? []).map(async (t: any) => {
+    let tComputed = { ...t, cajero_nombre: nameMap.get(t.cajero_id) ?? '—' };
+    if (t.status === 'abierto') {
+      const [cobrosRes, movsRes] = await Promise.all([
+        supabase.from('cobros').select('monto, metodo_pago').eq('empresa_id', empresaId).eq('user_id', t.cajero_id).gte('created_at', t.abierto_at),
+        supabase.from('caja_movimientos').select('tipo, monto').eq('turno_id', t.id)
+      ]);
+      let efectivo = Number(t.fondo_inicial) || 0;
+      (cobrosRes.data ?? []).forEach((c: any) => {
+         if (String(c.metodo_pago).toLowerCase().includes('efectivo')) efectivo += Number(c.monto) || 0;
+      });
+      (movsRes.data ?? []).forEach((m: any) => {
+         if (m.tipo === 'deposito') efectivo += Number(m.monto) || 0;
+         else if (m.tipo === 'retiro' || m.tipo === 'gasto') efectivo -= Number(m.monto) || 0;
+      });
+      tComputed.total_efectivo_esperado = Math.max(0, efectivo);
+    }
+    return tComputed;
+  }));
 }
 
 function TurnosPanel({ empresaId, onView }: { empresaId: string; onView: (id: string) => void }) {
@@ -692,7 +711,32 @@ function TurnoDetalleModal({ turnoId, onClose }: { turnoId: string | null; onClo
         vendedor_nombre: nameMap.get(v.vendedor_id) ?? '—',
         metodos_pago: metodosMap.get(v.id) ?? [],
       }));
-      return { turno, movs: movs ?? [], ventas: ventasEnriched };
+
+      let t = turno as any;
+      if (t && t.status === 'abierto') {
+        const [cobrosRes, movsRes] = await Promise.all([
+          supabase.from('cobros').select('monto, metodo_pago').eq('empresa_id', t.empresa_id).eq('user_id', t.cajero_id).gte('created_at', t.abierto_at),
+          supabase.from('caja_movimientos').select('tipo, monto').eq('turno_id', t.id)
+        ]);
+        let efectivo = Number(t.fondo_inicial) || 0;
+        let tarjeta = 0; let transferencia = 0; let otros = 0;
+        (cobrosRes.data ?? []).forEach((c: any) => {
+           const m = Number(c.monto) || 0;
+           const mp = String(c.metodo_pago).toLowerCase();
+           if (mp.includes('efectivo')) efectivo += m;
+           else if (mp.includes('tarjeta')) tarjeta += m;
+           else if (mp.includes('transfer')) transferencia += m;
+           else otros += m;
+        });
+        (movsRes.data ?? []).forEach((m: any) => {
+           const v = Number(m.monto) || 0;
+           if (m.tipo === 'deposito') efectivo += v;
+           else if (m.tipo === 'retiro' || m.tipo === 'gasto') efectivo -= v;
+        });
+        t = { ...t, total_efectivo_esperado: Math.max(0, efectivo), total_tarjeta_esperado: tarjeta, total_transferencia_esperado: transferencia, total_otros_esperado: otros };
+      }
+
+      return { turno: t, movs: movs ?? [], ventas: ventasEnriched };
     },
     enabled: !!turnoId,
   });
