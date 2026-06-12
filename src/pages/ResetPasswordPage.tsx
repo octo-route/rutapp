@@ -33,7 +33,7 @@ export default function ResetPasswordPage() {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
       toast.success('Contraseña actualizada correctamente');
-      navigate('/');
+      navigate('/dashboard');
     } catch (err: any) {
       const t = translateError(err);
       toast.error(t.title, { description: t.suggestion });

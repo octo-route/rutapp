@@ -89,7 +89,9 @@ export default function CrearConteoDialog({ open, onClose, onCreated }: Props) {
         )
         .eq("almacen_id", almacenId)
         .eq("empresa_id", empresa!.id)
-        .eq("productos.status", "activo" as any);
+        .eq("productos.status", "activo" as any)
+        .eq("productos.es_combo", false)
+        .eq("productos.se_puede_inventariar", true);
 
       if (clasificacionId !== "todas") {
         q = q.eq("productos.clasificacion_id", clasificacionId as any);
@@ -134,7 +136,9 @@ export default function CrearConteoDialog({ open, onClose, onCreated }: Props) {
         )
         .eq("almacen_id", almacenId)
         .eq("empresa_id", empresa!.id)
-        .eq("productos.status", "activo" as any);
+        .eq("productos.status", "activo" as any)
+        .eq("productos.es_combo", false)
+        .eq("productos.se_puede_inventariar", true);
 
       if (clasificacionId !== "todas")
         q = q.eq("productos.clasificacion_id", clasificacionId as any);

@@ -143,7 +143,7 @@ export default function TraspasoFormPage() {
     queryKey: ['productos-select', empresa?.id],
     enabled: !!empresa?.id,
     queryFn: async () => {
-      const { data } = await supabase.from('productos').select('id, codigo, nombre, cantidad, clasificacion_id, marca_id, unidades_venta:unidades!productos_unidad_venta_id_fkey(nombre, abreviatura)').eq('empresa_id', empresa!.id).eq('status', 'activo').order('nombre');
+      const { data } = await supabase.from('productos').select('id, codigo, nombre, cantidad, clasificacion_id, marca_id, unidades_venta:unidades!productos_unidad_venta_id_fkey(nombre, abreviatura)').eq('empresa_id', empresa!.id).eq('status', 'activo').eq('es_combo', false).eq('se_puede_inventariar', true).order('nombre');
       return data ?? [];
     },
   });

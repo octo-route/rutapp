@@ -25,6 +25,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoStep, setDemoStep] = useState(0);
+  const [lockoutMsg, setLockoutMsg] = useState('');
 
   useEffect(() => {
     if (!demoLoading) { setDemoStep(0); return; }
@@ -37,6 +38,23 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setLockoutMsg('');
+    
+    // Check lockout status
+    const lockKey = `login_lock_${email}`;
+    const lockDataStr = localStorage.getItem(lockKey);
+    let lockData = { attempts: 0, lockUntil: 0, multiplier: 1 };
+    
+    if (lockDataStr) {
+      lockData = JSON.parse(lockDataStr);
+      if (lockData.lockUntil > Date.now()) {
+        const remainingMinutes = Math.ceil((lockData.lockUntil - Date.now()) / 60000);
+        setLockoutMsg(`Demasiados intentos fallidos. Tu cuenta está bloqueada por ${remainingMinutes} minutos más. Si no sabes tu contraseña, puedes contactar al servicio al cliente de OctoApp.`);
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       if (isForgot) {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -47,12 +65,30 @@ export default function LoginPage() {
         setIsForgot(false);
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        if (error) {
+          if (error.message.toLowerCase().includes('invalid login') || error.message.toLowerCase().includes('credentials')) {
+            lockData.attempts += 1;
+            if (lockData.attempts >= 5) {
+              lockData.lockUntil = Date.now() + (15 * 60 * 1000 * lockData.multiplier);
+              lockData.multiplier += 1;
+              lockData.attempts = 0; // Reset attempts for next cycle
+              const remainingMinutes = Math.ceil((lockData.lockUntil - Date.now()) / 60000);
+              setLockoutMsg(`Has fallado demasiadas veces. Tu cuenta ha sido bloqueada por ${remainingMinutes} minutos. Si no sabes tu contraseña, puedes contactar al servicio al cliente de OctoApp.`);
+            }
+            localStorage.setItem(lockKey, JSON.stringify(lockData));
+          }
+          throw error;
+        }
+        
+        // Success
+        localStorage.removeItem(lockKey);
         toast.success('Sesión iniciada');
       }
     } catch (err: any) {
-      const t = translateError(err);
-      toast.error(t.title, { description: t.suggestion });
+      if (lockData.attempts < 5) {
+        const t = translateError(err);
+        toast.error(t.title, { description: t.suggestion });
+      }
     } finally {
       setLoading(false);
     }
@@ -120,6 +156,13 @@ export default function LoginPage() {
             {isForgot ? 'Recuperar contraseña' : 'Iniciar sesión'}
           </p>
         </div>
+        
+        {lockoutMsg && (
+          <div className="mb-4 p-3 bg-destructive/10 text-destructive border border-destructive/20 rounded text-sm text-center font-medium">
+            {lockoutMsg}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="label-odoo label-required">Email</label>

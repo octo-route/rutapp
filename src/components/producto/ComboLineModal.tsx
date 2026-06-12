@@ -543,14 +543,18 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
 
   useEffect(() => {
     if (!pickerOpen) return;
-    const handler = (event: MouseEvent) => {
+    const handler = (event: MouseEvent | TouchEvent) => {
       if (pickerRef.current?.contains(event.target as Node)) return;
       setPickerOpen(false);
       setSearchProducto('');
       setHighlightIdx(0);
     };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('touchstart', handler);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('touchstart', handler);
+    };
   }, [pickerOpen]);
 
   const addOrIncrementLine = (productId: string) => {
@@ -738,8 +742,8 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && close()}>
-      <DialogContent hideClose className="max-w-[1180px] w-[calc(100vw-1rem)] max-h-[90vh] overflow-hidden flex flex-col gap-0 p-0">
-        <DialogHeader className="px-4 py-3 border-b border-border flex-row items-start justify-between space-y-0 gap-3">
+      <DialogContent hideClose className="max-w-[1180px] w-[calc(100vw-1rem)] max-h-[95vh] lg:max-h-[90vh] overflow-y-auto lg:overflow-hidden flex flex-col gap-0 p-0">
+        <DialogHeader className="px-4 py-3 border-b border-border flex flex-col-reverse sm:flex-row items-stretch sm:items-start justify-between gap-4">
           <div className="space-y-2 flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <DialogTitle className="text-base">{comboId ? 'Editar combo' : 'Nuevo combo'}</DialogTitle>
@@ -769,7 +773,7 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
               )}
             </div>
           </div>
-          <div className="flex items-start gap-2 shrink-0">
+          <div className="flex items-start gap-2 shrink-0 justify-center sm:justify-start">
             <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
             <div className="relative group cursor-pointer" onClick={() => imageInputRef.current?.click()}>
               {form.imagen_url ? (
@@ -783,7 +787,7 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+        <div className="flex-1 overflow-y-visible lg:overflow-y-auto p-4 lg:p-5 space-y-5 min-h-0">
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground">Código</label>
@@ -828,8 +832,9 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
                         type="button"
                         onMouseDown={(event) => {
                           event.preventDefault();
-                          selectProduct(producto.id);
+                          event.stopPropagation();
                         }}
+                        onClick={() => selectProduct(producto.id)}
                         onMouseEnter={() => setHighlightIdx(index)}
                         className={`w-full text-left px-3 py-2 text-sm transition-colors border-b border-border last:border-b-0 ${index === highlightIdx ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'}`}
                       >
@@ -852,47 +857,49 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
                 </div>
                 <div className="text-xs text-muted-foreground">{stagedLines.length} item{stagedLines.length === 1 ? '' : 's'}</div>
               </div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30">
-                    <th className="th-odoo text-left">Código</th>
-                    <th className="th-odoo text-left">Producto</th>
-                    <th className="th-odoo text-center w-28">Cantidad</th>
-                    <th className="th-odoo text-right w-24">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stagedLines.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="py-12 text-center text-muted-foreground text-sm">
-                        Todavía no hay componentes.
-                      </td>
+              <div className="overflow-x-auto flex-1">
+                <table className="w-full text-sm min-w-[500px] lg:min-w-0">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/30">
+                      <th className="th-odoo text-left">Código</th>
+                      <th className="th-odoo text-left">Producto</th>
+                      <th className="th-odoo text-center w-28">Cantidad</th>
+                      <th className="th-odoo text-right w-24">Acción</th>
                     </tr>
-                  ) : (
-                    stagedLines.map((line) => (
-                      <tr key={line.componente_id} className="border-b border-border last:border-b-0">
-                        <td className="py-2 px-3 font-mono text-xs">{line.codigo || '—'}</td>
-                        <td className="py-2 px-3 font-medium">{line.nombre}</td>
-                        <td className="py-2 px-3">
-                          <Input
-                            type="number"
-                            min={1}
-                            step="1"
-                            value={line.cantidad}
-                            onChange={(e) => updateLineQuantity(line.componente_id, Number(e.target.value) || 1)}
-                            className="h-9 text-center"
-                          />
-                        </td>
-                        <td className="py-2 px-3 text-right">
-                          <Button type="button" variant="ghost" size="icon" onClick={() => removeLine(line.componente_id)}>
-                            <Trash className="h-4 w-4 text-destructive" />
-                          </Button>
+                  </thead>
+                  <tbody>
+                    {stagedLines.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-12 text-center text-muted-foreground text-sm">
+                          Todavía no hay componentes.
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      stagedLines.map((line) => (
+                        <tr key={line.componente_id} className="border-b border-border last:border-b-0">
+                          <td className="py-2 px-3 font-mono text-xs">{line.codigo || '—'}</td>
+                          <td className="py-2 px-3 font-medium">{line.nombre}</td>
+                          <td className="py-2 px-3">
+                            <Input
+                              type="number"
+                              min={1}
+                              step="1"
+                              value={line.cantidad}
+                              onChange={(e) => updateLineQuantity(line.componente_id, Number(e.target.value) || 1)}
+                              className="h-9 text-center"
+                            />
+                          </td>
+                          <td className="py-2 px-3 text-right">
+                            <Button type="button" variant="ghost" size="icon" onClick={() => removeLine(line.componente_id)}>
+                              <Trash className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 

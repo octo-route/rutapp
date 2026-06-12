@@ -50,11 +50,11 @@ export function VentaLineaMobile({ idx, line: l, lineas, productosList, readOnly
           {readOnly ? (
             <>
               <div className="text-sm font-medium truncate">{displayLabel}</div>
-              {prod?._stock != null && <div className="text-[10px] text-muted-foreground font-medium">Stock: {prod._stock}</div>}
+              {prod?._stock != null && <div className="text-[10px] text-muted-foreground font-medium">Stock: {prod.es_combo || prod.se_puede_inventariar === false ? "—" : prod._stock}</div>}
             </>
           ) : (
             <ProductSearchInput
-              products={(productosList ?? []).filter((p: any) => !lineas.filter((_, j) => j !== idx).map(ll => ll.producto_id).filter(Boolean).includes(p.id)).map((p: any) => ({ id: p.id, codigo: p.codigo, nombre: p.nombre, precio_principal: p.precio_principal, _stock: p._stock }))}
+              products={(productosList ?? []).filter((p: any) => !lineas.filter((_, j) => j !== idx).map(ll => ll.producto_id).filter(Boolean).includes(p.id)).map((p: any) => ({ id: p.id, codigo: p.codigo, nombre: p.nombre, precio_principal: p.precio_principal, _stock: p._stock, es_combo: p.es_combo, se_puede_inventariar: p.se_puede_inventariar }))}
               value={l.producto_id ?? ''} displayText={prod ? `${prod.codigo} · ${prod.nombre}` : (snapshotProd ? `${snapshotProd.codigo ?? ''}${snapshotProd.codigo && snapshotProd.nombre ? ' · ' : ''}${snapshotProd.nombre ?? ''}` : undefined)}
               onSelect={pid => onProductSelect(idx, pid)} autoFocus={idx === lineas.length - 1 && isEmpty} readOnly={readOnly}
             />
@@ -71,7 +71,7 @@ export function VentaLineaMobile({ idx, line: l, lineas, productosList, readOnly
       {!isEmpty && (
         <div className="grid grid-cols-3 gap-2">
           <div>
-            <label className="text-[10px] text-muted-foreground block">Cantidad {prod?.es_granel && <span className="text-primary font-medium">({prod.unidad_granel})</span>}{prod?._stock != null && <span className="ml-1">(Disp: {prod._stock})</span>}</label>
+            <label className="text-[10px] text-muted-foreground block">Cantidad {prod?.es_granel && <span className="text-primary font-medium">({prod.unidad_granel})</span>}{prod?._stock != null && <span className="ml-1">(Disp: {prod.es_combo || prod.se_puede_inventariar === false ? "—" : prod._stock})</span>}</label>
             {readOnly ? <span className="text-sm font-medium">{l.cantidad} {prod?.es_granel ? prod.unidad_granel : unidadLabel}</span> : (
               <div className="flex items-center gap-1">
                 <input type="number" inputMode={prod?.es_granel ? "decimal" : "numeric"} className="inline-edit-input text-sm text-right !py-1 w-full" value={l.cantidad ?? ''} onChange={e => onUpdateLine(idx, 'cantidad', e.target.value)} min="0" step={prod?.es_granel ? "0.001" : "1"} onFocus={e => e.target.select()} />

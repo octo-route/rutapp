@@ -92,7 +92,11 @@ export function ProductoFiscalTab({ form, set, unidadesSat }: Props) {
           value={form.ieps_pct ?? 0}
           type="number"
           teal
-          onChange={(v) => set("ieps_pct", +v)}
+          onChange={(v) => {
+            const rate = +v;
+            set("ieps_pct", rate);
+            set("tiene_ieps", rate > 0);
+          }}
           format={(v) =>
             (form.ieps_tipo || "porcentaje") === "cuota"
               ? `$ ${v ?? 0}`
@@ -105,7 +109,10 @@ export function ProductoFiscalTab({ form, set, unidadesSat }: Props) {
               <button
                 key={rate}
                 type="button"
-                onClick={() => set("ieps_pct", rate)}
+                onClick={() => {
+                  set("ieps_pct", rate);
+                  set("tiene_ieps", rate > 0);
+                }}
                 className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${form.ieps_pct === rate ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/50"}`}
               >
                 {rate}%

@@ -75,7 +75,7 @@ export default function AuditoriasPage() {
     queryKey: ['productos-audit', empresa?.id],
     enabled: !!empresa?.id && showDialog && filtroTipo === 'productos',
     queryFn: async () => {
-      const { data } = await supabase.from('productos').select('id, nombre, codigo').eq('empresa_id', empresa!.id).eq('status', 'activo').order('nombre');
+      const { data } = await supabase.from('productos').select('id, nombre, codigo').eq('empresa_id', empresa!.id).eq('status', 'activo').eq('es_combo', false).eq('se_puede_inventariar', true).order('nombre');
       return data ?? [];
     },
   });
@@ -131,7 +131,9 @@ export default function AuditoriasPage() {
         .from('productos')
         .select('id', { count: 'exact', head: true })
         .eq('empresa_id', empresa!.id)
-        .eq('status', 'activo');
+        .eq('status', 'activo')
+        .eq('es_combo', false)
+        .eq('se_puede_inventariar', true);
 
       if (filtroTipo === 'clasificacion' && selectedIds.size > 0) {
         query = query.in('clasificacion_id', selectedArray);
@@ -197,7 +199,9 @@ export default function AuditoriasPage() {
           .from('productos')
           .select('id')
           .eq('empresa_id', empresa!.id)
-          .eq('status', 'activo');
+          .eq('status', 'activo')
+          .eq('es_combo', false)
+          .eq('se_puede_inventariar', true);
 
         if (filtroTipo === 'clasificacion' && selectedIds.size > 0) {
           query = query.in('clasificacion_id', selectedArray);

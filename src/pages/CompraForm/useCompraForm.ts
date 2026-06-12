@@ -101,7 +101,7 @@ export function useCompraForm() {
             ...cl,
             _tiene_iva: prod?.tiene_iva ?? false,
             _iva_pct: prod?.iva_pct ?? 16,
-            _tiene_ieps: prod?.tiene_ieps ?? false,
+            _tiene_ieps: prod?.tiene_ieps || (Number(prod?.ieps_pct) > 0),
             _ieps_pct: prod?.ieps_pct ?? 0,
             _ieps_tipo: prod?.ieps_tipo ?? "porcentaje",
             _unidad_compra:
@@ -215,7 +215,7 @@ export function useCompraForm() {
           line._tiene_iva = p.tiene_iva ?? false;
           line._iva_pct = p.iva_pct ?? 16;
           line._precio_incluye_iva = !!p.costo_incluye_impuestos;
-          line._tiene_ieps = p.tiene_ieps ?? false;
+          line._tiene_ieps = p.tiene_ieps || (Number(p.ieps_pct) > 0);
           line._ieps_pct = p.ieps_pct ?? 0;
           line._ieps_tipo = p.ieps_tipo ?? "porcentaje";
           line._unidad_compra =

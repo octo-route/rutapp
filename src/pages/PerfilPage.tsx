@@ -9,20 +9,40 @@ import AvatarUploader from '@/components/AvatarUploader';
 export default function PerfilPage() {
   const { user, profile, empresa } = useAuth();
   const { theme, setTheme } = useTheme();
+  const [oldPass, setOldPass] = useState('');
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showOldPass, setShowOldPass] = useState(false);
   const [showNewPass, setShowNewPass] = useState(false);
   const [showConfirmPass, setShowConfirmPass] = useState(false);
 
   const handleChangePassword = async () => {
+    if (!oldPass) { toast.error('Debes ingresar tu contraseña actual'); return; }
     if (newPass.length < 6) { toast.error('La contraseña debe tener al menos 6 caracteres'); return; }
     if (newPass !== confirmPass) { toast.error('Las contraseñas no coinciden'); return; }
+    
+    if (!user?.email) return;
+
     setSaving(true);
+    
+    // Validate old password first
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: oldPass,
+    });
+
+    if (verifyError) {
+      setSaving(false);
+      toast.error('La contraseña actual es incorrecta');
+      return;
+    }
+
     const { error } = await supabase.auth.updateUser({ password: newPass });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('Contraseña actualizada correctamente');
+    setOldPass('');
     setNewPass('');
     setConfirmPass('');
   };
@@ -74,7 +94,26 @@ export default function PerfilPage() {
         <h2 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
           <KeyRound className="h-4 w-4 text-primary" /> Cambiar contraseña
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-xl">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl">
+          <div className="md:col-span-2">
+            <label className="label-odoo">Contraseña actual</label>
+            <div className="relative max-w-[calc(50%-0.5rem)]">
+              <input
+                type={showOldPass ? 'text' : 'password'}
+                value={oldPass}
+                onChange={e => setOldPass(e.target.value)}
+                placeholder="Tu contraseña actual"
+                className="input-odoo pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowOldPass(!showOldPass)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showOldPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
           <div>
             <label className="label-odoo">Nueva contraseña</label>
             <div className="relative">
@@ -117,10 +156,13 @@ export default function PerfilPage() {
             )}
           </div>
         </div>
+        <p className="text-xs text-muted-foreground mt-3 max-w-xl">
+          Si no conoces tu contraseña actual, contacta al servicio al cliente de OctoApp para cambiarla.
+        </p>
         <div className="mt-4">
           <button
             onClick={handleChangePassword}
-            disabled={saving || newPass.length < 6 || newPass !== confirmPass}
+            disabled={saving || !oldPass || newPass.length < 6 || newPass !== confirmPass}
             className="btn-odoo-primary text-xs flex items-center gap-2"
           >
             {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

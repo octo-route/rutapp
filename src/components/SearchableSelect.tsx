@@ -242,7 +242,7 @@ export default function SearchableSelect({
                   <div
                     key={o.value}
                     onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
-                    onMouseUp={() => select(o.value)}
+                    onClick={() => select(o.value)}
                     onMouseEnter={() => setHighlightIdx(i)}
                     className={cn(
                       'px-3 py-2 text-[13px] cursor-pointer transition-colors truncate',
@@ -258,7 +258,7 @@ export default function SearchableSelect({
                 {onCreateNew && search.trim() && !filtered.some(o => o.label.toLowerCase() === search.trim().toLowerCase()) && (
                   <div
                     onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
-                    onMouseUp={async () => {
+                    onClick={async () => {
                       if (creating) return;
                       setCreating(true);
                       try {

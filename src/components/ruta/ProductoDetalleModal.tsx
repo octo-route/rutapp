@@ -185,7 +185,7 @@ export function ProductoDetalleModal({
           {/* Quick info chips */}
           <div className="px-4 pt-3 flex flex-wrap gap-1.5">
             <span className="text-[10.5px] px-2 py-0.5 rounded-md bg-accent/60 text-foreground font-medium">
-              Stock: {stockAbordo} {unidadAbrev}
+              Stock: {producto.es_combo || producto.se_puede_inventariar === false ? "—" : `${stockAbordo} ${unidadAbrev}`}
             </span>
             <span className="text-[10.5px] px-2 py-0.5 rounded-md bg-accent/60 text-foreground font-medium">
               {ivaTxt}

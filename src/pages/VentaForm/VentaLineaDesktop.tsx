@@ -60,7 +60,7 @@ export function VentaLineaDesktop({ idx, line: l, isLast, lineas, productosList,
     if (readOnly) return;
     const currentIeps = Number(l.ieps_pct) || 0;
     const p = productosList?.find((x: any) => x.id === l.producto_id);
-    const defaultIeps = p?.tiene_ieps ? Number(p.ieps_pct ?? 0) : 0;
+    const defaultIeps = (p?.tiene_ieps || (Number(p?.ieps_pct) > 0)) ? Number(p.ieps_pct ?? 0) : 0;
     const newIeps = currentIeps > 0 ? 0 : defaultIeps;
     onUpdateLine(idx, 'ieps_pct', newIeps);
     const newIva = Number(l.iva_pct) || 0;
@@ -74,10 +74,10 @@ export function VentaLineaDesktop({ idx, line: l, isLast, lineas, productosList,
     <tr className={cn("border-b border-table-border transition-colors group", isEmpty ? "bg-transparent" : "hover:bg-table-hover")}>
       <td className="py-1.5 px-2 text-muted-foreground text-xs">{isEmpty ? '' : idx + 1}</td>
       <td className="py-1 px-2">
-        {readOnly ? <span className="text-[12px]">{prodDisplay ? `${prodDisplay.codigo ?? ''} · ${prodDisplay.nombre}`.replace(/^ · /, '') : (l.descripcion || '—')}{prod?._stock != null && <span className="ml-1.5 text-[10px] text-muted-foreground font-medium">(Stock: {prod._stock})</span>}</span> : (
+        {readOnly ? <span className="text-[12px]">{prodDisplay ? `${prodDisplay.codigo ?? ''} · ${prodDisplay.nombre}`.replace(/^ · /, '') : (l.descripcion || '—')}{prod?._stock != null && <span className="ml-1.5 text-[10px] text-muted-foreground font-medium">(Stock: {prod.es_combo || prod.se_puede_inventariar === false ? "—" : prod._stock})</span>}</span> : (
           <ProductSearchInput
-            products={(productosList ?? []).filter((p: any) => !lineas.filter((_, j) => j !== idx).map(ll => ll.producto_id).filter(Boolean).includes(p.id)).map((p: any) => ({ id: p.id, codigo: p.codigo, nombre: p.nombre, precio_principal: p.precio_principal, _stock: p._stock }))}
-            value={l.producto_id ?? ''} displayText={prodDisplay ? `${prodDisplay.codigo ?? ''} · ${prodDisplay.nombre}${prod?._stock != null ? ` (Stock: ${prod._stock})` : ''}`.replace(/^ · /, '') : (l.descripcion || undefined)}
+            products={(productosList ?? []).filter((p: any) => !lineas.filter((_, j) => j !== idx).map(ll => ll.producto_id).filter(Boolean).includes(p.id)).map((p: any) => ({ id: p.id, codigo: p.codigo, nombre: p.nombre, precio_principal: p.precio_principal, _stock: p._stock, es_combo: p.es_combo, se_puede_inventariar: p.se_puede_inventariar }))}
+            value={l.producto_id ?? ''} displayText={prodDisplay ? `${prodDisplay.codigo ?? ''} · ${prodDisplay.nombre}${prod?._stock != null ? ` (Stock: ${prod.es_combo || prod.se_puede_inventariar === false ? "—" : prod._stock})` : ''}`.replace(/^ · /, '') : (l.descripcion || undefined)}
             onSelect={pid => onProductSelect(idx, pid)} onNavigate={dir => navigateCell(idx, 0, dir)} readOnly={readOnly}
             registerRef={el => setCellRef(idx, 0, el)}
           />

@@ -34,7 +34,7 @@ export default function ForceChangePasswordPage() {
       }
 
       toast.success('Contraseña actualizada correctamente');
-      navigate('/dashboard');
+      window.location.href = '/dashboard';
     } catch (err: any) {
       toast.error(err.message || 'Error al cambiar contraseña');
     } finally {

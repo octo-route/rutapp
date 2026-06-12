@@ -148,7 +148,7 @@ export default function ModalSelect({
                 <div
                   key={o.value}
                   onMouseDown={e => e.preventDefault()}
-                  onMouseUp={() => select(o.value)}
+                  onClick={() => select(o.value)}
                   onMouseEnter={() => setHighlightIdx(i)}
                   className={cn(
                     'px-3 py-2 text-[13px] cursor-pointer transition-colors truncate',

@@ -50,6 +50,8 @@ function useInventarioData() {
         )
         .eq("empresa_id", eid)
         .eq("status", "activo")
+        .eq("es_combo", false)
+        .eq("se_puede_inventariar", true)
         .order("nombre");
 
       // Almacenes

@@ -8,6 +8,8 @@ interface ProductOption {
   nombre: string;
   precio_principal?: number;
   _stock?: number;
+  es_combo?: boolean;
+  se_puede_inventariar?: boolean;
 }
 
 interface ProductoDropdownProps {
@@ -112,7 +114,7 @@ export default function ProductoDropdown({
             <span className="flex items-center gap-2 shrink-0">
               {p._stock != null && (
                 <span className="text-[10px] font-medium text-muted-foreground bg-accent/60 rounded px-1.5 py-0.5">
-                  {p._stock}
+                  {p.es_combo || p.se_puede_inventariar === false ? "—" : p._stock}
                 </span>
               )}
               {p.precio_principal != null && (

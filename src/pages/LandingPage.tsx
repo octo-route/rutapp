@@ -106,13 +106,7 @@ const TESTIMONIALS = [
   { name: 'Roberto S.', role: 'Fundador', company: 'Botanas Express', text: 'La optimización de rutas nos ahorró miles de pesos en gasolina el primer mes. Se pagó solo.' },
 ];
 
-const PRICE_MONTHLY = 300;
 const DEMO_LOGIN_PENDING_KEY = 'demo_login_pending';
-const PLANS = [
-  { name: 'Mensual', period: '/mes', price: PRICE_MONTHLY, discount: 0, tag: null, popular: false },
-  { name: 'Semestral', period: '/mes', price: Math.round(PRICE_MONTHLY * 0.9), discount: 10, tag: '10% OFF', popular: false },
-  { name: 'Anual', period: '/mes', price: Math.round(PRICE_MONTHLY * 0.85), discount: 15, tag: '15% OFF', popular: true },
-];
 
 export default function LandingPage() {
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -255,7 +249,7 @@ export default function LandingPage() {
                 Conoce más <ChevronRight className="h-5 w-5" />
               </a>
             </div>
-            <p className="text-xs text-gray-400 mt-4">Sin tarjeta · Configuración en 5 minutos · 14 días de prueba</p>
+            <p className="text-xs text-gray-400 mt-4">Sin tarjeta · Configuración en 5 minutos · 7 días de prueba</p>
           </div>
 
           {/* Hero — live dashboard mockup */}
@@ -468,72 +462,331 @@ export default function LandingPage() {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="py-20 px-6" style={{ background: 'hsl(220, 14%, 98%)' }}>
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
-            <h2 className="text-3xl md:text-4xl font-black tracking-tight">Precios simples y transparentes</h2>
-            <p className="text-gray-500 mt-3">Un solo plan con todo incluido. Sin costos ocultos.</p>
+      <section id="pricing" className="py-24 px-6" style={{ background: 'hsl(220, 14%, 97%)' }}>
+
+        <div className="max-w-6xl mx-auto">
+
+          {/* Section header */}
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold mb-5 tracking-widest bg-indigo-50 text-indigo-600 border border-indigo-100">
+              <Zap className="h-3.5 w-3.5" /> PRECIOS DE LANZAMIENTO — TIEMPO LIMITADO
+            </div>
+            <h2 className="text-3xl md:text-5xl font-black tracking-tight text-gray-900 leading-tight">
+              Todo lo que necesitas.<br />
+              <span style={{ color: 'hsl(230, 55%, 52%)' }}>A un precio que sorprende.</span>
+            </h2>
+            <p className="mt-4 text-lg max-w-xl mx-auto text-gray-500">
+              Empieza hoy por menos de lo que cuesta un café al día. Sin contratos, sin sorpresas.
+            </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-            {PLANS.map(plan => (
-              <div key={plan.name} className={cn(
-                "relative rounded-2xl p-8 border-2 transition-all bg-white",
-                plan.popular
-                  ? "border-indigo-500 shadow-xl shadow-indigo-500/10 scale-105"
-                  : "border-gray-100 hover:border-gray-200"
-              )}>
-                {plan.tag && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs font-bold text-white"
-                    style={{ background: plan.popular ? 'hsl(230, 55%, 52%)' : 'hsl(38, 90%, 50%)' }}>
-                    {plan.tag}
-                  </div>
-                )}
-                {plan.popular && (
-                  <div className="absolute -top-3 right-4 px-3 py-1 rounded-full text-xs font-bold text-white bg-emerald-500">
-                    Recomendado
-                  </div>
-                )}
-                <h3 className="text-lg font-bold text-center mb-1">{plan.name}</h3>
-                <div className="text-center mb-6">
-                  <span className="text-4xl font-black" style={{ color: plan.popular ? 'hsl(230, 55%, 52%)' : undefined }}>
-                    ${plan.price}
-                  </span>
-                  <span className="text-sm text-gray-500"> {plan.period}</span>
-                  <div className="text-xs text-gray-400 mt-1">por usuario</div>
-                  {plan.discount > 0 && (
-                    <div className="text-xs text-gray-400 mt-1 line-through">${PRICE_MONTHLY}/mes</div>
-                  )}
-                </div>
-                <ul className="space-y-3 mb-8">
-                  {[
-                    'Todos los módulos incluidos',
-                    'Seguimiento GPS en vivo',
-                    'App móvil offline',
-                    'Optimización de rutas',
-                    'CFDI 4.0 y WhatsApp',
-                    'Soporte prioritario',
-                    'Agrega usuarios según necesites',
-                  ].map(feat => (
-                    <li key={feat} className="flex items-center gap-2 text-sm text-gray-600">
-                      <Check className="h-4 w-4 shrink-0" style={{ color: 'hsl(152, 56%, 38%)' }} /> {feat}
-                    </li>
-                  ))}
-                </ul>
-                <Link to="/signup" className={cn(
-                  "block w-full text-center py-3.5 rounded-xl text-sm font-bold transition-all",
-                  plan.popular
-                    ? "text-white shadow-lg shadow-indigo-500/25 hover:opacity-90"
-                    : "text-gray-700 border-2 border-gray-200 hover:border-gray-300"
-                )} style={plan.popular ? { background: 'hsl(230, 55%, 52%)' } : undefined}>
-                  Empezar ahora
-                </Link>
+          {/* Trust bar */}
+          <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 mb-14">
+            {[
+              { icon: Shield, text: '7 días de prueba gratis' },
+              { icon: Zap, text: 'Configuración en 5 minutos' },
+              { icon: Users, text: 'Sin tarjeta de crédito' },
+              { icon: Check, text: 'Cancela cuando quieras' },
+            ].map(t => (
+              <div key={t.text} className="flex items-center gap-2 text-xs font-semibold text-gray-500">
+                <t.icon className="h-3.5 w-3.5 text-emerald-500" />
+                {t.text}
               </div>
             ))}
           </div>
 
-          <p className="text-center text-xs text-gray-400 mt-8">
-            Todos los precios están en MXN + IVA. Cancela cuando quieras.
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+
+            {/* ── CARD 1: OCTO POS BASE ── */}
+            <div className="relative rounded-3xl bg-white border-2 border-indigo-500 shadow-xl shadow-indigo-500/10 flex flex-col overflow-hidden transition-all duration-300 hover:-translate-y-1">
+              {/* Gradient top bar */}
+              <div className="h-2 w-full" style={{ background: 'linear-gradient(90deg, hsl(230, 70%, 52%), hsl(260, 65%, 60%))' }} />
+
+              {/* Popular badge */}
+              <div className="absolute top-5 right-5 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                </span>
+                MÁS POPULAR
+              </div>
+
+              <div className="p-7 flex flex-col flex-1">
+                <div className="mb-5">
+                  <div className="text-[10px] font-bold tracking-[0.2em] text-indigo-400 mb-1">PLAN BASE</div>
+                  <h3 className="text-2xl font-black text-gray-900 tracking-tight">Octo POS</h3>
+                  <p className="text-xs text-gray-500 mt-1">El cerebro de tu distribuidora</p>
+                </div>
+
+                {/* Price block */}
+                <div className="rounded-2xl p-4 mb-5 bg-indigo-50 border border-indigo-100">
+                  <div className="flex items-end gap-2 mb-1">
+                    <span className="text-5xl font-black tracking-tight leading-none" style={{ color: 'hsl(230, 55%, 52%)' }}>$249</span>
+                    <span className="text-sm font-semibold text-gray-500 pb-1">/mes + IVA</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm line-through text-gray-400">$500 MXN</span>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-0.5 rounded-full text-white"
+                      style={{ background: 'linear-gradient(90deg, hsl(5, 80%, 55%), hsl(15, 85%, 55%))' }}>
+                      <Zap className="h-2.5 w-2.5" /> 50% OFF
+                    </span>
+                  </div>
+                  <p className="text-[10px] mt-2 text-gray-500">
+                    Equivale a <strong className="text-emerald-600">$8.30 pesos al día</strong> — menos que un café.
+                  </p>
+                </div>
+
+                {/* Capacity chips */}
+                <div className="grid grid-cols-2 gap-2.5 mb-5">
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
+                    <Building2 className="h-4 w-4 shrink-0" style={{ color: 'hsl(230, 55%, 52%)' }} />
+                    <div>
+                      <div className="text-xs font-black text-gray-900">1 Almacén</div>
+                      <div className="text-[9px] text-gray-500">Central o físico</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
+                    <Users className="h-4 w-4 shrink-0" style={{ color: 'hsl(230, 55%, 52%)' }} />
+                    <div>
+                      <div className="text-xs font-black text-gray-900">3 Usuarios</div>
+                      <div className="text-[9px] text-gray-500">Acceso completo</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modules */}
+                <div className="flex-1 mb-6">
+                  <div className="text-[10px] font-bold tracking-widest text-gray-400 mb-3">TODO INCLUIDO — SIN EXTRAS</div>
+                  <div className="grid grid-cols-2 gap-y-2 gap-x-3">
+                    {[
+                      'Dashboard admin', 'Punto de venta',
+                      'Clientes', 'Cobranza',
+                      'Productos', 'Inventario',
+                      'Proveedores', 'Ctas. por pagar',
+                      'Reportes', 'Tickets',
+                      'WhatsApp', 'Facturación 4.0',
+                    ].map(m => (
+                      <div key={m} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                        <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                        <span className="truncate">{m}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <Link to="/signup"
+                  className="block w-full text-center py-4 rounded-2xl text-sm font-black text-white transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+                  style={{ background: 'linear-gradient(135deg, hsl(230, 70%, 52%), hsl(255, 65%, 58%))', boxShadow: '0 8px 24px hsl(230, 70%, 52% / 0.35)' }}>
+                  Comenzar 7 días gratis 🚀
+                </Link>
+                <p className="text-center text-[10px] text-gray-400 mt-2">Sin tarjeta. Cancela cuando quieras.</p>
+              </div>
+            </div>
+
+            {/* ── CARD 2: ADICIONALES ── */}
+            <div className="relative rounded-3xl bg-white border border-gray-200 shadow-sm flex flex-col overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
+              <div className="h-2 w-full" style={{ background: 'linear-gradient(90deg, hsl(38, 90%, 55%), hsl(20, 85%, 58%))' }} />
+
+              <div className="p-7 flex flex-col flex-1">
+                <div className="mb-5">
+                  <div className="text-[10px] font-bold tracking-[0.2em] text-amber-500 mb-1">ESCALA A TU RITMO</div>
+                  <h3 className="text-2xl font-black text-gray-900 tracking-tight">Adicionales</h3>
+                  <p className="text-xs text-gray-500 mt-1">Agrega solo lo que necesitas, cuando lo necesitas</p>
+                </div>
+
+                <div className="space-y-3 mb-4">
+                  {/* Usuario adicional */}
+                  <div className="rounded-2xl p-4 bg-gray-50 border border-gray-100">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-amber-50 border border-amber-100 shrink-0">
+                          <Users className="h-4 w-4 text-amber-600" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-black text-gray-900">Usuario Adicional</div>
+                          <div className="text-[10px] text-gray-500">Oficina o supervisor</div>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-xl font-black text-gray-900">$50</div>
+                        <div className="text-[9px] text-gray-400">MXN / mes + IVA</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Almacén extra */}
+                  <div className="rounded-2xl p-4 bg-gray-50 border border-gray-100">
+                    <div className="flex justify-between items-center mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-emerald-50 border border-emerald-100 shrink-0">
+                          <Building2 className="h-4 w-4 text-emerald-600" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-black text-gray-900">Almacén Extra</div>
+                          <div className="text-[10px] text-gray-500">Inventario por sucursal</div>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-xl font-black text-gray-900">$200</div>
+                        <div className="text-[9px] text-gray-400">MXN / mes + IVA</div>
+                      </div>
+                    </div>
+                    <div className="space-y-1 border-t border-gray-200 pt-2.5">
+                      {['Vista multi-almacén unificada', 'Traspasos de mercancía'].map(f => (
+                        <div key={f} className="flex items-center gap-1.5 text-[10px] text-gray-500">
+                          <Check className="h-3 w-3 text-emerald-500 shrink-0" /> {f}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* OctoRoute — branded sub-product */}
+                <div className="flex-1 rounded-2xl overflow-hidden border-2 mb-6"
+                  style={{ borderColor: 'hsl(152, 56%, 40%)', background: 'linear-gradient(145deg, hsl(152, 56%, 96%), hsl(180, 50%, 96%))' }}>
+                  <div className="p-4">
+                    {/* Header with brand */}
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <div className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0"
+                            style={{ background: 'hsl(152, 56%, 38%)' }}>
+                            <Route className="h-4 w-4 text-white" />
+                          </div>
+                          <span className="text-base font-black" style={{ color: 'hsl(152, 56%, 25%)' }}>OctoRoute</span>
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md text-white tracking-wider"
+                            style={{ background: 'hsl(152, 56%, 38%)' }}>ADD-ON</span>
+                        </div>
+                        <p className="text-[10px] text-gray-600 pl-9 leading-snug">
+                          Módulo de ventas en ruta para tu equipo de campo
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0 ml-3">
+                        <div className="text-xl font-black" style={{ color: 'hsl(152, 56%, 30%)' }}>$599</div>
+                        <div className="text-[9px] text-gray-500 leading-tight">MXN / vehículo<br />por mes + IVA</div>
+                      </div>
+                    </div>
+
+                    {/* Features unlocked */}
+                    <div className="rounded-xl p-3" style={{ background: 'hsl(152, 56%, 38% / 0.08)', border: '1px solid hsl(152, 56%, 38% / 0.2)' }}>
+                      <div className="text-[9px] font-black tracking-widest mb-2.5" style={{ color: 'hsl(152, 56%, 30%)' }}>
+                        DESBLOQUEA EN LA APP MÓVIL —
+                      </div>
+                      <div className="grid grid-cols-2 gap-y-2">
+                        {[
+                          { icon: Smartphone, label: 'App Móvil offline' },
+                          { icon: MapPin, label: 'GPS de clientes' },
+                          { icon: Truck, label: 'Control de entregas' },
+                          { icon: Route, label: 'Optimizador de rutas' },
+                          { icon: Package, label: 'Carga / descarga' },
+                          { icon: Eye, label: 'Último punto visitado' },
+                        ].map(mod => (
+                          <div key={mod.label} className="flex items-center gap-1.5 text-[10px] font-medium" style={{ color: 'hsl(152, 56%, 22%)' }}>
+                            <mod.icon className="h-3 w-3 shrink-0" style={{ color: 'hsl(152, 56%, 38%)' }} />
+                            {mod.label}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <Link to="/signup"
+                  className="block w-full text-center py-4 rounded-2xl text-sm font-bold text-gray-700 border-2 border-gray-200 hover:border-indigo-300 hover:text-indigo-700 transition-all">
+                  Armar mi plan a la medida
+                </Link>
+              </div>
+            </div>
+
+            {/* ── CARD 3: TIMBRES ── */}
+            <div className="relative rounded-3xl bg-white border border-gray-200 shadow-sm flex flex-col overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
+              <div className="h-2 w-full" style={{ background: 'linear-gradient(90deg, hsl(42, 90%, 55%), hsl(28, 85%, 58%))' }} />
+
+              <div className="p-7 flex flex-col flex-1">
+                <div className="mb-5">
+                  <div className="text-[10px] font-bold tracking-[0.2em] text-amber-500 mb-1">FACTURACIÓN CFDI 4.0</div>
+                  <h3 className="text-2xl font-black text-gray-900 tracking-tight">Paquete Timbres</h3>
+                  <p className="text-xs text-gray-500 mt-1">Sin vencimiento · Acumúlalos a tu ritmo</p>
+                </div>
+
+                <div className="flex-1 space-y-3 mb-6">
+                  {[
+                    { qty: '100', price: '250', saving: null, badge: null, perUnit: '$2.50 c/u' },
+                    { qty: '500', price: '1,000', saving: 'Ahorras $250', badge: 'POPULAR', perUnit: '$2.00 c/u' },
+                    { qty: '1,000', price: '1,740', saving: 'Ahorras $760', badge: 'MEJOR VALOR', perUnit: '$1.74 c/u' },
+                  ].map(pkg => (
+                    <div key={pkg.qty}
+                      className="rounded-2xl p-4 flex items-center justify-between border transition-all"
+                      style={{
+                        background: pkg.badge === 'MEJOR VALOR' ? 'hsl(42, 80%, 97%)' : 'hsl(220, 14%, 98%)',
+                        borderColor: pkg.badge ? 'hsl(42, 70%, 75%)' : 'hsl(220, 14%, 91%)',
+                      }}>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-black text-gray-900">{pkg.qty} Timbres</span>
+                          {pkg.badge && (
+                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md text-white"
+                              style={{ background: 'hsl(42, 75%, 50%)' }}>
+                              {pkg.badge}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] mt-0.5 text-amber-600 font-semibold">{pkg.perUnit}</div>
+                        {pkg.saving && (
+                          <div className="text-[9px] font-semibold text-emerald-600 mt-0.5">✓ {pkg.saving}</div>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xl font-black text-gray-900">${pkg.price}</div>
+                        <div className="text-[9px] text-gray-400">pesos neto</div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Integration callout */}
+                  <div className="rounded-2xl p-4 bg-amber-50 border border-amber-100">
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-100 border border-amber-200 shrink-0">
+                        <Zap className="h-3.5 w-3.5 text-amber-600" />
+                      </div>
+                      <div className="text-[11px] leading-relaxed text-gray-600">
+                        <span className="font-bold text-gray-900">100% integrado:</span> Emite CFDI 4.0 directo desde el POS o la app móvil. Sin salir del sistema. Sin copiar-pegar.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <Link to="/signup"
+                  className="block w-full text-center py-4 rounded-2xl text-sm font-bold text-white transition-all hover:opacity-90"
+                  style={{ background: 'linear-gradient(135deg, hsl(42, 80%, 50%), hsl(28, 80%, 52%))', boxShadow: '0 6px 20px hsl(42, 70%, 50% / 0.25)' }}>
+                  Comprar Timbres →
+                </Link>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Bottom trust row */}
+          <div className="mt-12 flex flex-wrap justify-center gap-8">
+            {[
+              { icon: Shield, label: 'Datos seguros', sub: 'Encriptación SSL/TLS' },
+              { icon: Zap, label: 'Sin contratos', sub: 'Mes a mes, sin ataduras' },
+              { icon: Star, label: '500+ empresas', sub: 'Ya nos usan hoy' },
+              { icon: Check, label: 'Soporte real', sub: 'Respuesta en <5 min' },
+            ].map(t => (
+              <div key={t.label} className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white border border-gray-100 shadow-sm shrink-0">
+                  <t.icon className="h-4 w-4" style={{ color: 'hsl(230, 55%, 52%)' }} />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-gray-900">{t.label}</div>
+                  <div className="text-[10px] text-gray-500">{t.sub}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-center text-[11px] text-gray-400 mt-6">
+            Precios de suscripción en MXN + IVA. Paquetes de timbres son precio neto. Sin permanencia.
           </p>
         </div>
       </section>
@@ -581,7 +834,7 @@ export default function LandingPage() {
               style={{ color: 'hsl(230, 55%, 48%)' }}>
               Crear cuenta gratis <ArrowRight className="h-5 w-5" />
             </Link>
-            <p className="text-indigo-200 text-xs mt-4">14 días de prueba sin compromiso</p>
+            <p className="text-indigo-200 text-xs mt-4">7 días de prueba sin compromiso</p>
           </div>
         </div>
       </section>

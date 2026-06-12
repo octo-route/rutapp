@@ -333,14 +333,16 @@ export default function ProductosListPage() {
                 <span
                   className={cn(
                     "font-medium",
-                    (p.cantidad ?? 0) <= 0
-                      ? "text-destructive"
-                      : (p.cantidad ?? 0) < (p.min ?? 0)
-                        ? "text-warning"
-                        : "text-foreground",
+                    p.es_combo || p.se_puede_inventariar === false
+                      ? "text-muted-foreground"
+                      : (p.cantidad ?? 0) <= 0
+                        ? "text-destructive"
+                        : (p.cantidad ?? 0) < (p.min ?? 0)
+                          ? "text-warning"
+                          : "text-foreground",
                   )}
                 >
-                  {fmtNum(p.cantidad ?? 0)}
+                  {p.es_combo || p.se_puede_inventariar === false ? "—" : fmtNum(p.cantidad ?? 0)}
                 </span>
               </td>
               <td className="py-1.5 px-3 hidden sm:table-cell text-center">
@@ -616,12 +618,14 @@ export default function ProductosListPage() {
                     <span
                       className={cn(
                         "font-medium",
-                        (p.cantidad ?? 0) <= 0
-                          ? "text-destructive"
-                          : "text-foreground",
+                        p.es_combo || p.se_puede_inventariar === false
+                          ? "text-muted-foreground"
+                          : (p.cantidad ?? 0) <= 0
+                            ? "text-destructive"
+                            : "text-foreground",
                       )}
                     >
-                      {fmtNum(p.cantidad ?? 0)}
+                      {p.es_combo || p.se_puede_inventariar === false ? "—" : fmtNum(p.cantidad ?? 0)}
                     </span>
                   ),
                 },

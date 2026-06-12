@@ -156,6 +156,12 @@ export function useSaveProducto() {
   return useMutation({
     mutationFn: async (producto: Partial<Producto> & { id?: string }) => {
       const clean = pickColumns(producto, PRODUCTO_COLUMNS);
+      if (clean.ieps_pct !== undefined) {
+        clean.tiene_ieps = Number(clean.ieps_pct) > 0;
+      }
+      if (clean.iva_pct !== undefined) {
+        clean.tiene_iva = Number(clean.iva_pct) > 0;
+      }
       delete (clean as any).id;
       if (producto.id) {
         const { data, error } = await supabase.from('productos').update(clean as any).eq('id', producto.id).select('id').single();
@@ -364,7 +370,7 @@ export function useProductosForSelect() {
     enabled: !!empresa?.id,
     queryFn: async () => {
       const { data } = await supabase.from('productos')
-        .select('id, codigo, nombre, nombre_compra, nombre_venta, nombre_ticket, precio_principal, costo, cantidad, clasificacion_id, unidad_venta_id, unidad_compra_id, factor_conversion, tiene_iva, tiene_ieps, tasa_iva_id, tasa_ieps_id, iva_pct, ieps_pct, ieps_tipo, costo_incluye_impuestos, es_granel, unidad_granel, vender_sin_stock, usa_listas_precio, es_combo, unidades_venta:unidades!productos_unidad_venta_id_fkey(nombre, abreviatura), unidades_compra:unidades!productos_unidad_compra_id_fkey(nombre, abreviatura)')
+        .select('id, codigo, nombre, nombre_compra, nombre_venta, nombre_ticket, precio_principal, costo, cantidad, clasificacion_id, unidad_venta_id, unidad_compra_id, factor_conversion, tiene_iva, tiene_ieps, tasa_iva_id, tasa_ieps_id, iva_pct, ieps_pct, ieps_tipo, costo_incluye_impuestos, es_granel, unidad_granel, vender_sin_stock, usa_listas_precio, es_combo, se_puede_inventariar, unidades_venta:unidades!productos_unidad_venta_id_fkey(nombre, abreviatura), unidades_compra:unidades!productos_unidad_compra_id_fkey(nombre, abreviatura)')
         .eq('empresa_id', empresa!.id)
         .eq('status', 'activo').order('nombre');
       return data ?? [];

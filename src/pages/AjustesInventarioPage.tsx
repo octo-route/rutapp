@@ -178,6 +178,8 @@ export default function AjustesInventarioPage() {
             )
             .eq("empresa_id", empresa!.id)
             .in("status", ["activo"] as any[])
+            .eq("es_combo", false)
+            .eq("se_puede_inventariar", true)
             .order("nombre"),
           almacenId
             ? supabase

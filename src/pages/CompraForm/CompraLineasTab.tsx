@@ -91,7 +91,7 @@ export function CompraLineasTab({ lineas, productosList, isEditable, updateLinea
                           (productosList as any[])
                             ?.filter(p => {
                               const usedIds = lineas.filter((_, j) => j !== idx).map(l => l.producto_id).filter(Boolean);
-                              return !usedIds.includes(p.id);
+                              return !usedIds.includes(p.id) && p.se_puede_inventariar !== false && !p.es_combo;
                             })
                             .map(p => ({
                               value: p.id,

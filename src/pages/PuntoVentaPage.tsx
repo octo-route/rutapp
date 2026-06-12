@@ -271,7 +271,7 @@ export default function PuntoVentaPage() {
       const { data, error } = await supabase
         .from("productos")
         .select(
-          "id, codigo, nombre, precio_principal, precio_sugerido_publico, costo, cantidad, imagen_url, tiene_iva, iva_pct, tiene_ieps, ieps_pct, ieps_tipo, clave_alterna, unidad_venta_id, se_puede_vender, status, clasificacion_id, marca_id, vender_sin_stock, es_granel, unidad_granel, usa_listas_precio",
+          "id, codigo, nombre, precio_principal, precio_sugerido_publico, costo, cantidad, imagen_url, tiene_iva, iva_pct, tiene_ieps, ieps_pct, ieps_tipo, clave_alterna, unidad_venta_id, se_puede_vender, status, clasificacion_id, marca_id, vender_sin_stock, es_granel, unidad_granel, usa_listas_precio, es_combo, se_puede_inventariar",
         )
         .eq("empresa_id", empresa!.id)
         .eq("se_puede_vender", true)
@@ -720,7 +720,7 @@ export default function PuntoVentaPage() {
     if (!productos) return [];
     // Filter out products with no stock unless vender_sin_stock is enabled
     let available = productos.filter(
-      (p) => p.vender_sin_stock || (p.cantidad ?? 0) > 0,
+      (p) => p.es_combo || p.vender_sin_stock || (p.cantidad ?? 0) > 0,
     );
     if (filterClasificacion)
       available = available.filter(
@@ -760,7 +760,7 @@ export default function PuntoVentaPage() {
       return;
     }
     const stock = p.cantidad ?? 0;
-    const canSellWithout = p.vender_sin_stock;
+    const canSellWithout = p.es_combo || p.se_puede_inventariar === false || p.vender_sin_stock;
     const pricing = getProductPricing(p);
 
     setCart((prev) => {
@@ -809,7 +809,7 @@ export default function PuntoVentaPage() {
     } else {
       const item = cart.find((c) => c.producto_id === id);
       const prod = productos?.find((p) => p.id === id);
-      const maxStock = prod?.vender_sin_stock
+      const maxStock = (prod?.vender_sin_stock || prod?.es_combo || prod?.se_puede_inventariar === false)
         ? Infinity
         : (prod?.cantidad ?? 0);
       if (qty > maxStock) {
@@ -1564,7 +1564,7 @@ export default function PuntoVentaPage() {
                     productos?.filter(
                       (p) =>
                         p.clasificacion_id === c.id &&
-                        (p.vender_sin_stock || (p.cantidad ?? 0) > 0),
+                        (p.es_combo || p.vender_sin_stock || (p.cantidad ?? 0) > 0),
                     ).length ?? 0;
                   return (
                     <button
@@ -1658,6 +1658,11 @@ export default function PuntoVentaPage() {
                               )}
                               <span className="font-medium text-foreground truncate">
                                 {p.nombre}
+                                {p.es_combo && (
+                                  <span className="ml-2 inline-flex items-center rounded bg-amber-500/15 px-1.5 py-0.5 text-[8px] font-bold text-amber-700 dark:text-amber-300">
+                                    COMBO
+                                  </span>
+                                )}
                               </span>
                               <span className="text-[10px] text-muted-foreground font-mono shrink-0">
                                 {p.codigo}
@@ -1676,9 +1681,9 @@ export default function PuntoVentaPage() {
                             </span>
                           </td>
                           <td
-                            className={`px-2 py-2 text-right font-semibold whitespace-nowrap ${stock > 0 ? "text-green-600" : "text-destructive"}`}
+                            className={`px-2 py-2 text-right font-semibold whitespace-nowrap ${p.es_combo || p.se_puede_inventariar === false ? "text-muted-foreground" : stock > 0 ? "text-green-600" : "text-destructive"}`}
                           >
-                            {fmtNum(stock)}{" "}
+                            {p.es_combo || p.se_puede_inventariar === false ? "—" : fmtNum(stock)}{" "}
                             <span className="text-[9px] font-normal text-muted-foreground">
                               {unidad}
                             </span>
@@ -1732,9 +1737,16 @@ export default function PuntoVentaPage() {
                           />
                         </div>
                       ) : null}
-                      <p className="text-[10px] font-medium text-foreground truncate leading-tight">
-                        {p.nombre}
-                      </p>
+                      <div className="flex items-start justify-between gap-1">
+                        <p className="text-[10px] font-medium text-foreground truncate leading-tight">
+                          {p.nombre}
+                        </p>
+                        {p.es_combo && (
+                          <span className="shrink-0 inline-flex items-center rounded bg-amber-500/15 px-1 py-0.5 text-[7px] font-bold text-amber-700 dark:text-amber-300 leading-none">
+                            C
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[8px] text-muted-foreground font-mono">
                         {p.codigo}
                       </p>
@@ -1749,9 +1761,9 @@ export default function PuntoVentaPage() {
                           </span>
                         </span>
                         <span
-                          className={`text-[8px] font-medium ${stock > 0 ? "text-green-600" : "text-destructive"}`}
+                          className={`text-[8px] font-medium ${p.es_combo || p.se_puede_inventariar === false ? "text-muted-foreground" : stock > 0 ? "text-green-600" : "text-destructive"}`}
                         >
-                          {fmtNum(stock)}
+                          {p.es_combo || p.se_puede_inventariar === false ? "—" : fmtNum(stock)}
                         </span>
                       </div>
                     </button>
@@ -2926,7 +2938,7 @@ export default function PuntoVentaPage() {
               0,
           )}
           stockMax={
-            selectedProductoPresentacion?.vender_sin_stock
+            (selectedProductoPresentacion?.vender_sin_stock || selectedProductoPresentacion?.es_combo || selectedProductoPresentacion?.se_puede_inventariar === false)
               ? Infinity
               : Number(selectedProductoPresentacion?.cantidad ?? 0)
           }
