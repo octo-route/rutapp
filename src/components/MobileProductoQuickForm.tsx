@@ -358,7 +358,6 @@ export function MobileProductoQuickForm({ open, onOpenChange, onCreated }: Props
                 <option value="ultimo">Último costo de compra</option>
                 <option value="ultimo_proveedor">Último costo del proveedor principal</option>
                 <option value="promedio">Promedio</option>
-                <option value="estandar">Estándar</option>
                 <option value="ultimo_compra">Último costo (compra directa)</option>
               </select>
             </Field>

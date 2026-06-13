@@ -69,6 +69,12 @@ function SectionCard({ title, icon: Icon, children, className }: { title: string
   );
 }
 
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
 /* ─── Detail / Approve panel — Full activity breakdown ─── */
 
 function DescargaDetalle({ descarga, onClose }: { descarga: any; onClose: () => void }) {
@@ -911,7 +917,6 @@ function NuevaDescargaForm({ onClose }: { onClose: () => void }) {
   const [vendedorId, setVendedorId] = useState<string>('');
   const [efectivoEntregado, setEfectivoEntregado] = useState('');
   const [notas, setNotas] = useState('');
-  const [fechaInicio, setFechaInicio] = useState(() => todayLocal());
   const [fechaFin, setFechaFin] = useState(() => todayLocal());
 
   // All active users
@@ -932,32 +937,35 @@ function NuevaDescargaForm({ onClose }: { onClose: () => void }) {
   const usuarioOpts = (usuarios || []).map(u => ({ value: u.id, label: u.nombre }));
   const selectedProfile = (usuarios || []).find(u => u.id === vendedorId);
   const selectedUserId = selectedProfile?.user_id ?? vendedorId;
-  // Now vendedor_id in ventas directly references profiles.id
   const vendedorRealId = vendedorId;
 
-  // Calculate expected cash for the period
-  const canCalc = !!empresa?.id && !!vendedorId && !!fechaInicio && !!fechaFin;
-
-  // Check for existing liquidación overlapping this date range for this vendedor
-  const { data: existingLiq } = useQuery({
-    queryKey: ['liq-overlap-check', empresa?.id, vendedorId, fechaInicio, fechaFin],
-    enabled: canCalc,
+  // Fetch the latest non-rejected liquidation for this seller to determine the next start date
+  const { data: lastLiq, isLoading: isLoadingLastLiq } = useQuery({
+    queryKey: ['last-descarga-ruta', empresa?.id, vendedorId],
+    enabled: !!empresa?.id && !!vendedorId,
     queryFn: async () => {
-      // Check if any descarga_ruta overlaps: existing.fecha_inicio <= fechaFin AND existing.fecha_fin >= fechaInicio
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('descarga_ruta')
-        .select('id, fecha, fecha_inicio, fecha_fin, status')
+        .select('fecha_fin, status')
         .eq('empresa_id', empresa!.id)
         .eq('vendedor_id', vendedorRealId)
-        .lte('fecha_inicio', fechaFin)
-        .gte('fecha_fin', fechaInicio)
+        .neq('status', 'rechazada')
+        .order('fecha_fin', { ascending: false })
         .limit(1)
         .maybeSingle();
+      if (error) throw error;
       return data;
     },
   });
 
-  const yaLiquidado = !!existingLiq;
+  const fechaInicio = lastLiq?.fecha_fin
+    ? addDays(lastLiq.fecha_fin, 1)
+    : '2000-01-01'; // If no previous liquidation, fetch everything since 2000-01-01
+
+  // Calculate expected cash for the period
+  const canCalc = !!empresa?.id && !!vendedorId && !isLoadingLastLiq && !!fechaFin;
+  const yaLiquidado = lastLiq?.fecha_fin ? fechaFin <= lastLiq.fecha_fin : false;
+
   const { data: ventasPreview } = useQuery({
     queryKey: ['liquidar-ventas', empresa?.id, vendedorId, fechaInicio, fechaFin],
     enabled: canCalc,
@@ -1030,6 +1038,12 @@ function NuevaDescargaForm({ onClose }: { onClose: () => void }) {
   });
   const productosArr = Object.values(productosSold).sort((a, b) => b.total - a.total);
 
+  const earliestDate = [
+    ...(ventasPreview || []).map((v: any) => v.fecha),
+    ...(cobrosPreview || []).map((c: any) => c.fecha),
+    ...(gastosPreview || []).map((g: any) => g.fecha)
+  ].filter(Boolean).sort()[0];
+
   const diferenciaEfectivo = efectivoEntregado !== '' ? Number(efectivoEntregado) - efectivoEsperado : 0;
   const hayDiferencias = efectivoEntregado !== '' && Number(efectivoEntregado) !== efectivoEsperado;
 
@@ -1048,7 +1062,7 @@ function NuevaDescargaForm({ onClose }: { onClose: () => void }) {
         efectivo_entregado: efectivoReal,
         diferencia_efectivo: efectivoReal - efectivoEsperado,
         notas: notas || null,
-        fecha_inicio: fechaInicio || null,
+        fecha_inicio: lastLiq?.fecha_fin ? addDays(lastLiq.fecha_fin, 1) : (earliestDate || fechaFin),
         fecha_fin: fechaFin || null,
       };
 
@@ -1062,6 +1076,7 @@ function NuevaDescargaForm({ onClose }: { onClose: () => void }) {
     onSuccess: () => {
       toast.success(hayDiferencias ? 'Liquidación enviada para aprobación' : 'Liquidación completada');
       qc.invalidateQueries({ queryKey: ['descargas-list'] });
+      qc.invalidateQueries({ queryKey: ['last-descarga-ruta'] });
       onClose();
     },
     onError: (e: any) => toast.error(e.message),
@@ -1077,7 +1092,7 @@ function NuevaDescargaForm({ onClose }: { onClose: () => void }) {
       {/* Step 1: Select user and period */}
       <div className="bg-card border border-border rounded-lg p-5 space-y-4">
         <h3 className="text-sm font-semibold text-foreground mb-1">1. Usuario y periodo</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
           <div>
             <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Usuario a liquidar</label>
             <SearchableSelect
@@ -1088,13 +1103,14 @@ function NuevaDescargaForm({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div>
-            <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Desde</label>
-            <Input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} />
-          </div>
-          <div>
-            <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Hasta</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase block mb-1">Hasta la fecha</label>
             <Input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} />
           </div>
+          {lastLiq?.fecha_fin && (
+            <div className="text-[11px] text-muted-foreground sm:col-span-2">
+              Última liquidación el {fmtDate(lastLiq.fecha_fin)}. Se liquidarán transacciones desde el {fmtDate(fechaInicio)}.
+            </div>
+          )}
         </div>
       </div>
 
@@ -1105,7 +1121,7 @@ function NuevaDescargaForm({ onClose }: { onClose: () => void }) {
           <div>
             <p className="text-sm font-semibold text-destructive">Este periodo ya fue liquidado</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Ya existe una liquidación ({existingLiq?.status}) para este vendedor que cubre las fechas seleccionadas.
+              Ya existe una liquidación ({lastLiq?.status}) para este vendedor que cubre las fechas seleccionadas (hasta {lastLiq?.fecha_fin ? fmtDate(lastLiq.fecha_fin) : ''}).
               No se puede crear otra liquidación para el mismo periodo.
             </p>
           </div>

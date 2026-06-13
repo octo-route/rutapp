@@ -417,27 +417,63 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
     return Number(total.toFixed(2));
   }, [stagedLines, productMap]);
 
-  const [costModeModal, setCostModeModal] = useState<{ type: 'to_manual' | 'to_auto' } | null>(null);
+  const costWithTaxesSummary = useMemo(() => {
+    let total = 0;
+    for (const linea of stagedLines) {
+      const prod = productMap.get(linea.componente_id);
+      const costoUnitario = Number(prod?.costo) || 0;
+      const tieneIva = prod?.tiene_iva;
+      const ivaPct = tieneIva ? Number(prod?.iva_pct) || 16 : 0;
+      const tieneIeps = prod?.tiene_ieps;
+      const iepsPct = tieneIeps ? Number(prod?.ieps_pct) || 0 : 0;
+      
+      const taxMult = 1 + (ivaPct + iepsPct) / 100;
+      const costoConImpuestos = costoUnitario * taxMult;
 
-  const confirmCostModeChange = () => {
-    if (costModeModal) {
-      const toAuto = costModeModal.type === 'to_auto';
-      setForm((prev) => ({
-        ...prev,
-        calculo_costo: toAuto ? 'promedio' : 'manual',
-        costo: toAuto ? costSummary : prev.costo || 0,
-      }));
-      setCostModeModal(null);
+      total += linea.cantidad * costoConImpuestos;
     }
-  };
+    return Number(total.toFixed(2));
+  }, [stagedLines, productMap]);
 
   useEffect(() => {
-    if (form.calculo_costo === 'manual') return;
+    let comboTieneIva = false;
+    let comboIvaPct = 0;
+    let comboTieneIeps = false;
+    let comboIepsPct = 0;
+
+    for (const linea of stagedLines) {
+      const prod = productMap.get(linea.componente_id);
+      if (prod?.tiene_iva) {
+        comboTieneIva = true;
+        comboIvaPct = Math.max(comboIvaPct, Number(prod.iva_pct) || 16);
+      }
+      if (prod?.tiene_ieps) {
+        comboTieneIeps = true;
+        comboIepsPct = Math.max(comboIepsPct, Number(prod.ieps_pct) || 0);
+      }
+    }
+
+    setForm((prev) => {
+      if (prev.tiene_iva !== comboTieneIva || prev.iva_pct !== comboIvaPct || prev.tiene_ieps !== comboTieneIeps || prev.ieps_pct !== comboIepsPct) {
+        return {
+          ...prev,
+          tiene_iva: comboTieneIva,
+          iva_pct: comboIvaPct,
+          tiene_ieps: comboTieneIeps,
+          ieps_pct: comboIepsPct,
+        };
+      }
+      return prev;
+    });
+  }, [stagedLines, productMap]);
+
+  useEffect(() => {
     setForm((prev) => ({
       ...prev,
       costo: costSummary,
+      calculo_costo: 'promedio',
     }));
-  }, [costSummary, form.calculo_costo]);
+  }, [costSummary]);
 
   const currentPrecioPrincipal = form.precio_principal ?? 0;
   const currentCosto = form.costo ?? 0;
@@ -909,127 +945,76 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-semibold">Costo promedio</h3>
-                  <p className="text-xs text-muted-foreground">Define el costo del combo para calcular ganancias.</p>
+                  <p className="text-xs text-muted-foreground">Calculado automáticamente de los componentes.</p>
                 </div>
-                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-muted-foreground border border-border rounded-full px-2 py-0.5">
-                  <input
-                    type="checkbox"
-                    checked={form.calculo_costo !== 'manual'}
-                    onChange={(e) => {
-                      const auto = e.target.checked;
-                      if (!comboId) {
-                        // Combo nuevo, cambiar directamente
-                        setForm((prev) => ({
-                          ...prev,
-                          calculo_costo: auto ? 'promedio' : 'manual',
-                          costo: auto ? costSummary : prev.costo || 0,
-                        }));
-                        return;
-                      }
-                      
-                      // Combo existente, pedir confirmación
-                      setCostModeModal({ type: auto ? 'to_auto' : 'to_manual' });
-                    }}
-                    className="rounded border-input h-3.5 w-3.5"
-                  />
-                  Costo automático
-                </label>
               </div>
 
               <div className="grid grid-cols-2 gap-4 bg-muted/20 rounded-lg p-3">
                 <div>
                   <div className="text-xxs font-medium text-muted-foreground uppercase tracking-wider">Sin impuestos</div>
                   <div className="mt-1 text-lg font-semibold tabular-nums">
-                    {form.calculo_costo !== 'manual' ? (
-                      `$ ${costSummary.toFixed(2)}`
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="text-sm text-muted-foreground">$</span>
-                        <input
-                          type="number"
-                          step="0.01;any"
-                          min="0"
-                          value={form.costo ?? 0}
-                          onChange={(e) => set('costo', Number(e.target.value) || 0)}
-                          className="bg-transparent border-b border-border focus:border-primary focus:outline-none w-20 text-lg font-semibold p-0"
-                        />
-                      </div>
-                    )}
+                    $ {costSummary.toFixed(2)}
                   </div>
                 </div>
                 <div>
                   <div className="text-xxs font-medium text-muted-foreground uppercase tracking-wider">Con impuestos</div>
                   <div className="mt-1 text-lg font-semibold tabular-nums text-primary">
-                    $ {((form.costo ?? 0) * (1 + ((form.tiene_iva ? (form.iva_pct ?? 16) : 0) + (form.tiene_ieps ? (form.ieps_pct ?? 0) : 0)) / 100)).toFixed(2)}
+                    $ {costWithTaxesSummary.toFixed(2)}
                   </div>
                 </div>
               </div>
 
-              {/* Impuestos block */}
+              {/* Desglose de impuestos block */}
               <div className="border-t border-border pt-3 space-y-3">
-                <div className="text-xs font-semibold text-muted-foreground">Impuestos aplicados al combo</div>
-                <div className="flex flex-wrap items-center gap-4 text-xs">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={!!form.tiene_iva}
-                      onChange={(e) => {
-                        const val = e.target.checked;
-                        setForm((prev) => ({
-                          ...prev,
-                          tiene_iva: val,
-                          iva_pct: val ? prev.iva_pct || 16 : 0,
-                        }));
-                      }}
-                      className="rounded border-input h-3.5 w-3.5"
-                    />
-                    Aplicar IVA
-                  </label>
-                  {form.tiene_iva && (
-                    <div className="flex gap-1">
-                      {[0, 8, 16].map((rate) => (
-                        <button
-                          key={rate}
-                          type="button"
-                          onClick={() => set('iva_pct', rate)}
-                          className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${form.iva_pct === rate ? 'bg-primary text-primary-foreground border-primary font-medium' : 'border-border text-muted-foreground hover:border-primary/50'}`}
-                        >
-                          {rate}%
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-4 text-xs">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={!!form.tiene_ieps}
-                      onChange={(e) => {
-                        const val = e.target.checked;
-                        setForm((prev) => ({
-                          ...prev,
-                          tiene_ieps: val,
-                          ieps_pct: val ? prev.ieps_pct || 8 : 0,
-                        }));
-                      }}
-                      className="rounded border-input h-3.5 w-3.5"
-                    />
-                    Aplicar IEPS
-                  </label>
-                  {form.tiene_ieps && (
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={form.ieps_pct ?? 0}
-                        onChange={(e) => set('ieps_pct', Number(e.target.value) || 0)}
-                        className="w-12 h-6 text-center border border-border rounded text-xs"
-                      />
-                      <span>%</span>
-                    </div>
-                  )}
+                <div className="text-xs font-semibold text-muted-foreground">Desglose de costo por producto</div>
+                <div className="max-h-[160px] overflow-y-auto rounded-md border border-border bg-muted/10">
+                  <table className="w-full text-[10px] text-left">
+                    <thead className="bg-muted/30 sticky top-0 backdrop-blur-md">
+                      <tr>
+                        <th className="px-2 py-1.5 font-medium text-muted-foreground">Producto</th>
+                        <th className="px-2 py-1.5 font-medium text-muted-foreground text-center">Cant.</th>
+                        <th className="px-2 py-1.5 font-medium text-muted-foreground text-right">Costo unit.</th>
+                        <th className="px-2 py-1.5 font-medium text-muted-foreground text-right">Impuestos</th>
+                        <th className="px-2 py-1.5 font-medium text-muted-foreground text-right">Costo total c/imp</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stagedLines.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-2 py-3 text-center text-muted-foreground">Sin productos</td>
+                        </tr>
+                      ) : (
+                        stagedLines.map((linea) => {
+                          const prod = productMap.get(linea.componente_id);
+                          const costoUnitario = Number(prod?.costo) || 0;
+                          const tieneIva = prod?.tiene_iva;
+                          const ivaPct = tieneIva ? Number(prod?.iva_pct) || 16 : 0;
+                          const tieneIeps = prod?.tiene_ieps;
+                          const iepsPct = tieneIeps ? Number(prod?.ieps_pct) || 0 : 0;
+                          
+                          const taxMult = 1 + (ivaPct + iepsPct) / 100;
+                          const costoConImpuestos = costoUnitario * taxMult;
+                          const totalLineaCostoConImp = costoConImpuestos * linea.cantidad;
+
+                          const tagsImpuestos = [];
+                          if (tieneIva) tagsImpuestos.push(`IVA ${ivaPct}%`);
+                          if (tieneIeps) tagsImpuestos.push(`IEPS ${iepsPct}%`);
+
+                          return (
+                            <tr key={linea.componente_id} className="border-t border-border">
+                              <td className="px-2 py-1.5 font-medium truncate max-w-[120px]" title={linea.nombre}>{linea.nombre}</td>
+                              <td className="px-2 py-1.5 text-center">{linea.cantidad}</td>
+                              <td className="px-2 py-1.5 text-right font-mono">${costoUnitario.toFixed(2)}</td>
+                              <td className="px-2 py-1.5 text-right text-muted-foreground whitespace-nowrap">
+                                {tagsImpuestos.length > 0 ? tagsImpuestos.join(', ') : '—'}
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-mono text-primary">${totalLineaCostoConImp.toFixed(2)}</td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -1565,58 +1550,6 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
               Guardar combo
             </Button>
           </div>
-          {costModeModal && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="h-5 w-5 text-amber-500" />
-                    <h3 className="text-[15px] font-semibold">
-                      {costModeModal.type === 'to_manual' ? 'Cambiar a costo manual' : 'Cambiar a costo automático'}
-                    </h3>
-                  </div>
-                  <button onClick={() => setCostModeModal(null)} className="text-muted-foreground hover:text-foreground transition-colors">
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="px-5 py-5 space-y-3">
-                  {costModeModal.type === 'to_manual' ? (
-                    <>
-                      <p className="text-[13px] text-foreground">
-                        ¿Estás seguro de desactivar el costo automático?
-                      </p>
-                      <p className="text-[13px] text-muted-foreground">
-                        El costo del combo ya no se actualizará automáticamente cuando cambies los componentes. Tendrás que capturarlo tú mismo.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-[13px] text-foreground">
-                        El costo automático se activará y recalculará el costo en base a los componentes del combo cuando guardes los cambios.
-                      </p>
-                      <p className="text-[13px] text-muted-foreground">
-                        Durante la edición, el campo de costo se bloqueará.
-                      </p>
-                    </>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 px-5 py-4 border-t border-border">
-                  <button
-                    onClick={confirmCostModeChange}
-                    className="btn-odoo-primary"
-                  >
-                    Confirmar
-                  </button>
-                  <button
-                    onClick={() => setCostModeModal(null)}
-                    className="btn-odoo-secondary"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </DialogContent>
     </Dialog>

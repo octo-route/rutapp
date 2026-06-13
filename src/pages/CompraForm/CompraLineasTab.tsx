@@ -42,7 +42,7 @@ export function CompraLineasTab({ lineas, productosList, isEditable, updateLinea
             <col style={{ width: '72px' }} />   {/* Factor */}
             <col style={{ width: '72px' }} />   {/* Piezas */}
             <col style={{ width: '112px' }} />  {/* Costo caja */}
-            <col style={{ width: '120px' }} />  {/* Costo */}
+            <col style={{ width: '120px' }} />  {/* Costo Pieza */}
             <col style={{ width: '56px' }} />   {/* IVA */}
             <col style={{ width: '56px' }} />   {/* IEPS */}
             <col style={{ width: '88px' }} />   {/* Total */}
@@ -57,7 +57,7 @@ export function CompraLineasTab({ lineas, productosList, isEditable, updateLinea
               <th className="th-odoo text-center">Factor</th>
               <th className="th-odoo text-right">Piezas</th>
               <th className="th-odoo text-right">Costo caja</th>
-              <th className="th-odoo text-right">Costo</th>
+              <th className="th-odoo text-right">Costo Pieza</th>
               <th className="th-odoo text-center">IVA</th>
               <th className="th-odoo text-center">IEPS</th>
               <th className="th-odoo text-right">Total</th>

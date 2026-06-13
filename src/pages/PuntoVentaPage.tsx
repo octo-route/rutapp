@@ -384,6 +384,63 @@ export default function PuntoVentaPage() {
     }));
   }, [productosRaw, stockAlmacen, almacenId]);
 
+  // Diagnostic log to find out why "Refresco Cola 600ml" is not showing in POS
+  useEffect(() => {
+    if (productosRaw) {
+      console.group("POS Product Diagnostic");
+      console.log("Raw products count fetched:", productosRaw.length);
+      
+      const targetRaw = productosRaw.find(
+        (p) =>
+          p.codigo?.toLowerCase().includes("prod-0001") ||
+          p.nombre?.toLowerCase().includes("cola")
+      );
+      
+      if (!targetRaw) {
+        console.warn(
+          "Product 'PROd-0001' / 'Refresco Cola' is NOT in the database results loaded by POS query.",
+          "Possible reasons:",
+          "1. status is not 'activo' (current status in DB might be different).",
+          "2. se_puede_vender is set to false."
+        );
+      } else {
+        console.log("Product found in raw fetch:", {
+          id: targetRaw.id,
+          codigo: targetRaw.codigo,
+          nombre: targetRaw.nombre,
+          status: targetRaw.status,
+          se_puede_vender: targetRaw.se_puede_vender,
+          vender_sin_stock: targetRaw.vender_sin_stock,
+          es_combo: targetRaw.es_combo,
+          se_puede_inventariar: targetRaw.se_puede_inventariar,
+          cantidad_global: targetRaw.cantidad
+        });
+        
+        if (productos) {
+          const targetProcessed = productos.find((p) => p.id === targetRaw.id);
+          console.log("Product processed with warehouse stock:", {
+            cantidad_en_almacen: targetProcessed?.cantidad,
+            vender_sin_stock: targetProcessed?.vender_sin_stock,
+            es_combo: targetProcessed?.es_combo,
+            se_puede_inventariar: targetProcessed?.se_puede_inventariar
+          });
+          
+          const willShow =
+            targetProcessed?.es_combo ||
+            targetProcessed?.vender_sin_stock ||
+            (targetProcessed?.cantidad ?? 0) > 0;
+            
+          console.log("Will show in POS grid?", willShow ? "YES" : "NO", {
+            reason: !willShow
+              ? "Stock is 0 or undefined for this warehouse and 'Vender sin stock' is false."
+              : "Should be visible."
+          });
+        }
+      }
+      console.groupEnd();
+    }
+  }, [productosRaw, productos]);
+
   const { data: presentaciones = [] } = useQuery({
     queryKey: ["pos-presentaciones"],
     staleTime: CATALOG_STALE,

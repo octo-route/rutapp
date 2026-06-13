@@ -369,7 +369,6 @@ export default function ProductoFormPage() {
                 { value: 'ultimo', label: 'Último costo de compra' },
                 { value: 'ultimo_proveedor', label: 'Último costo del proveedor principal' },
                 { value: 'promedio', label: 'Promedio' },
-                { value: 'estandar', label: 'Estándar' },
                 { value: 'ultimo_compra', label: 'Último costo (compra directa)' },
               ]}
               onChange={v => set('calculo_costo', v)}

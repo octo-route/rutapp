@@ -277,6 +277,20 @@ export async function importProducts(rows: Record<string, any>[], empresaId: str
           almacen_origen_id: stockDiff < 0 ? (defaultAlmacen?.id ?? null) : null,
         });
       }
+
+      // Sync stock to the default warehouse in stock_almacen
+      if (productId && defaultAlmacen?.id) {
+        await supabase.from('stock_almacen').upsert(
+          {
+            empresa_id: empresaId,
+            almacen_id: defaultAlmacen.id,
+            producto_id: productId,
+            cantidad: importedStock,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'almacen_id,producto_id' }
+        );
+      }
     } catch (err: any) {
       result.errors.push({ row: rowNum, message: err.message || 'Error desconocido' });
     }

@@ -42,12 +42,40 @@ const costLabels: Record<string, string> = {
 
 const isMethodAuto = (method: string) => method !== 'manual' && method !== 'estandar';
 
+const modalContentMap: Record<string, { title: string; message: string; details: string }> = {
+  manual: {
+    title: 'Cambiar a cálculo manual',
+    message: '¿Estás seguro de cambiar a cálculo manual?',
+    details: 'A partir de este momento el costo no se actualizará automáticamente al recibir compras. Tendrás que capturarlo tú mismo.\n\nDurante la edición, podrás modificar el campo de costo libremente.',
+  },
+  promedio: {
+    title: 'Cambiar a costo promedio',
+    message: 'El costo se calculará de forma automática usando el promedio ponderado móvil.',
+    details: 'El costo se recalculará basándose en todo el historial de entradas y compras.\n\nAl cambiar de modo, puede tardar en actualizarse, ya que se hace el cálculo completo desde la base de datos.\n\nDurante la edición, el campo de costo se bloqueará y se actualizara hasta que se le de en guardar al producto.',
+  },
+  ultimo: {
+    title: 'Cambiar a último costo de compra',
+    message: 'El costo se actualizará automáticamente con el valor de la última compra registrada.',
+    details: 'Al recibir una compra, el costo del producto se actualizará directamente al último precio de compra (incluyendo descuentos).\n\nDurante la edición, el campo de costo se bloqueará y se actualizara hasta que se le de en guardar al producto.',
+  },
+  ultimo_proveedor: {
+    title: 'Cambiar a último costo del proveedor principal',
+    message: 'El costo se actualizará automáticamente con el último precio de compra registrado con el proveedor principal.',
+    details: 'El costo tomará directamente el valor de la última compra realizada al proveedor principal asignado al producto.\n\nDurante la edición, el campo de costo se bloqueará y se actualizara hasta que se le de en guardar al producto.',
+  },
+  ultimo_compra: {
+    title: 'Cambiar a último costo (compra directa)',
+    message: 'El costo se actualizará automáticamente con el valor de la última compra directa registrada.',
+    details: 'El costo tomará el valor de la última compra directa registrada en el sistema.\n\nDurante la edición, el campo de costo se bloqueará y se actualizara hasta que se le de en guardar al producto.',
+  },
+};
+
 export function ProductoGeneralFields({ form, set, setForm, marcas, clasificaciones, listas, tarifasDisp, unidades, unidadesSat, createMarca, createClasificacion, createUnidad, createLista }: Props) {
   const { fmt, symbol } = useCurrency();
   const isNew = !form.id;
 
   // Modal de confirmación para cambios de cálculo de costo
-  const [modalConfig, setModalConfig] = useState<{ type: 'to_manual' | 'to_auto'; pendingVal: any } | null>(null);
+  const [modalConfig, setModalConfig] = useState<{ type: string; pendingVal: any } | null>(null);
 
   const handleCalculoCostoChange = (newVal: any) => {
     const prevVal = form.calculo_costo ?? 'promedio';
@@ -56,16 +84,9 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
       return;
     }
 
-    const prevIsAuto = isMethodAuto(prevVal);
-    const newIsAuto = isMethodAuto(newVal);
+    if (newVal === prevVal) return;
 
-    if (prevIsAuto && !newIsAuto) {
-      setModalConfig({ type: 'to_manual', pendingVal: newVal });
-    } else if (!prevIsAuto && newIsAuto) {
-      setModalConfig({ type: 'to_auto', pendingVal: newVal });
-    } else {
-      set('calculo_costo', newVal);
-    }
+    setModalConfig({ type: newVal, pendingVal: newVal });
   };
 
   const confirmModal = () => {
@@ -173,7 +194,6 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
               { value: 'ultimo', label: 'Último costo de compra' },
               { value: 'ultimo_proveedor', label: 'Último costo del proveedor principal' },
               { value: 'promedio', label: 'Promedio' },
-              { value: 'estandar', label: 'Estándar' },
               { value: 'ultimo_compra', label: 'Último costo (compra directa)' },
             ]}
             onChange={handleCalculoCostoChange}
@@ -185,61 +205,53 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
       </div>
 
       {/* Modal de confirmación: cambio de método de costeo */}
-      {modalConfig && createPortal(
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[99999] flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
-                <h3 className="text-[15px] font-semibold">
-                  {modalConfig.type === 'to_manual' ? 'Cambiar a cálculo manual' : 'Cambiar a cálculo automático'}
-                </h3>
+      {modalConfig && (() => {
+        const content = modalContentMap[modalConfig.type] || {
+          title: 'Cambiar método de costo',
+          message: '¿Estás seguro de cambiar el método de cálculo de costo?',
+          details: 'Este cambio podría afectar cómo se calcula el costo de tu producto.',
+        };
+        return createPortal(
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[99999] flex items-center justify-center p-4">
+            <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-500" />
+                  <h3 className="text-[15px] font-semibold">
+                    {content.title}
+                  </h3>
+                </div>
+                <button onClick={cancelModal} className="text-muted-foreground hover:text-foreground transition-colors">
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button onClick={cancelModal} className="text-muted-foreground hover:text-foreground transition-colors">
-                <X className="h-4 w-4" />
-              </button>
+              <div className="px-5 py-5 space-y-3">
+                <p className="text-[13px] text-foreground font-medium">
+                  {content.message}
+                </p>
+                <p className="text-[13px] text-muted-foreground whitespace-pre-line">
+                  {content.details}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 px-5 py-4 border-t border-border">
+                <button
+                  onClick={confirmModal}
+                  className="btn-odoo-primary"
+                >
+                  Confirmar
+                </button>
+                <button
+                  onClick={cancelModal}
+                  className="btn-odoo-secondary"
+                >
+                  Cancelar
+                </button>
+              </div>
             </div>
-            <div className="px-5 py-5 space-y-3">
-              {modalConfig.type === 'to_manual' ? (
-                <>
-                  <p className="text-[13px] text-foreground">
-                    ¿Estás seguro de cambiar a cálculo manual?
-                  </p>
-                  <p className="text-[13px] text-muted-foreground">
-                    A partir de este momento el costo no se actualizará automáticamente al recibir compras. Tendrás que capturarlo tú mismo.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-[13px] text-foreground">
-                    El cálculo automático se activará y recalculará el costo en base al historial de compras cuando guardes los cambios del producto.
-                  </p>
-                  <p className="text-[13px] text-muted-foreground">
-                    Al cambiar de modo, puede tardar en actualizarce, ya que se hace el calculo completo desde la base de datos. 
-                    <br/><br/>
-                    Durante la edición, el campo de costo se bloqueará.
-                  </p>
-                </>
-              )}
-            </div>
-            <div className="flex items-center gap-2 px-5 py-4 border-t border-border">
-              <button
-                onClick={confirmModal}
-                className="btn-odoo-primary"
-              >
-                Confirmar
-              </button>
-              <button
-                onClick={cancelModal}
-                className="btn-odoo-secondary"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body
+        );
+      })()}
     </>
   );
 }

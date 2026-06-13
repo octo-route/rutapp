@@ -738,7 +738,7 @@ export default function LandingPage() {
                       </div>
                       <div className="text-right">
                         <div className="text-xl font-black text-gray-900">${pkg.price}</div>
-                        <div className="text-[9px] text-gray-400">pesos neto</div>
+                        <div className="text-[9px] text-gray-400">pesos + IVA</div>
                       </div>
                     </div>
                   ))}
