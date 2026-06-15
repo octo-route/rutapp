@@ -26,6 +26,8 @@ export default function LoginPage() {
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoStep, setDemoStep] = useState(0);
   const [lockoutMsg, setLockoutMsg] = useState('');
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState('');
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     if (!demoLoading) { setDemoStep(0); return; }
@@ -58,7 +60,7 @@ export default function LoginPage() {
     try {
       if (isForgot) {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/reset-password`,
+          redirectTo: `https://octoapp.mx/reset-password`,
         });
         if (error) throw error;
         toast.success('Te enviamos un enlace para restablecer tu contraseña. Revisa tu email.');
@@ -66,6 +68,10 @@ export default function LoginPage() {
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
+          if (error.message.toLowerCase().includes('email not confirmed')) {
+            setUnconfirmedEmail(email);
+            throw error;
+          }
           if (error.message.toLowerCase().includes('invalid login') || error.message.toLowerCase().includes('credentials')) {
             lockData.attempts += 1;
             if (lockData.attempts >= 5) {
@@ -81,6 +87,7 @@ export default function LoginPage() {
         }
         
         // Success
+        setUnconfirmedEmail('');
         localStorage.removeItem(lockKey);
         toast.success('Sesión iniciada');
       }
@@ -122,6 +129,27 @@ export default function LoginPage() {
     }
   };
 
+  const handleResendVerification = async () => {
+    if (!unconfirmedEmail) return;
+    setResending(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: unconfirmedEmail,
+        options: {
+          emailRedirectTo: 'https://octoapp.mx/login',
+        },
+      });
+      if (error) throw error;
+      toast.success('Correo de verificación reenviado. Revisa tu bandeja de entrada.');
+      setUnconfirmedEmail('');
+    } catch (err: any) {
+      toast.error('Error al reenviar el correo', { description: err.message });
+    } finally {
+      setResending(false);
+    }
+  };
+
   if (demoLoading) {
     const StepIcon = DEMO_STEPS[demoStep].icon;
     const progress = Math.min(((demoStep + 1) / DEMO_STEPS.length) * 100, 95);
@@ -160,6 +188,21 @@ export default function LoginPage() {
         {lockoutMsg && (
           <div className="mb-4 p-3 bg-destructive/10 text-destructive border border-destructive/20 rounded text-sm text-center font-medium">
             {lockoutMsg}
+          </div>
+        )}
+
+        {unconfirmedEmail && (
+          <div className="mb-4 p-3 bg-amber-500/10 text-amber-600 border border-amber-500/20 rounded text-sm text-center">
+            <p className="font-medium mb-2">Tu correo no ha sido verificado</p>
+            <p className="text-xs mb-3">Revisa tu bandeja de entrada o spam para verificar tu cuenta.</p>
+            <button 
+              type="button"
+              onClick={handleResendVerification}
+              disabled={resending}
+              className="w-full py-1.5 px-3 bg-amber-500 hover:bg-amber-600 text-white rounded text-xs font-medium transition-colors disabled:opacity-50"
+            >
+              {resending ? 'Reenviando...' : 'Reenviar correo de verificación'}
+            </button>
           </div>
         )}
 

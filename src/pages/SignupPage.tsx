@@ -260,24 +260,26 @@ export default function SignupPage() {
         return;
       }
 
-      const { data: existingEmail } = await supabase
-        .from('empresas')
-        .select('id')
-        .eq('email', form.email.trim().toLowerCase())
-        .maybeSingle();
-      if (existingEmail) {
-        toast.error('Ya existe una empresa registrada con este correo electrónico');
+      // Check if email already exists using RPC to bypass RLS restrictions for anonymous users
+      const { data: emailExists, error: emailExistsError } = await supabase.rpc('check_if_email_exists' as any, {
+        p_email: form.email.trim().toLowerCase()
+      });
+      if (emailExistsError) {
+        console.error('Error checking email existence:', emailExistsError);
+      } else if (emailExists) {
+        toast.error('Ya existe una cuenta registrada con este correo electrónico');
         setLoading(false);
         return;
       }
 
-      const { data: existingPhone } = await supabase
-        .from('empresas')
-        .select('id')
-        .eq('telefono', fullPhone)
-        .maybeSingle();
-      if (existingPhone) {
-        toast.error('Ya existe una empresa registrada con este número de teléfono');
+      // Check if phone already exists using RPC to bypass RLS restrictions for anonymous users
+      const { data: phoneExists, error: phoneExistsError } = await supabase.rpc('check_if_phone_exists' as any, {
+        p_phone: fullPhone
+      });
+      if (phoneExistsError) {
+        console.error('Error checking phone existence:', phoneExistsError);
+      } else if (phoneExists) {
+        toast.error('Ya existe una cuenta registrada con este número de teléfono');
         setLoading(false);
         return;
       }
@@ -293,7 +295,7 @@ export default function SignupPage() {
             accepted_terms_at: new Date().toISOString(),
             verified_via: verificationMethod,
           },
-          emailRedirectTo: window.location.origin,
+          emailRedirectTo: 'https://octoapp.mx/login',
         },
       });
 
