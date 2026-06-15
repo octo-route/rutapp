@@ -10,9 +10,26 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Check if the URL hash contains an authentication error (like expired token)
+    const hash = window.location.hash;
+    if (hash) {
+      const params = new URLSearchParams(hash.substring(1)); // Remove the '#'
+      const errorCode = params.get('error_code');
+      const errorDesc = params.get('error_description');
+      if (errorCode || errorDesc) {
+        if (errorCode === 'otp_expired') {
+          setErrorMsg('El enlace de recuperación ha expirado o ya fue utilizado. Por favor, solicita uno nuevo desde la página de inicio de sesión.');
+        } else {
+          setErrorMsg(errorDesc ? decodeURIComponent(errorDesc.replace(/\+/g, ' ')) : 'El enlace de recuperación es inválido.');
+        }
+        return;
+      }
+    }
+
     // Check for recovery event
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
@@ -49,7 +66,19 @@ export default function ResetPasswordPage() {
           <h1 className="text-xl font-bold text-primary">OctoApp</h1>
           <p className="text-xs text-muted-foreground mt-1">Nueva contraseña</p>
         </div>
-        {!ready ? (
+        {errorMsg ? (
+          <div className="space-y-4">
+            <div className="p-3 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive text-center">
+              {errorMsg}
+            </div>
+            <button
+              onClick={() => navigate('/login')}
+              className="btn-odoo-primary w-full justify-center"
+            >
+              Volver al inicio de sesión
+            </button>
+          </div>
+        ) : !ready ? (
           <p className="text-center text-sm text-muted-foreground">Verificando enlace...</p>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3">

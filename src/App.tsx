@@ -477,6 +477,9 @@ function renderAuthenticatedRoutes() {
       {/* Conteo físico — standalone mobile page */}
       <Route path="/conteo/:countId" element={<ConteoFisicoPage />} />
 
+      {/* Standalone reset-password page for authenticated users */}
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+
       <Route path="*" element={
         <AppLayout>
           <GuardedDesktopRoutes />

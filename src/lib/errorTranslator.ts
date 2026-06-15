@@ -99,6 +99,16 @@ const patterns: Array<{ test: RegExp | ((msg: string) => boolean); result: Error
       icon: 'generic',
     },
   },
+  // Email rate limit specific
+  {
+    test: /over_email_send_rate_limit|only request this after/i,
+    result: {
+      title: 'Espera un momento',
+      message: 'Ya enviamos un correo recientemente. Para evitar spam, debes esperar un momento antes de solicitar otro.',
+      suggestion: 'Por favor, revisa tu bandeja de entrada y la carpeta de correo no deseado (spam) por si ya te llegó. Si no lo encuentras, intenta de nuevo en unos minutos.',
+      icon: 'auth',
+    },
+  },
   // Rate limit
   {
     test: /rate.limit|too.many|429|throttle/i,
