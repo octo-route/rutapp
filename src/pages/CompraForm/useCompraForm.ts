@@ -396,6 +396,8 @@ export function useCompraForm() {
     }
     qc.invalidateQueries({ queryKey: ["inventario"] });
     qc.invalidateQueries({ queryKey: ["productos"] });
+    qc.invalidateQueries({ queryKey: ["producto"] });
+    qc.invalidateQueries({ queryKey: ["productos-page"] });
     qc.invalidateQueries({ queryKey: ["stock-almacen"] });
   };
 

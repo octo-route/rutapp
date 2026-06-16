@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, X, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, X, TrendingUp, TrendingDown, Info } from 'lucide-react';
 import SearchableSelect from '@/components/SearchableSelect';
 import QuickProductDialog from '@/components/QuickProductDialog';
 import { Switch } from '@/components/ui/switch';
@@ -218,11 +218,19 @@ export function CompraLineasTab({ lineas, productosList, isEditable, updateLinea
         </table>
       </div>
 
-      {isEditable && (
-        <button onClick={addLine} className="btn-odoo-secondary text-xs gap-1">
-          <Plus className="h-3.5 w-3.5" /> Agregar línea
-        </button>
-      )}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {isEditable && (
+          <button onClick={addLine} className="btn-odoo-secondary text-xs gap-1">
+            <Plus className="h-3.5 w-3.5" /> Agregar línea
+          </button>
+        )}
+        <div className="flex items-center gap-2 bg-muted/40 border border-border rounded-lg px-3 py-2 text-xs text-muted-foreground max-w-xl md:ml-auto">
+          <Info className="h-4 w-4 text-primary shrink-0" />
+          <span>
+            El botón de <strong>IVA</strong> e <strong>IEPS</strong> sirve para indicar si el producto fue adquirido <strong>con impuesto</strong> (activo) o <strong>sin impuesto</strong> (inactivo).
+          </span>
+        </div>
+      </div>
 
       <QuickProductDialog
         open={quickOpen}
