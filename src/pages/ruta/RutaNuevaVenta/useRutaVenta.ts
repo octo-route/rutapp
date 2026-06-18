@@ -47,7 +47,7 @@ export function useRutaVenta(opts?: { onAlmacenMissing?: () => void }) {
   const [searchReemplazo, setSearchReemplazo] = useState('');
   const [ticketInfo, setTicketInfo] = useState<{ folio: string; fecha: string } | null>(null);
   const [sinCompra, setSinCompra] = useState(false);
-  const [sinImpuestos, setSinImpuestos] = useState(false);
+  const sinImpuestos = false;
   const [motivoSinCompra, setMotivoSinCompra] = useState('');
   const [savingSinCompra, setSavingSinCompra] = useState(false);
   // Descuento extra al total (gateado por permiso 'ventas.aplicar_descuento')
@@ -424,9 +424,9 @@ export function useRutaVenta(opts?: { onAlmacenMissing?: () => void }) {
         precio_unitario_sin_redondeo: item.precio_unitario_sin_redondeo ?? item.precio_unitario,
         precio_display_sin_redondeo: item.precio_display_sin_redondeo ?? item.precio_unitario,
         cantidad: item.cantidad,
-        tiene_iva: sinImpuestos ? false : item.tiene_iva,
+        tiene_iva: item.tiene_iva,
         iva_pct: item.iva_pct,
-        tiene_ieps: sinImpuestos ? false : item.tiene_ieps,
+        tiene_ieps: item.tiene_ieps,
         ieps_pct: item.ieps_pct,
         base_precio: (item.base_precio ?? 'sin_impuestos') as any,
         redondeo: item.redondeo ?? 'ninguno',
@@ -447,7 +447,7 @@ export function useRutaVenta(opts?: { onAlmacenMissing?: () => void }) {
     const totalDescuentos = r2(descuentoPromo + descuentoDevolucion + extraAmt);
     const total = r2(Math.max(0, preExtra - extraAmt));
     return { subtotal: r2(subtotal), iva: r2(iva), ieps: r2(ieps), total, items, descuento: totalDescuentos, descuentoDevolucion: r2(descuentoDevolucion), descuentoExtra: extraAmt };
-  }, [cart, promoRawByProduct, descuentoDevolucion, sinImpuestos, canApplyDiscount, descuentoExtraValor, descuentoExtraTipo]);
+  }, [cart, promoRawByProduct, descuentoDevolucion, canApplyDiscount, descuentoExtraValor, descuentoExtraTipo]);
 
   const creditoDisponible = clienteCredito ? clienteCredito.limite - saldoPendienteTotal : 0;
   const excedeCredito = condicionPago === 'credito' && totals.total > creditoDisponible;
@@ -611,7 +611,7 @@ export function useRutaVenta(opts?: { onAlmacenMissing?: () => void }) {
       const extraValSaved = canApplyDiscount && descuentoExtraValor > 0 ? descuentoExtraValor : 0;
       await queueOperation('ventas', 'insert', { id: ventaId, empresa_id: empresa.id, cliente_id: clienteId, tipo: tipoVenta, vendedor_id: profile?.id || profile?.id || null, condicion_pago: condicionPago, entrega_inmediata: entregaInmediata, fecha_entrega: tipoVenta === 'pedido' && fechaEntrega ? fechaEntrega : null, status: 'confirmado', notas: notas || null, folio: localFolio, tarifa_id: tarifaId, almacen_id: profile?.almacen_id || null, subtotal: totals.subtotal, iva_total: totals.iva, ieps_total: totals.ieps, descuento_total: totals.descuento, descuento_extra: extraValSaved, descuento_extra_tipo: descuentoExtraTipo, descuento_extra_motivo: extraAmtSaved > 0 ? (descuentoExtraMotivo || null) : null, total: totals.total, saldo_pendiente: totals.total, fecha: todayInTimezone(empresa.zona_horaria), created_at: new Date().toISOString() });
 
-      for (const item of cart) { const lineSub = item.precio_unitario * item.cantidad; const lineIeps = (!sinImpuestos && item.tiene_ieps) ? lineSub * (item.ieps_pct / 100) : 0; const lineIva = (!sinImpuestos && item.tiene_iva) ? (lineSub + lineIeps) * (item.iva_pct / 100) : 0; const savedIvaPct = sinImpuestos ? 0 : item.iva_pct; const savedIepsPct = sinImpuestos ? 0 : item.ieps_pct; await queueOperation('venta_lineas', 'insert', { id: crypto.randomUUID(), venta_id: ventaId, producto_id: item.producto_id, descripcion: item.nombre, cantidad: item.cantidad, precio_unitario: item.precio_unitario, unidad_id: item.unidad_id || null, subtotal: lineSub, iva_pct: savedIvaPct, iva_monto: lineIva, ieps_pct: savedIepsPct, ieps_monto: lineIeps, descuento_pct: 0, total: lineSub + lineIeps + lineIva, notas: item.es_cambio ? 'CAMBIO - Sin cargo' : null, created_at: new Date().toISOString() }); }
+      for (const item of cart) { const lineSub = item.precio_unitario * item.cantidad; const lineIeps = item.tiene_ieps ? lineSub * (item.ieps_pct / 100) : 0; const lineIva = item.tiene_iva ? (lineSub + lineIeps) * (item.iva_pct / 100) : 0; const savedIvaPct = item.iva_pct; const savedIepsPct = item.ieps_pct; await queueOperation('venta_lineas', 'insert', { id: crypto.randomUUID(), venta_id: ventaId, producto_id: item.producto_id, descripcion: item.nombre, cantidad: item.cantidad, precio_unitario: item.precio_unitario, unidad_id: item.unidad_id || null, subtotal: lineSub, iva_pct: savedIvaPct, iva_monto: lineIva, ieps_pct: savedIepsPct, ieps_monto: lineIeps, descuento_pct: 0, total: lineSub + lineIeps + lineIva, notas: item.es_cambio ? 'CAMBIO - Sin cargo' : null, created_at: new Date().toISOString() }); }
 
       if (applyPayment && clienteId && pagos.length > 0) {
         // Snapshot pending accounts to avoid mutating React state
@@ -799,7 +799,7 @@ export function useRutaVenta(opts?: { onAlmacenMissing?: () => void }) {
     pagos, setPagos,
     cuentasPendientes, showDevSearch, setShowDevSearch,
     showReemplazoFor, setShowReemplazoFor, searchReemplazo, setSearchReemplazo,
-    ticketInfo, sinCompra, setSinCompra, motivoSinCompra, setMotivoSinCompra, savingSinCompra, setSavingSinCompra, sinImpuestos, setSinImpuestos,
+    ticketInfo, sinCompra, setSinCompra, motivoSinCompra, setMotivoSinCompra, savingSinCompra, setSavingSinCompra, sinImpuestos,
     entregaInmediata, stockAbordo, usandoAlmacen: useFallbackStock, clientes, productos, filteredClientes,
     filteredProductos, filteredDevProductos, filteredReemplazoProductos, pedidoSugerido,
     promoResults, totals, creditoDisponible, excedeCredito, totalAplicarCuentas,

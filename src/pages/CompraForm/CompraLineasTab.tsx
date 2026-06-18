@@ -43,8 +43,7 @@ export function CompraLineasTab({ lineas, productosList, isEditable, updateLinea
             <col style={{ width: '72px' }} />   {/* Piezas */}
             <col style={{ width: '112px' }} />  {/* Costo caja */}
             <col style={{ width: '120px' }} />  {/* Costo Pieza */}
-            <col style={{ width: '56px' }} />   {/* IVA */}
-            <col style={{ width: '56px' }} />   {/* IEPS */}
+            <col style={{ width: '80px' }} />   {/* Impuestos */}
             <col style={{ width: '88px' }} />   {/* Total */}
             {isEditable && <col style={{ width: '32px' }} />}
           </colgroup>
@@ -58,8 +57,7 @@ export function CompraLineasTab({ lineas, productosList, isEditable, updateLinea
               <th className="th-odoo text-right">Piezas</th>
               <th className="th-odoo text-right">Costo caja</th>
               <th className="th-odoo text-right">Costo Pieza</th>
-              <th className="th-odoo text-center">IVA</th>
-              <th className="th-odoo text-center">IEPS</th>
+              <th className="th-odoo text-center">Impuestos</th>
               <th className="th-odoo text-right">Total</th>
               {isEditable && <th className="th-odoo"></th>}
             </tr>
@@ -184,19 +182,20 @@ export function CompraLineasTab({ lineas, productosList, isEditable, updateLinea
                     </div>
                   </td>
 
-                  {/* IVA */}
+                  {/* Impuestos */}
                   <td className="py-1.5 px-1 text-center">
                     <div className="flex flex-col items-center gap-0.5">
-                      <Switch checked={line._tiene_iva ?? false} onCheckedChange={v => updateLinea(idx, '_tiene_iva', v)} disabled={!isEditable} className="scale-75" />
-                      {line._tiene_iva && <span className="text-[10px] text-muted-foreground">{line._iva_pct}%</span>}
-                    </div>
-                  </td>
-
-                  {/* IEPS */}
-                  <td className="py-1.5 px-1 text-center">
-                    <div className="flex flex-col items-center gap-0.5">
-                      <Switch checked={line._tiene_ieps ?? false} onCheckedChange={v => updateLinea(idx, '_tiene_ieps', v)} disabled={!isEditable} className="scale-75" />
-                      {line._tiene_ieps && <span className="text-[10px] text-muted-foreground">{iepsLabel}</span>}
+                      {(line._tiene_iva || line._tiene_ieps) ? (
+                        <>
+                          <Switch checked={line._precio_incluye_iva ?? false} onCheckedChange={v => { updateLinea(idx, '_precio_incluye_iva', v); }} disabled={!isEditable} className="scale-75" />
+                          <div className="flex gap-1 text-[10px] text-muted-foreground whitespace-nowrap">
+                            {line._tiene_iva && <span>IVA {line._iva_pct}%</span>}
+                            {line._tiene_ieps && <span>IEPS {iepsLabel}</span>}
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">-</span>
+                      )}
                     </div>
                   </td>
 
@@ -227,7 +226,7 @@ export function CompraLineasTab({ lineas, productosList, isEditable, updateLinea
         <div className="flex items-center gap-2 bg-muted/40 border border-border rounded-lg px-3 py-2 text-xs text-muted-foreground max-w-xl md:ml-auto">
           <Info className="h-4 w-4 text-primary shrink-0" />
           <span>
-            El botón de <strong>IVA</strong> e <strong>IEPS</strong> sirve para indicar si el producto fue adquirido <strong>con impuesto</strong> (activo) o <strong>sin impuesto</strong> (inactivo).
+            El botón de <strong>Impuestos</strong> define la <strong>forma de captura</strong>: indica si al costo ingresado se le <strong>agregan</strong> los impuestos (inactivo) o si ya vienen <strong>incluidos</strong> (activo).
           </span>
         </div>
       </div>

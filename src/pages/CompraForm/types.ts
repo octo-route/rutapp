@@ -9,9 +9,12 @@ export interface CompraLinea {
   _tiene_iva: boolean;
   _iva_pct: number;
   _precio_incluye_iva?: boolean;
+  _precio_incluye_ieps?: boolean;
   _tiene_ieps: boolean;
   _ieps_pct: number;
   _ieps_tipo: string;
+  _iva_amount?: number;
+  _ieps_amount?: number;
   _unidad_compra: string;
   _factor_conversion: number;
   _piezas_total: number;
@@ -37,6 +40,7 @@ export function emptyLine(): Partial<CompraLinea> {
     _tiene_iva: false,
     _iva_pct: 16,
     _precio_incluye_iva: false,
+    _precio_incluye_ieps: false,
     _tiene_ieps: false,
     _ieps_pct: 0,
     _ieps_tipo: "porcentaje",
@@ -64,30 +68,31 @@ export function calcLineTotals(line: Partial<CompraLinea>) {
   let ivaAmount = 0;
   let total = 0;
 
-  if (line._precio_incluye_iva) {
-    if (isCuota) {
-      const iepsTotal = iepsPct * cant;
-      const baseConIeps = totalBase / (1 + ivaPct / 100);
-      ivaAmount = totalBase - baseConIeps;
-      subtotal = baseConIeps - iepsTotal;
-      iepsAmount = iepsTotal;
-      total = totalBase;
-    } else {
-      const taxFactor = (1 + iepsPct / 100) * (1 + ivaPct / 100);
-      subtotal = taxFactor > 0 ? totalBase / taxFactor : totalBase;
-      iepsAmount = subtotal * (iepsPct / 100);
-      ivaAmount = (subtotal + iepsAmount) * (ivaPct / 100);
-      total = totalBase;
-    }
+  const incIeps = line._precio_incluye_ieps ? 1 : 0;
+  const incIva = line._precio_incluye_iva ? 1 : 0;
+  const iPct = ivaPct / 100;
+  const ePct = iepsPct / 100;
+
+  if (isCuota) {
+    const fixedIeps = iepsPct * cant;
+    const num = totalBase - (incIeps * fixedIeps) - (incIva * fixedIeps * iPct);
+    const den = 1 + (incIva * iPct);
+    subtotal = num / den;
+    iepsAmount = fixedIeps;
+    ivaAmount = (subtotal + iepsAmount) * iPct;
   } else {
-    subtotal = totalBase;
-    iepsAmount = isCuota ? iepsPct * cant : totalBase * (iepsPct / 100);
-    ivaAmount = (totalBase + iepsAmount) * (ivaPct / 100);
-    total = totalBase + iepsAmount + ivaAmount;
+    const den = 1 + (incIeps * ePct) + (incIva * (1 + ePct) * iPct);
+    subtotal = totalBase / den;
+    iepsAmount = subtotal * ePct;
+    ivaAmount = (subtotal + iepsAmount) * iPct;
   }
+
+  total = subtotal + iepsAmount + ivaAmount;
 
   line.subtotal = r2(subtotal);
   line.total = r2(total);
+  line._iva_amount = r2(ivaAmount);
+  line._ieps_amount = r2(iepsAmount);
   line._piezas_total = r2(cant * factor);
   line._costo_caja = r2(precio * factor);
 

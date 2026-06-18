@@ -6,12 +6,15 @@ export interface ProductoPresentacion {
   id: string;
   empresa_id: string;
   producto_id: string;
-  nombre: string;
+  nombre?: string | null;
+  unidad_id?: string | null;
+  unidades?: { nombre: string; abreviatura?: string } | null;
   factor_base: number;
   precio_especial: number | null;
   orden: number;
   activo: boolean;
   es_principal_stock?: boolean;
+  codigo_barras?: string | null;
 }
 
 export function usePresentaciones(productoId?: string) {
@@ -21,7 +24,7 @@ export function usePresentaciones(productoId?: string) {
     enabled: !!empresa?.id && !!productoId,
     queryFn: async () => {
       const { data, error } = await (supabase.from('producto_presentaciones' as any)
-        .select('*')
+        .select('*, unidades:unidad_id(nombre, abreviatura)')
         .eq('producto_id', productoId!)
         .eq('empresa_id', empresa!.id)
         .order('orden', { ascending: true })
@@ -40,7 +43,7 @@ export function useAllPresentaciones() {
     enabled: !!empresa?.id,
     queryFn: async () => {
       const { data, error } = await (supabase.from('producto_presentaciones' as any)
-        .select('*')
+        .select('*, unidades:unidad_id(nombre, abreviatura)')
         .eq('empresa_id', empresa!.id)
         .eq('activo', true)
         .order('orden', { ascending: true })

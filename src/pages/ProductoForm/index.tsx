@@ -104,10 +104,15 @@ export default function ProductoFormPage() {
               label: "Presentaciones",
               content: (
                 <ProductoUnidadesStockTab
-                  productoId={h.id}
                   isNew={h.isNew}
                   esGranel={!!h.form.es_granel}
                   unidadGranel={h.form.unidad_granel || "kg"}
+                  precioPrincipal={h.form.precio_principal || 0}
+                  stock={h.form.cantidad || 0}
+                  presentaciones={h.presentaciones}
+                  setPresentaciones={h.setPresentaciones}
+                  setDeletedPresentaciones={h.setDeletedPresentaciones}
+                  unidadesCatalog={h.unidades ?? []}
                 />
               ),
             },

@@ -23,8 +23,6 @@ interface Props {
   onCellKeyDown: (e: React.KeyboardEvent, row: number, col: number) => void;
   navigateCell: (row: number, col: number, dir: 'next' | 'prev') => void;
   setLineas: React.Dispatch<React.SetStateAction<Partial<VentaLinea>[]>>;
-  sinImpuestos?: boolean;
-  setSinImpuestos?: (v: boolean) => void;
   readOnlyForm?: boolean;
   saldoPendiente?: number;
 }
@@ -32,7 +30,7 @@ interface Props {
 export function VentaLineasTab(props: Props) {
   const isMobile = useIsMobile();
   const { symbol } = useCurrency();
-  const { lineas, readOnly, totals, onAddLine, sinImpuestos, setSinImpuestos, readOnlyForm, saldoPendiente, promoResults } = props;
+  const { lineas, readOnly, totals, onAddLine, readOnlyForm, saldoPendiente, promoResults } = props;
 
   return (
     <div className="p-3 sm:p-4 space-y-3">
@@ -71,15 +69,7 @@ export function VentaLineasTab(props: Props) {
           <button onClick={onAddLine} className="btn-odoo-secondary text-xs">
             <Plus className="h-3 w-3" /> Agregar producto
           </button>
-          {setSinImpuestos && !readOnlyForm && (
-            <button onClick={() => setSinImpuestos(!sinImpuestos)} className={cn("flex items-center gap-2 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all border", sinImpuestos ? "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300" : "bg-accent/50 border-border/40 text-muted-foreground")}>
-              <ReceiptText className="h-3.5 w-3.5" />
-              Sin impuestos
-              <div className={cn("w-8 h-4 rounded-full relative transition-colors", sinImpuestos ? "bg-amber-500" : "bg-border")}>
-                <div className={cn("absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform", sinImpuestos ? "translate-x-4" : "translate-x-0.5")} />
-              </div>
-            </button>
-          )}
+
         </div>
       )}
       <VentaTotals {...totals} isMobile={isMobile} saldoPendiente={saldoPendiente} promoResults={promoResults} descuento_promo={totals.descuento_promo} descuento_extra_amt={totals.descuento_extra_amt} />

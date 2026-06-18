@@ -70,7 +70,7 @@ export function useVentaForm() {
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [showFacturaDrawer, setShowFacturaDrawer] = useState(false);
-  const [sinImpuestos, setSinImpuestos] = useState(false);
+  const sinImpuestos = false;
   const { hasPermiso } = usePermisos();
   const canEditVenta = hasPermiso('ventas', 'editar');
   const canCreateVenta = hasPermiso('ventas', 'crear');
@@ -217,10 +217,8 @@ export function useVentaForm() {
     lineas.forEach(l => {
       const qty = Number(l.cantidad) || 0, price = Number(l.precio_unitario) || 0, desc = Number(l.descuento_pct) || 0;
       const lineSubtotal = r2(qty * price), discountAmt = r2(lineSubtotal * (desc / 100)), base = r2(lineSubtotal - discountAmt);
-      if (!sinImpuestos) {
-        const ieps = r2(base * ((Number(l.ieps_pct) || 0) / 100)), iva = r2((base + ieps) * ((Number(l.iva_pct) || 0) / 100));
-        iva_total += iva; ieps_total += ieps;
-      }
+      const ieps = r2(base * ((Number(l.ieps_pct) || 0) / 100)), iva = r2((base + ieps) * ((Number(l.iva_pct) || 0) / 100));
+      iva_total += iva; ieps_total += ieps;
       subtotal += lineSubtotal; descuento_total += discountAmt;
     });
     // Extra discount
@@ -229,7 +227,7 @@ export function useVentaForm() {
     const preExtraTotal = r2(subtotal - descuento_total + iva_total + ieps_total);
     const extraAmt = r2(extraTipo === 'porcentaje' ? preExtraTotal * (extraVal / 100) : extraVal);
     return { subtotal: r2(subtotal), descuento_total: r2(descuento_total + extraAmt), descuento_extra_amt: r2(extraAmt), iva_total: r2(iva_total), ieps_total: r2(ieps_total), total: r2(Math.max(0, preExtraTotal - extraAmt)) };
-  }, [lineas, sinImpuestos, (form as any).descuento_extra, (form as any).descuento_extra_tipo]);
+  }, [lineas, (form as any).descuento_extra, (form as any).descuento_extra_tipo]);
 
   // ---- Promotions engine ----
   const { data: promocionesActivas } = usePromocionesActivas();
@@ -273,9 +271,9 @@ export function useVentaForm() {
         precio_unitario_sin_redondeo: raw?.rawUnitPrice ?? (Number(l.precio_unitario) || 0),
         precio_display_sin_redondeo: raw?.rawDisplayPrice ?? (Number(l.precio_unitario) || 0),
         cantidad: Number(l.cantidad) || 1,
-        tiene_iva: sinImpuestos ? false : !!(l as any).iva_pct,
+        tiene_iva: !!(l as any).iva_pct,
         iva_pct: Number(l.iva_pct) || 0,
-        tiene_ieps: sinImpuestos ? false : !!(l as any).ieps_pct,
+        tiene_ieps: !!(l as any).ieps_pct,
         ieps_pct: Number(l.ieps_pct) || 0,
         base_precio: (raw?.basePrecio ?? 'sin_impuestos') as BasePrecioMode,
         redondeo: raw?.redondeo ?? 'ninguno',
@@ -289,7 +287,7 @@ export function useVentaForm() {
       descuento_promo: r2(promoEffective),
       total: r2(Math.max(0, totals.total - promoEffective)),
     };
-  }, [totals, promoByProduct, rawPricingMap, lineas, sinImpuestos]);
+  }, [totals, promoByProduct, rawPricingMap, lineas]);
 
   // Re-price existing lines when tarifa rules or lista_precio changes (skip manual lines)
   useEffect(() => {
@@ -455,10 +453,10 @@ export function useVentaForm() {
         if (!l.producto_id) continue;
         const qty = Number(l.cantidad) || 0, price = Number(l.precio_unitario) || 0, desc = Number(l.descuento_pct) || 0;
         const lineSubtotal = qty * price, discountAmt = lineSubtotal * (desc / 100), base = lineSubtotal - discountAmt;
-        const ieps = sinImpuestos ? 0 : base * ((Number(l.ieps_pct) || 0) / 100);
-        const iva = sinImpuestos ? 0 : (base + ieps) * ((Number(l.iva_pct) || 0) / 100);
-        const savedIvaPct = sinImpuestos ? 0 : (Number(l.iva_pct) || 0);
-        const savedIepsPct = sinImpuestos ? 0 : (Number(l.ieps_pct) || 0);
+        const ieps = base * ((Number(l.ieps_pct) || 0) / 100);
+        const iva = (base + ieps) * ((Number(l.iva_pct) || 0) / 100);
+        const savedIvaPct = (Number(l.iva_pct) || 0);
+        const savedIepsPct = (Number(l.ieps_pct) || 0);
         const linePayload = { ...l, venta_id: ventaId, subtotal: base, iva_pct: savedIvaPct, iva_monto: iva, ieps_pct: savedIepsPct, ieps_monto: ieps, total: base + iva + ieps };
         const clean = { ...linePayload } as any;
         delete clean.unidad_label;
@@ -576,7 +574,7 @@ export function useVentaForm() {
     entregasExistentes, entregasActivas, hayEntregas, remaining, fullyDelivered, canCreateEntrega, lineDeliverySummary,
     pagosData, totalPagado, saldoPendiente, totals: finalTotals, promoResults, tarifaRules,
     pdfBlob, setPdfBlob, showPdfModal, setShowPdfModal, showFacturaDrawer, setShowFacturaDrawer,
-    sinImpuestos, setSinImpuestos,
+    sinImpuestos,
     saveVenta, crearEntrega, PinDialog, requestPin,
     set, handleProductSelect, handleSave, handleDelete, handleStatusChange, handleAddPago,
     addLine, updateLine, removeLine, setCellRef, handleCellKeyDown, navigateCell,

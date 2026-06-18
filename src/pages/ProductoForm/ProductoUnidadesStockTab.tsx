@@ -1,189 +1,295 @@
-import { useState } from 'react';
-import { Plus, Trash2, Star, Package } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, Star, Info } from 'lucide-react';
 import { toast } from 'sonner';
-import { usePresentaciones, useSavePresentacion, useDeletePresentacion, type ProductoPresentacion } from '@/hooks/usePresentaciones';
+import type { ProductoPresentacion } from '@/hooks/usePresentaciones';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { useCurrency } from '@/hooks/useCurrency';
 
 interface Props {
-  productoId?: string;
   isNew: boolean;
   esGranel: boolean;
   unidadGranel: string;
+  precioPrincipal: number;
+  stock: number;
+  presentaciones: ProductoPresentacion[];
+  setPresentaciones: React.Dispatch<React.SetStateAction<ProductoPresentacion[]>>;
+  setDeletedPresentaciones: React.Dispatch<React.SetStateAction<string[]>>;
+  unidadesCatalog: any[];
 }
 
-/**
- * Unidades de Stock: define empaques solo para VISUALIZAR el stock desglosado.
- * No maneja precios — para precios usa la pestaña "Presentaciones".
- * Comparte la misma tabla `producto_presentaciones` (filas con precio_especial = null).
- */
-export function ProductoUnidadesStockTab({ productoId, isNew, esGranel, unidadGranel }: Props) {
-  const { data: items = [], isLoading } = usePresentaciones(productoId);
-  const saveMut = useSavePresentacion();
-  const delMut = useDeletePresentacion();
+export function ProductoUnidadesStockTab({ isNew, esGranel, unidadGranel, precioPrincipal, stock, presentaciones, setPresentaciones, setDeletedPresentaciones, unidadesCatalog }: Props) {
+  const { symbol, fmt } = useCurrency();
+  const unidadBase = esGranel ? unidadGranel : 'pz';
 
-  const unidad = esGranel ? unidadGranel : 'pz';
-
-  const [draft, setDraft] = useState<{ nombre: string; factor_base: string }>({
-    nombre: '', factor_base: '',
+  const [draft, setDraft] = useState<{ codigo_barras: string; nombre: string; factor_base: string; precio_especial: string; unidad_id: string }>({
+    codigo_barras: '', nombre: '', factor_base: '', precio_especial: '', unidad_id: ''
   });
+  
   const [deleteTarget, setDeleteTarget] = useState<ProductoPresentacion | null>(null);
 
-  if (isNew) {
-    return (
-      <div className="p-6 text-center text-sm text-muted-foreground">
-        Guarda primero el producto para poder agregar unidades de stock.
-      </div>
-    );
-  }
+  // Auto-generate name when unidad_id or factor_base changes
+  useEffect(() => {
+    if (!draft.unidad_id) return;
+    const unidad = unidadesCatalog.find(u => u.id === draft.unidad_id);
+    if (!unidad) return;
+    
+    // Only auto-update if the user hasn't explicitly typed a custom name that doesn't match the auto-pattern
+    const isAutoName = !draft.nombre || unidadesCatalog.some(u => draft.nombre.startsWith(u.nombre));
+    if (isAutoName) {
+      let newName = unidad.nombre;
+      if (draft.factor_base) {
+        newName += ` ${draft.factor_base} ${unidadBase}`;
+      }
+      setDraft(prev => ({ ...prev, nombre: newName }));
+    }
+  }, [draft.unidad_id, draft.factor_base, unidadesCatalog, unidadBase]);
 
-  const onAdd = async () => {
+  const onAdd = () => {
     const factor = Number(draft.factor_base);
     if (!draft.nombre.trim() || !factor || factor <= 0) {
       toast.error('Nombre y factor son obligatorios');
       return;
     }
-    try {
-      await saveMut.mutateAsync({
-        producto_id: productoId!,
-        nombre: draft.nombre.trim(),
-        factor_base: factor,
-        precio_especial: null,
-        orden: items.length,
-        activo: true,
-      });
-      setDraft({ nombre: '', factor_base: '' });
-      toast.success('Unidad de stock agregada');
-    } catch (e: any) { toast.error(e.message); }
+    
+    const newPres: ProductoPresentacion = {
+      id: `temp-${crypto.randomUUID()}`,
+      empresa_id: '',
+      producto_id: '',
+      codigo_barras: draft.codigo_barras.trim() || null,
+      nombre: draft.nombre.trim(),
+      factor_base: factor,
+      precio_especial: draft.precio_especial ? Number(draft.precio_especial) : null,
+      orden: presentaciones.length,
+      activo: true,
+      es_principal_stock: presentaciones.length === 0, // First one is principal by default
+      unidad_id: draft.unidad_id || null
+    };
+
+    setPresentaciones(prev => [...prev, newPres]);
+    setDraft({ codigo_barras: '', nombre: '', factor_base: '', precio_especial: '', unidad_id: '' });
   };
 
-  const onUpdate = async (p: ProductoPresentacion, patch: Partial<ProductoPresentacion>) => {
-    try { await saveMut.mutateAsync({ id: p.id, producto_id: p.producto_id, ...patch }); }
-    catch (e: any) { toast.error(e.message); }
+  const onUpdate = (pId: string, patch: Partial<ProductoPresentacion>) => {
+    setPresentaciones(prev => prev.map(p => p.id === pId ? { ...p, ...patch } : p));
   };
 
-  const onTogglePrincipal = async (p: ProductoPresentacion) => {
-    try {
-      const others = items.filter(x => x.id !== p.id && x.es_principal_stock);
-      for (const o of others) {
-        await saveMut.mutateAsync({ id: o.id, producto_id: o.producto_id, es_principal_stock: false });
-      }
-      await saveMut.mutateAsync({ id: p.id, producto_id: p.producto_id, es_principal_stock: !p.es_principal_stock });
-    } catch (e: any) { toast.error(e.message); }
+  const onTogglePrincipal = (pId: string) => {
+    setPresentaciones(prev => prev.map(p => ({
+      ...p,
+      es_principal_stock: p.id === pId ? !p.es_principal_stock : false // Only one can be principal
+    })));
   };
 
-  const onConfirmDelete = async () => {
+  const onConfirmDelete = () => {
     if (!deleteTarget) return;
-    try {
-      await delMut.mutateAsync(deleteTarget.id);
-      toast.success('Unidad eliminada');
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setDeleteTarget(null);
+    setPresentaciones(prev => prev.filter(p => p.id !== deleteTarget.id));
+    if (!deleteTarget.id.startsWith('temp-')) {
+      setDeletedPresentaciones(prev => [...prev, deleteTarget.id]);
     }
+    setDeleteTarget(null);
   };
 
   return (
-    <div className="space-y-4 p-1">
-      <div className="text-xs text-muted-foreground bg-primary/5 border border-primary/15 rounded p-3 space-y-1">
-        <p className="flex items-center gap-1.5">
-          <Package className="h-3.5 w-3.5 text-primary" />
-          <span>Define las <strong>unidades de empaque</strong> en las que quieres ver tu stock (ej. <strong>Caja 12 {unidad}</strong>, <strong>Bulto 24 {unidad}</strong>).</span>
+    <div className="space-y-6 p-1">
+      <div className="text-xs text-muted-foreground bg-primary/5 border border-primary/15 rounded-lg p-4 space-y-2">
+        <p>Define las presentaciones de empaque (ej. <strong>Caja 12 {unidadBase}</strong>, <strong>Six pack 6 {unidadBase}</strong>). El factor es cuántas unidades base ({unidadBase}) trae cada presentación. El stock se sigue contando en {unidadBase}.</p>
+        <p>Marca con la <Star className="h-3 w-3 inline text-warning" /> la presentación <strong>principal</strong> para mostrar el desglose de stock (ej. "1 caja + 6 {unidadBase}") en listados e inventario.</p>
+        <p> El <strong>Nombre / Descripción</strong> se crea automáticamente al seleccionar la unidad y el factor para mayor facilidad, pero es un campo totalmente <strong>editable</strong>.</p>
+        <p className="flex items-center gap-1.5 mt-1 text-primary font-medium">
+          <Info className="h-4 w-4" />
+          <span>El <strong>código de barras</strong> debe ser único en toda la empresa. Si dos presentaciones comparten el mismo código, el POS no sabrá cuál elegir.</span>
         </p>
-        <p>Esta vista es <strong>solo para visualizar</strong> el stock desglosado. No maneja precios. Si necesitas vender por presentación con un precio especial, usa la pestaña <strong>Presentaciones</strong>.</p>
-        <p>Marca con la <Star className="h-3 w-3 inline text-warning" /> la unidad <strong>principal</strong> para mostrar el desglose (ej. "1 caja + 6 {unidad}") en listados, inventario y POS.</p>
+        <p className="text-warning-foreground bg-warning/10 border border-warning/20 rounded-md p-2 mt-2 font-medium">
+          <strong>Nota:</strong> Debes presionar el botón <strong>Guardar</strong> en la parte superior/inferior del formulario del producto para aplicar los cambios en las presentaciones. De lo contrario, los cambios se descartarán automáticamente al salir.
+        </p>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm border border-border rounded">
-          <thead className="bg-accent/40 text-xs uppercase text-muted-foreground">
+      <div className="bg-accent/10 border border-border rounded-xl p-4 sm:p-5">
+        <h4 className="text-sm font-semibold mb-4">Agregar Presentación</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Unidad (Catálogo)</label>
+            <select
+              className="w-full bg-card border border-border rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
+              value={draft.unidad_id}
+              onChange={(e) => setDraft({ ...draft, unidad_id: e.target.value })}
+            >
+              <option value="">(Selecciona)</option>
+              {unidadesCatalog.map(u => (
+                <option key={u.id} value={u.id}>{u.nombre}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Nombre / Descripción</label>
+            <input
+              className="w-full bg-card border border-border rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
+              placeholder={esGranel ? `Bulto X ${unidadBase}` : `Caja 12 ${unidadBase}`}
+              value={draft.nombre}
+              onChange={(e) => setDraft({ ...draft, nombre: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Factor ({unidadBase})</label>
+            <input
+              type="number" step="0.001"
+              className="w-full bg-card border border-border rounded-md px-3 py-2 text-sm tabular-nums focus:ring-1 focus:ring-primary outline-none"
+              placeholder="Ej. 12"
+              value={draft.factor_base}
+              onChange={(e) => setDraft({ ...draft, factor_base: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground flex items-center justify-between">
+              Precio Especial
+              <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded ml-2">Opcional</span>
+            </label>
+            <input
+              type="number" step="0.01"
+              className="w-full bg-card border border-border rounded-md px-3 py-2 text-sm tabular-nums focus:ring-1 focus:ring-primary outline-none"
+              placeholder="Precio directo"
+              value={draft.precio_especial}
+              onChange={(e) => setDraft({ ...draft, precio_especial: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground flex items-center justify-between">
+              Código Barras
+              <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded ml-2">Opcional</span>
+            </label>
+            <div className="flex gap-2">
+              <input
+                className="w-full bg-card border border-border rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none"
+                placeholder="Escanea aquí"
+                value={draft.codigo_barras}
+                onChange={(e) => setDraft({ ...draft, codigo_barras: e.target.value })}
+              />
+              <button
+                type="button"
+                onClick={onAdd}
+                className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 shadow-sm flex-shrink-0"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-border shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
             <tr>
-              <th className="text-left px-3 py-2">Nombre</th>
-              <th className="text-right px-3 py-2 w-40">Equivale a ({unidad})</th>
-              <th className="text-center px-3 py-2 w-20" title="Principal para stock">Principal</th>
-              <th className="text-center px-3 py-2 w-20">Activo</th>
-              <th className="px-3 py-2 w-10"></th>
+              <th className="text-center px-4 py-3 w-12" title="Principal"><Star className="h-3.5 w-3.5 inline" /></th>
+              <th className="text-left px-4 py-3 min-w-[120px]">Código de Barras</th>
+              <th className="text-left px-4 py-3">Unidad / Nombre</th>
+              <th className="text-right px-4 py-3 w-28">Factor</th>
+              <th className="text-right px-4 py-3 w-32">P. Especial</th>
+              <th className="text-right px-4 py-3 w-32">Calculado</th>
+              <th className="text-center px-4 py-3 w-24">Stock ({unidadBase})</th>
+              <th className="text-center px-4 py-3 w-16">Activo</th>
+              <th className="px-4 py-3 w-12"></th>
             </tr>
           </thead>
-          <tbody>
-            {isLoading && (
-              <tr><td colSpan={5} className="text-center py-4 text-muted-foreground">Cargando...</td></tr>
-            )}
-            {!isLoading && items.length === 0 && (
-              <tr><td colSpan={5} className="text-center py-4 text-muted-foreground">Sin unidades. Agrega la primera abajo.</td></tr>
-            )}
-            {items.map(p => (
-              <tr key={p.id} className="border-t border-border">
-                <td className="px-3 py-1.5">
-                  <input className="w-full bg-transparent border-b border-transparent focus:border-primary outline-none py-1"
-                    defaultValue={p.nombre}
-                    onBlur={(e) => e.target.value !== p.nombre && onUpdate(p, { nombre: e.target.value })} />
-                </td>
-                <td className="px-3 py-1.5 text-right">
-                  <input type="number" step="0.001" className="w-full text-right bg-transparent border-b border-transparent focus:border-primary outline-none py-1 tabular-nums"
-                    defaultValue={p.factor_base}
-                    onBlur={(e) => Number(e.target.value) !== Number(p.factor_base) && onUpdate(p, { factor_base: Number(e.target.value) })} />
-                </td>
-                <td className="px-3 py-1.5 text-center">
-                  <button
-                    type="button"
-                    onClick={() => onTogglePrincipal(p)}
-                    title={p.es_principal_stock ? 'Quitar como principal' : 'Marcar como principal'}
-                    className={`p-1 rounded hover:bg-accent ${p.es_principal_stock ? 'text-warning' : 'text-muted-foreground/40'}`}
-                  >
-                    <Star className={`h-4 w-4 ${p.es_principal_stock ? 'fill-current' : ''}`} />
-                  </button>
-                </td>
-                <td className="px-3 py-1.5 text-center">
-                  <input type="checkbox" checked={p.activo}
-                    onChange={(e) => onUpdate(p, { activo: e.target.checked })} />
-                </td>
-                <td className="px-2 text-center">
-                  <button onClick={() => setDeleteTarget(p)} className="text-destructive hover:bg-destructive/10 rounded p-1" title="Eliminar unidad">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+          <tbody className="divide-y divide-border">
+            {presentaciones.length === 0 && (
+              <tr>
+                <td colSpan={9} className="text-center py-8 text-muted-foreground">
+                  No hay presentaciones configuradas. Usa el formulario de arriba para agregar una.
                 </td>
               </tr>
-            ))}
+            )}
+            {presentaciones.map(p => {
+              const calculado = p.precio_especial ?? (precioPrincipal * Number(p.factor_base));
+              const qtyStock = Math.floor(stock / Number(p.factor_base));
+              
+              return (
+                <tr key={p.id} className="group bg-card hover:bg-accent/20 transition-colors">
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => onTogglePrincipal(p.id)}
+                      title={p.es_principal_stock ? 'Presentación principal' : 'Marcar como principal'}
+                      className={`p-1.5 rounded-full hover:bg-accent transition-all ${p.es_principal_stock ? 'text-warning bg-warning/10' : 'text-muted-foreground/30 hover:text-muted-foreground'}`}
+                    >
+                      <Star className={`h-4 w-4 ${p.es_principal_stock ? 'fill-current' : ''}`} />
+                    </button>
+                  </td>
+                  <td className="px-4 py-3">
+                    <input className="w-full bg-transparent border-b border-transparent hover:border-border focus:border-primary outline-none py-1 text-xs"
+                      defaultValue={p.codigo_barras || ''}
+                      placeholder="Sin código"
+                      onBlur={(e) => e.target.value !== (p.codigo_barras || '') && onUpdate(p.id, { codigo_barras: e.target.value || null })} />
+                  </td>
+                  <td className="px-4 py-3 space-y-1">
+                    <div className="flex gap-2">
+                      <select
+                        className="bg-transparent border-b border-transparent hover:border-border focus:border-primary outline-none py-1 text-xs font-medium text-muted-foreground w-24"
+                        value={p.unidad_id || ''}
+                        onChange={(e) => onUpdate(p.id, { unidad_id: e.target.value || null })}
+                      >
+                        <option value="">(Sin unid.)</option>
+                        {unidadesCatalog.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+                      </select>
+                      <input className="flex-1 bg-transparent border-b border-transparent hover:border-border focus:border-primary outline-none py-1 font-semibold"
+                        defaultValue={p.nombre || ''}
+                        onBlur={(e) => e.target.value !== p.nombre && onUpdate(p.id, { nombre: e.target.value })} />
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <input type="number" step="0.001" className="w-full text-right bg-transparent border-b border-transparent hover:border-border focus:border-primary outline-none py-1 tabular-nums font-medium"
+                      defaultValue={p.factor_base}
+                      onBlur={(e) => Number(e.target.value) !== Number(p.factor_base) && onUpdate(p.id, { factor_base: Number(e.target.value) })} />
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <input type="number" step="0.01" className="w-full text-right bg-transparent border-b border-transparent hover:border-border focus:border-primary outline-none py-1 tabular-nums font-medium"
+                      defaultValue={p.precio_especial || ''}
+                      placeholder="-"
+                      onBlur={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : null;
+                        if (val !== p.precio_especial) onUpdate(p.id, { precio_especial: val });
+                      }} />
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground font-medium">
+                    {symbol}{fmt(calculado)}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <div className="inline-flex items-center justify-center bg-accent/50 px-2.5 py-1 rounded-md">
+                      <span className="tabular-nums font-bold" title={`${qtyStock} empaques enteros disponibles`}>
+                        {qtyStock > 0 ? qtyStock : '0'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={p.activo} onChange={(e) => onUpdate(p.id, { activo: e.target.checked })} />
+                      <div className="w-9 h-5 bg-border rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <button onClick={() => setDeleteTarget(p)} className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md p-1.5 transition-colors" title="Eliminar presentación">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
-          <tfoot className="bg-accent/20 border-t border-border">
-            <tr>
-              <td className="px-3 py-2">
-                <input className="w-full bg-card border border-border rounded px-2 py-1 text-sm"
-                  placeholder={esGranel ? `Bulto X ${unidad}` : 'Caja 12 pz'}
-                  value={draft.nombre}
-                  onChange={(e) => setDraft({ ...draft, nombre: e.target.value })} />
-              </td>
-              <td className="px-3 py-2">
-                <input type="number" step="0.001" className="w-full bg-card border border-border rounded px-2 py-1 text-sm text-right tabular-nums"
-                  placeholder="0.000"
-                  value={draft.factor_base}
-                  onChange={(e) => setDraft({ ...draft, factor_base: e.target.value })} />
-              </td>
-              <td colSpan={2}></td>
-              <td className="text-center">
-                <button onClick={onAdd} disabled={saveMut.isPending}
-                  className="bg-primary text-primary-foreground rounded p-1.5 hover:bg-primary/90 disabled:opacity-50">
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-              </td>
-            </tr>
-          </tfoot>
         </table>
       </div>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar esta unidad de stock?</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar presentación?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminará la unidad <strong>{deleteTarget?.nombre}</strong>. El stock base no se verá afectado, pero dejará de mostrarse el desglose por esta unidad.
+              Se eliminará la presentación <strong>{deleteTarget?.nombre}</strong>. Para guardar los cambios, recuerda hacer clic en Guardar.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={onConfirmDelete} className="bg-destructive hover:bg-destructive/90">
-              Eliminar
+            <AlertDialogAction onClick={onConfirmDelete} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+              Quitar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

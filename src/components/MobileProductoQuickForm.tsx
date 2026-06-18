@@ -106,6 +106,12 @@ export function MobileProductoQuickForm({ open, onOpenChange, onCreated }: Props
 
   const set = (k: keyof Producto, v: any) => setForm(prev => ({ ...prev, [k]: v }));
 
+  const uVenta = unidades?.find(u => u.id === form.unidad_venta_id);
+  const uCompra = unidades?.find(u => u.id === form.unidad_compra_id);
+  const salesUnitName = uVenta?.nombre ? uVenta.nombre.toLowerCase() : 'venta';
+  const purchaseUnitName = uCompra?.nombre ? uCompra.nombre.toLowerCase() : 'compra';
+  const isMethodAuto = (method: string) => method !== 'manual' && method !== 'estandar';
+
   // Reset on close + smart defaults on open
   useEffect(() => {
     if (open) {
@@ -342,10 +348,16 @@ export function MobileProductoQuickForm({ open, onOpenChange, onCreated }: Props
               </div>
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Costo">
-                <input className={inputCls} type="number" inputMode="decimal" step="0.01" placeholder="0.00" value={form.costo ?? 0} onChange={e => set('costo', +e.target.value)} />
+              <Field label={`Costo ${salesUnitName}`}>
+                <input className={inputCls} type="number" inputMode="decimal" step="0.01" placeholder="0.00" value={form.costo ?? 0} onChange={e => set('costo', +e.target.value)} disabled={isMethodAuto(form.calculo_costo ?? 'promedio') && !isNew} />
               </Field>
-              <Field label="Precio principal" required={!((form as any).usa_listas_precio)}>
+              <Field label={`Costo ${purchaseUnitName}`}>
+                <input className={inputCls} type="number" inputMode="decimal" step="0.01" placeholder="0.00" value={Math.round(((form.costo ?? 0) * (form.factor_conversion ?? 1)) * 100) / 100} onChange={e => {
+                  const factor = form.factor_conversion ?? 1;
+                  set('costo', Math.round(((+e.target.value) / factor) * 10000) / 10000);
+                }} disabled={isMethodAuto(form.calculo_costo ?? 'promedio') && !isNew} />
+              </Field>
+              <Field label="Precio principal" required={!((form as any).usa_listas_precio)} className="col-span-2">
                 <input className={inputCls} type="number" inputMode="decimal" step="0.01" placeholder="0.00" value={form.precio_principal ?? 0} onChange={e => set('precio_principal', +e.target.value)} />
               </Field>
             </div>

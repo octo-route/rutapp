@@ -165,7 +165,9 @@ export function useCompraForm() {
   const totals = useMemo(() => {
     const subtotal = lineas.reduce((s, l) => s + (l.subtotal ?? 0), 0);
     const total = lineas.reduce((s, l) => s + (l.total ?? 0), 0);
-    return { subtotal, iva_total: total - subtotal, total };
+    const ieps_total = lineas.reduce((s, l) => s + (l._ieps_amount ?? 0), 0);
+    const iva_total = lineas.reduce((s, l) => s + (l._iva_amount ?? 0), 0);
+    return { subtotal, iva_total, ieps_total, total };
   }, [lineas]);
 
   const updateField = (key: string, val: any) => {
@@ -214,7 +216,8 @@ export function useCompraForm() {
           } as any;
           line._tiene_iva = p.tiene_iva ?? false;
           line._iva_pct = p.iva_pct ?? 16;
-          line._precio_incluye_iva = !!p.costo_incluye_impuestos;
+          line._precio_incluye_iva = false;
+          line._precio_incluye_ieps = false;
           line._tiene_ieps = p.tiene_ieps || (Number(p.ieps_pct) > 0);
           line._ieps_pct = p.ieps_pct ?? 0;
           line._ieps_tipo = p.ieps_tipo ?? "porcentaje";
@@ -273,6 +276,10 @@ export function useCompraForm() {
         line._costo_caja =
           Math.round((Number(line.precio_unitario) || 0) * newFactor * 100) /
           100;
+      }
+
+      if (key === "_precio_incluye_iva") {
+        line._precio_incluye_ieps = val;
       }
 
       calcLineTotals(line);

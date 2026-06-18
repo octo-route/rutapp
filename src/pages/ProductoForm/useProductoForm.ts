@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useProducto, useSaveProducto, useDeleteProducto, useMarcas, useProveedores, useClasificaciones, useListas, useUnidades, useTasasIva, useTasasIeps, useAlmacenes, useUnidadesSat, useAllListasPrecios, useTarifaLineasForProducto, useSaveProductoProveedor, useDeleteProductoProveedor, useProductoProveedores } from '@/hooks/useData';
+import { usePresentaciones, useSavePresentacion, useDeletePresentacion, type ProductoPresentacion } from '@/hooks/usePresentaciones';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { compressPhoto } from '@/lib/imageCompressor';
@@ -30,7 +31,7 @@ export const defaultProduct: Partial<Producto & { usa_listas_precio?: boolean }>
   se_puede_inventariar: true, es_combo: false, min: 0, max: 0,
   manejar_lotes: false, factor_conversion: 1, permitir_descuento: false,
   monto_maximo: 0, cantidad: 0, tiene_comision: false, tipo_comision: 'porcentaje',
-  es_granel: false, unidad_granel: 'kg',
+  es_granel: false, unidad_granel: 'kg', vende_por_presentaciones: false,
   pct_comision: 0, status: 'activo', almacenes: [], tiene_iva: false,
   tiene_ieps: false, calculo_costo: 'promedio', codigo_sat: '', contador: 0,
   contador_tarifas: 0, iva_pct: 16, ieps_pct: 0, ieps_tipo: 'porcentaje',
@@ -68,13 +69,28 @@ export function useProductoForm() {
   const saveProvMut = useSaveProductoProveedor();
   const deleteProvMut = useDeleteProductoProveedor();
 
+  const { data: dbPresentaciones } = usePresentaciones(isNew ? undefined : id);
+  const savePresMut = useSavePresentacion();
+  const delPresMut = useDeletePresentacion();
+
   const [form, setForm] = useState<Partial<Producto>>(defaultProduct);
   const [originalForm, setOriginalForm] = useState<Partial<Producto>>(defaultProduct);
+  const [presentaciones, setPresentaciones] = useState<ProductoPresentacion[]>([]);
+  const [originalPresentaciones, setOriginalPresentaciones] = useState<ProductoPresentacion[]>([]);
+  const [deletedPresentaciones, setDeletedPresentaciones] = useState<string[]>([]);
+
   const [starred, setStarred] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (dbPresentaciones && dbPresentaciones.length > 0 && originalPresentaciones.length === 0) {
+      setPresentaciones(dbPresentaciones);
+      setOriginalPresentaciones(dbPresentaciones);
+    }
+  }, [dbPresentaciones, originalPresentaciones.length]);
 
   useEffect(() => {
     if (!isNew) return;
@@ -97,7 +113,7 @@ export function useProductoForm() {
   useEffect(() => { if (existing) { setForm(existing); setOriginalForm(existing); } }, [existing]);
 
   const set = (key: keyof Producto, value: any) => setForm(prev => ({ ...prev, [key]: value }));
-  const isDirty = isNew || JSON.stringify(form) !== JSON.stringify(originalForm);
+  const isDirty = isNew || JSON.stringify(form) !== JSON.stringify(originalForm) || JSON.stringify(presentaciones) !== JSON.stringify(originalPresentaciones) || deletedPresentaciones.length > 0;
 
   const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -121,8 +137,39 @@ export function useProductoForm() {
     if (!form.codigo || !form.nombre) { toast.error('Código y nombre son obligatorios'); return; }
     try {
       const result = await saveMutation.mutateAsync(isNew ? form : { ...form, id });
+      const productId = isNew ? result?.id : id;
+      
+      // Save presentations if productId is available
+      if (productId) {
+        // Delete removed presentations
+        for (const delId of deletedPresentaciones) {
+          if (!delId.startsWith('temp-')) {
+            await delPresMut.mutateAsync(delId);
+          }
+        }
+        // Save/Update current presentations
+        for (let i = 0; i < presentaciones.length; i++) {
+          const p = presentaciones[i];
+          const isTemp = p.id.startsWith('temp-');
+          await savePresMut.mutateAsync({
+            ...(isTemp ? {} : { id: p.id }),
+            producto_id: productId,
+            codigo_barras: p.codigo_barras?.trim() || null,
+            nombre: p.nombre?.trim(),
+            factor_base: Number(p.factor_base),
+            precio_especial: p.precio_especial ? Number(p.precio_especial) : null,
+            orden: i,
+            activo: p.activo,
+            es_principal_stock: p.es_principal_stock,
+            unidad_id: p.unidad_id || null
+          });
+        }
+      }
+
       toast.success('Producto guardado');
       setOriginalForm({ ...form });
+      setOriginalPresentaciones([...presentaciones]);
+      setDeletedPresentaciones([]);
       if (isNew && result?.id) navigate(`/productos/${result.id}`, { replace: true });
     } catch (err: any) { console.error('Error guardando producto:', err); toast.error(err.message || 'Error al guardar'); }
   };
@@ -145,5 +192,6 @@ export function useProductoForm() {
     tasasIva, tasasIeps, almacenes, unidadesSat, tarifasDisp,
     tarifaLineas, prodProveedores, saveProvMut, deleteProvMut,
     createMarca, createClasificacion, createUnidad, createLista, createProveedor,
+    presentaciones, setPresentaciones, setDeletedPresentaciones, deletedPresentaciones
   };
 }

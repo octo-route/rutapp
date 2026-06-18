@@ -30,7 +30,6 @@ import {
   ListOrdered,
   LockOpen,
 } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -211,7 +210,6 @@ export default function PuntoVentaPage() {
     if (typeof window !== "undefined")
       localStorage.setItem("pos-product-view", productView);
   }, [productView]);
-  const [sinImpuestos, setSinImpuestos] = useState(false);
   const [payMode, setPayMode] = useState<PayMode>("efectivo");
   const [clienteCredito, setClienteCredito] = useState(false);
   const [clienteDiasCredito, setClienteDiasCredito] = useState(0);
@@ -767,10 +765,47 @@ export default function PuntoVentaPage() {
         addToCart(found);
         toast.success(`${found.nombre} agregado`);
       } else {
+        const pr = presentaciones.find(p => p.codigo_barras && p.codigo_barras.toLowerCase() === code.toLowerCase());
+        if (pr) {
+          const pBase = productos.find(p => p.id === pr.producto_id);
+          if (pBase) {
+            const pricing = getProductPricing(pBase);
+            const precioBase = Number(pricing?.displayPrice ?? pBase.precio_principal ?? 0);
+            const factor = Number(pr.factor_base);
+            const unitPrice = pr.precio_especial != null ? (Number(pr.precio_especial) / factor) : precioBase;
+            
+            setCart((prev) => [
+              ...prev,
+              {
+                producto_id: pBase.id,
+                codigo: pr.codigo_barras || pBase.codigo,
+                nombre: `${pBase.nombre} - ${pr.nombre}`,
+                precio_unitario: unitPrice,
+                precio_unitario_sin_redondeo: unitPrice,
+                precio_display_sin_redondeo: unitPrice,
+                cantidad: factor,
+                tiene_iva: pBase.tiene_iva ?? false,
+                iva_pct: pBase.tiene_iva ? (pBase.iva_pct ?? 16) : 0,
+                tiene_ieps: pBase.tiene_ieps ?? false,
+                ieps_pct: pBase.tiene_ieps ? (pBase.ieps_pct ?? 0) : 0,
+                unidad: pBase.es_granel ? (pBase.unidad_granel ?? "kg") : "pz",
+                base_precio: pricing.basePrecio as BasePrecioMode,
+                redondeo: pricing.appliedRule?.redondeo ?? "ninguno",
+                _max_stock: (pBase.vender_sin_stock || pBase.es_combo || pBase.se_puede_inventariar === false) ? Infinity : (pBase.cantidad ?? 0),
+                _es_granel: pBase.es_granel ?? false,
+                paquetes: 1,
+                presentacion_id: pr.id,
+                factor_presentacion: factor,
+              } as PosItem
+            ]);
+            toast.success(`${pBase.nombre} (${pr.nombre}) agregado`);
+            return;
+          }
+        }
         toast.error(`Producto no encontrado: ${code}`);
       }
     },
-    [productos, cart],
+    [productos, cart, presentaciones],
   );
 
   const filteredProducts = useMemo(() => {
@@ -922,11 +957,11 @@ export default function PuntoVentaPage() {
       total += chargedLineTotal;
       items += item.cantidad;
     });
-    const finalTotal = sinImpuestos ? r2(subtotal - descuento) : r2(total);
+    const finalTotal = r2(total);
     return {
       subtotal: r2(subtotal),
-      iva: sinImpuestos ? 0 : r2(iva),
-      ieps: sinImpuestos ? 0 : r2(ieps),
+      iva: r2(iva),
+      ieps: r2(ieps),
       descuento: r2(descuento),
       total: finalTotal,
       items,
@@ -937,7 +972,6 @@ export default function PuntoVentaPage() {
     promoRawByProduct,
     getChargedLineTotal,
     splitFinalGross,
-    sinImpuestos,
   ]);
 
   const paySplitsComputed = useMemo(() => {
@@ -1502,9 +1536,7 @@ export default function PuntoVentaPage() {
               <Tag className="h-3 w-3" /> {effectiveListaNombre}
             </span>
           )}
-          {sinImpuestos && (
-            <span className="text-primary font-semibold">Sin impuestos</span>
-          )}
+
         </div>
       </header>
 
@@ -2285,17 +2317,6 @@ export default function PuntoVentaPage() {
             </div>
 
             <div className="px-5 py-4 space-y-4 overflow-auto flex-1">
-              {/* Sin impuestos toggle */}
-              <div className="flex items-center justify-between rounded-lg bg-accent/40 px-3 py-2">
-                <span className="text-[12px] font-medium text-foreground">
-                  Sin impuestos
-                </span>
-                <Switch
-                  checked={sinImpuestos}
-                  onCheckedChange={setSinImpuestos}
-                  className="scale-90"
-                />
-              </div>
 
               {/* Condición de pago — solo mostrar Crédito si el cliente tiene crédito */}
               <div>
@@ -2905,15 +2926,6 @@ export default function PuntoVentaPage() {
             )}
 
             <div className="pt-2 border-t border-border space-y-2">
-              <div className="flex items-center justify-between px-1">
-                <span className="text-[12px] font-medium text-foreground">
-                  Sin impuestos
-                </span>
-                <Switch
-                  checked={sinImpuestos}
-                  onCheckedChange={setSinImpuestos}
-                />
-              </div>
               <button
                 onClick={() => {
                   setShowMoreSheet(false);

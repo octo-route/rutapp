@@ -48,7 +48,8 @@ export default function CompraFormPage() {
       <div className="flex items-end justify-end gap-4">
         <div className="ml-auto bg-card border border-border rounded-lg p-4 w-72 space-y-2">
           <div className="flex justify-between text-sm"><span className="text-muted-foreground">Subtotal</span><span className="font-medium">{fmt(h.totals.subtotal)}</span></div>
-          <div className="flex justify-between text-sm"><span className="text-muted-foreground">Impuestos</span><span className="font-medium">{fmt(h.totals.iva_total)}</span></div>
+          {h.totals.ieps_total > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">IEPS</span><span className="font-medium">{fmt(h.totals.ieps_total)}</span></div>}
+          <div className="flex justify-between text-sm"><span className="text-muted-foreground">IVA</span><span className="font-medium">{fmt(h.totals.iva_total)}</span></div>
           <div className="border-t border-border pt-2 flex justify-between text-base"><span className="font-semibold">Total</span><span className="font-bold">{fmt(h.totals.total)}</span></div>
           {!h.isNew && (<><div className="border-t border-border pt-2 flex justify-between text-sm"><span className="text-success">Pagado</span><span className="font-medium text-success">{fmt(h.totalPagado)}</span></div><div className="flex justify-between text-sm"><span className="text-destructive">Saldo</span><span className="font-bold text-destructive">{fmt(h.saldoActual)}</span></div></>)}
         </div>

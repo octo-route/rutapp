@@ -74,6 +74,11 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
   const { fmt, symbol } = useCurrency();
   const isNew = !form.id;
 
+  const uVenta = unidades?.find(u => u.id === form.unidad_venta_id);
+  const uCompra = unidades?.find(u => u.id === form.unidad_compra_id);
+  const salesUnitName = uVenta?.nombre ? uVenta.nombre.toLowerCase() : 'venta';
+  const purchaseUnitName = uCompra?.nombre ? uCompra.nombre.toLowerCase() : 'compra';
+
   // Modal de confirmación para cambios de cálculo de costo
   const [modalConfig, setModalConfig] = useState<{ type: string; pendingVal: any } | null>(null);
 
@@ -133,6 +138,16 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
               )}
             </div>
           </div>
+          <div className="odoo-field-row">
+            <span className="odoo-field-label">Vender por presentaciones</span>
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={() => set('vende_por_presentaciones', !(form as any).vende_por_presentaciones)}
+                className={`relative w-9 h-5 rounded-full transition-colors ${(form as any).vende_por_presentaciones ? 'bg-primary' : 'bg-border'}`}>
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${(form as any).vende_por_presentaciones ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </button>
+              <span className="text-[12px] text-muted-foreground">Activa precios distintos por caja, bulto, etc.</span>
+            </div>
+          </div>
         </div>
         <div>
           <div className="odoo-field-row">
@@ -157,16 +172,36 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
             format={v => `${symbol} ${(v ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           />
 
-          {/* Campo Costo */}
+          {/* Costo de Venta (Unidad Venta) */}
           <OdooField
-            label="Costo"
+            label={`Costo ${salesUnitName}`}
             value={form.costo}
             type="number"
             teal
             help
-            helpText="Costo unitario del producto (por pieza). Si el cálculo es automático, este campo se bloqueará al guardar y se actualizará con cada compra. Para productos nuevos, este valor sirve como costo inicial."
+            helpText={`Costo unitario del producto (por ${salesUnitName}). Si el cálculo es automático, este campo se bloqueará al guardar y se actualizará con cada compra. Para productos nuevos, este valor sirve como costo inicial.`}
             readOnly={isMethodAuto(form.calculo_costo ?? 'promedio') && !isNew}
             onChange={v => set('costo', +v)}
+            format={v => `${symbol} ${(v ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            labelSuffix={isMethodAuto(form.calculo_costo ?? 'promedio') && !isNew
+              ? <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">Auto</span>
+              : undefined
+            }
+          />
+
+          {/* Costo de Compra (Unidad Compra) */}
+          <OdooField
+            label={`Costo ${purchaseUnitName}`}
+            value={(form.costo ?? 0) * (form.factor_conversion ?? 1)}
+            type="number"
+            teal
+            help
+            helpText={`Costo del producto por unidad de compra (${purchaseUnitName}). Se calcula multiplicando el costo unitario por el factor de conversión (${form.factor_conversion ?? 1}).`}
+            readOnly={isMethodAuto(form.calculo_costo ?? 'promedio') && !isNew}
+            onChange={v => {
+              const factor = form.factor_conversion ?? 1;
+              set('costo', Math.round(((+v) / factor) * 10000) / 10000);
+            }}
             format={v => `${symbol} ${(v ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             labelSuffix={isMethodAuto(form.calculo_costo ?? 'promedio') && !isNew
               ? <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">Auto</span>

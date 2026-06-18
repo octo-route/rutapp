@@ -30,8 +30,6 @@ interface Props {
   saving: boolean;
   cart: CartItem[];
   devoluciones: DevolucionItem[];
-  sinImpuestos: boolean;
-  setSinImpuestos: (v: boolean) => void;
   handleSave: () => Promise<void>;
   navigate: (to: any) => void;
   fmt: (n: number) => string;
@@ -72,7 +70,7 @@ function getDynamicBills(total: number): { label: string; amount: number }[] {
 }
 
 export function StepPago(props: Props) {
-  const { tipoVenta, entregaInmediata, fechaEntrega, setFechaEntrega, condicionPago, setCondicionPago, clienteCredito, excedeCredito, creditoDisponible, saldoPendienteTotal, cuentasPendientes, liquidarTodas, updateCuentaMonto, totalAplicarCuentas, pagos, setPagos, notas, setNotas, totals, totalACobrar, cambio, saving, cart, devoluciones, sinImpuestos, setSinImpuestos, handleSave, navigate, fmt, canApplyDiscount, descuentoExtraTipo, setDescuentoExtraTipo, descuentoExtraValor, setDescuentoExtraValor, descuentoExtraMotivo, setDescuentoExtraMotivo } = props;
+  const { tipoVenta, entregaInmediata, fechaEntrega, setFechaEntrega, condicionPago, setCondicionPago, clienteCredito, excedeCredito, creditoDisponible, saldoPendienteTotal, cuentasPendientes, liquidarTodas, updateCuentaMonto, totalAplicarCuentas, pagos, setPagos, notas, setNotas, totals, totalACobrar, cambio, saving, cart, devoluciones, handleSave, navigate, fmt, canApplyDiscount, descuentoExtraTipo, setDescuentoExtraTipo, descuentoExtraValor, setDescuentoExtraValor, descuentoExtraMotivo, setDescuentoExtraMotivo } = props;
   const { symbol: s } = useCurrency();
   const descExtraAmt = totals.descuentoExtra ?? 0;
   const requiresMotivo = descExtraAmt > 0 && !descuentoExtraMotivo.trim();
@@ -147,18 +145,6 @@ export function StepPago(props: Props) {
             </div>
           )}
 
-          {/* Toggle sutil de Sin impuestos */}
-          <button
-            onClick={() => setSinImpuestos(!sinImpuestos)}
-            className="w-full mt-2.5 flex items-center justify-between px-1 py-1.5 group"
-          >
-            <span className={`text-[11px] font-medium flex items-center gap-1.5 ${sinImpuestos ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
-              <ReceiptText className="h-3 w-3" /> Sin impuestos
-            </span>
-            <div className={`w-7 h-4 rounded-full transition-colors relative ${sinImpuestos ? 'bg-amber-500' : 'bg-border'}`}>
-              <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${sinImpuestos ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-            </div>
-          </button>
         </section>
 
         {cuentasPendientes.length > 0 && (
