@@ -61,6 +61,7 @@ export interface Producto {
   udem_sat_id?: string;
   es_granel: boolean;
   unidad_granel: string;
+  vende_por_presentaciones?: boolean;
   contador: number;
   contador_tarifas: number;
   created_at: string;

@@ -164,11 +164,27 @@ export function useProductoForm() {
             unidad_id: p.unidad_id || null
           });
         }
+
+        // Fetch fresh presentations from db to sync IDs (replace temp- IDs with actual UUIDs)
+        const { data: fresh } = await supabase.from('producto_presentaciones' as any)
+          .select('*, unidades:unidad_id(nombre, abreviatura)')
+          .eq('producto_id', productId)
+          .eq('empresa_id', empresa!.id)
+          .order('orden', { ascending: true })
+          .order('factor_base', { ascending: true }) as any;
+        
+        if (fresh) {
+          setPresentaciones(fresh);
+          setOriginalPresentaciones(fresh);
+        } else {
+          setOriginalPresentaciones([...presentaciones]);
+        }
+      } else {
+        setOriginalPresentaciones([...presentaciones]);
       }
 
       toast.success('Producto guardado');
       setOriginalForm({ ...form });
-      setOriginalPresentaciones([...presentaciones]);
       setDeletedPresentaciones([]);
       if (isNew && result?.id) navigate(`/productos/${result.id}`, { replace: true });
     } catch (err: any) { console.error('Error guardando producto:', err); toast.error(err.message || 'Error al guardar'); }
