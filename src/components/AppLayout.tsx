@@ -107,6 +107,7 @@ const navItems: NavItem[] = [
     children: [
       { label: 'Categorías', path: '/catalogos/clasificaciones' },
       { label: 'Marcas', path: '/catalogos/marcas' },
+      { label: 'Cajas', path: '/catalogos/cajas' },
       { label: 'Proveedores', path: '/proveedores' },
       { label: 'Unidades', path: '/catalogos/unidades' },
       { label: 'Zonas', path: '/catalogos/zonas' },
@@ -354,6 +355,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   'facturacion-cfdi': 'Facturación', devoluciones: 'Devoluciones',
   comisiones: 'Comisiones', control: 'Control', proveedores: 'Proveedores',
   catalogos: 'Catálogos', clasificaciones: 'Clasificaciones', zonas: 'Zonas',
+  cajas: 'Cajas',
   cobradores: 'Cobradores', 'reporte-diario': 'Reporte diario',
   promociones: 'Promociones', pos: 'Punto de venta',
   conteos: 'Conteos físicos', auditorias: 'Auditorías', traspasos: 'Traspasos',

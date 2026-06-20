@@ -13,6 +13,7 @@ import { StepProductos } from './StepProductos';
 import { StepResumen } from './StepResumen';
 import { StepPago } from './StepPago';
 import { useAlmacenGuard } from '@/hooks/useAlmacenGuard';
+import { PresentacionSelectorModal } from '@/components/ruta/PresentacionSelectorModal';
 
 export default function RutaNuevaVenta() {
   const { checkAlmacen, AlmacenDialog } = useAlmacenGuard();
@@ -90,6 +91,52 @@ export default function RutaNuevaVenta() {
       {h.step === 'productos' && <StepProductos clienteNombre={h.clienteNombre} devoluciones={h.devoluciones} searchProducto={h.searchProducto} setSearchProducto={h.setSearchProducto} filteredProductos={h.filteredProductos} cart={h.cart} cambioItems={h.cambioItems} tipoVenta={h.tipoVenta} totals={h.totals} addToCart={h.addToCart} updateQty={h.updateQty} removeFromCart={h.removeFromCart} getItemInCart={h.getItemInCart} getMaxQty={h.getMaxQty} setStep={h.setStep} setCart={h.setCart} stockAbordo={h.stockAbordo} usandoAlmacen={h.usandoAlmacen} fmt={h.fmt} insights={h.insights} bannerDismissed={h.bannerDismissed} setBannerDismissed={h.setBannerDismissed} applyManualList={h.applyManualList} applyHistorialAvg={h.applyHistorialAvg} repeatLastSale={h.repeatLastSale} findProductByCode={h.findProductByCode} setItemQty={h.setItemQty} getSuggestedPrice={h.getSuggestedPrice} setItemPriceManual={h.setItemPriceManual} setItemPriceFromLista={h.setItemPriceFromLista} resetItemToSuggested={h.resetItemToSuggested} canChangePrice={h.canChangePrice} />}
       {h.step === 'resumen' && <StepResumen clienteNombre={h.clienteNombre} devoluciones={h.devoluciones} cambioItems={h.cambioItems} chargedItems={h.chargedItems} promoResults={h.promoResults} totals={h.totals} saldoPendienteTotal={h.saldoPendienteTotal} setStep={h.setStep} goToPayment={h.goToPayment} navigate={h.navigate} cart={h.cart} fmt={h.fmt} canApplyDiscount={h.canApplyDiscount} descuentoExtraTipo={h.descuentoExtraTipo} setDescuentoExtraTipo={h.setDescuentoExtraTipo} descuentoExtraValor={h.descuentoExtraValor} setDescuentoExtraValor={h.setDescuentoExtraValor} descuentoExtraMotivo={h.descuentoExtraMotivo} setDescuentoExtraMotivo={h.setDescuentoExtraMotivo} />}
       {h.step === 'pago' && <StepPago tipoVenta={h.tipoVenta} entregaInmediata={h.entregaInmediata} fechaEntrega={h.fechaEntrega} setFechaEntrega={h.setFechaEntrega} condicionPago={h.condicionPago} setCondicionPago={h.setCondicionPago} clienteCredito={h.clienteCredito} excedeCredito={h.excedeCredito} creditoDisponible={h.creditoDisponible} saldoPendienteTotal={h.saldoPendienteTotal} cuentasPendientes={h.cuentasPendientes} liquidarTodas={h.liquidarTodas} updateCuentaMonto={h.updateCuentaMonto} totalAplicarCuentas={h.totalAplicarCuentas} pagos={h.pagos} setPagos={h.setPagos} notas={h.notas} setNotas={h.setNotas} totals={h.totals} totalACobrar={h.totalACobrar} cambio={h.cambio} saving={h.saving} cart={h.cart} devoluciones={h.devoluciones} handleSave={h.handleSave} navigate={h.navigate} fmt={h.fmt} canApplyDiscount={h.canApplyDiscount} descuentoExtraTipo={h.descuentoExtraTipo} setDescuentoExtraTipo={h.setDescuentoExtraTipo} descuentoExtraValor={h.descuentoExtraValor} setDescuentoExtraValor={h.setDescuentoExtraValor} descuentoExtraMotivo={h.descuentoExtraMotivo} setDescuentoExtraMotivo={h.setDescuentoExtraMotivo} />}
+      
+      {h.showPresentacionModal && h.selectedProductoPresentacion && (
+        <PresentacionSelectorModal
+          open={h.showPresentacionModal}
+          onClose={() => h.setShowPresentacionModal(false)}
+          producto={h.selectedProductoPresentacion}
+          presentaciones={h.presentaciones.filter((pr: any) => pr.producto_id === h.selectedProductoPresentacion.id)}
+          precioPorUnidadBase={h.selectedProductoPresentacion?.precio_principal ?? 0}
+          stockMax={
+            (h.selectedProductoPresentacion?.vender_sin_stock || h.selectedProductoPresentacion?.es_combo || h.selectedProductoPresentacion?.se_puede_inventariar === false)
+              ? Infinity
+              : Number(h.selectedProductoPresentacion?.cantidad ?? 0)
+          }
+          tarifaRules={h.tarifaLineasOffline ?? []}
+          clienteListaPrecioId={h.clienteListaPrecioId}
+          onConfirm={(payload: any) => {
+            h.setCart((prev: any[]) => [
+              ...prev,
+              {
+                producto_id: h.selectedProductoPresentacion.id,
+                codigo: h.selectedProductoPresentacion.codigo,
+                nombre: h.selectedProductoPresentacion.nombre,
+                precio_unitario: payload.pricing.unitPrice,
+                precio_unitario_sin_redondeo: payload.pricing.rawUnitPrice,
+                precio_display_sin_redondeo: payload.pricing.rawDisplayPrice,
+                cantidad: payload.cantidadBase,
+                tiene_iva: h.selectedProductoPresentacion.tiene_iva ?? false,
+                iva_pct: h.selectedProductoPresentacion.tiene_iva ? (h.selectedProductoPresentacion.iva_pct ?? 16) : 0,
+                tiene_ieps: h.selectedProductoPresentacion.tiene_ieps ?? false,
+                ieps_pct: h.selectedProductoPresentacion.tiene_ieps ? (h.selectedProductoPresentacion.ieps_pct ?? 0) : 0,
+                unidad: h.selectedProductoPresentacion.unidad_granel ?? "kg",
+                base_precio: payload.pricing.basePrecio,
+                redondeo: payload.pricing.appliedRule?.redondeo ?? "ninguno",
+                _max_stock: h.selectedProductoPresentacion.vender_sin_stock ? Infinity : (h.selectedProductoPresentacion.cantidad ?? 0),
+                _es_granel: true,
+                presentacion_id: payload.presentacion?.id ?? null,
+                presentacion_nombre: payload.presentacion?.nombre ?? null,
+                presentacion_factor: payload.presentacion?.factor_base ? Number(payload.presentacion.factor_base) : null,
+                paquetes: payload.paquetes ?? null,
+              },
+            ]);
+            h.setShowPresentacionModal(false);
+            h.setSelectedProductoPresentacion(null);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -56,7 +56,15 @@ export default function UsuariosPage() {
           roles={rolesHook.roles} almacenes={usuarios.almacenes}
           activeUsers={activeUsers} maxUsuarios={subscription.maxUsuarios} availableSlots={availableSlots}
           ownerUserId={empresa?.owner_user_id}
-          onNewUser={() => usuarios.setShowNewUser(true)}
+          onNewUser={() => {
+            const vendedorRole = rolesHook.roles.find(r => r.nombre.toLowerCase() === 'vendedor');
+            if (vendedorRole) {
+              usuarios.setNewUser({ email: '', password: '', nombre: '', role_id: vendedorRole.id, almacen_id: '' });
+            } else {
+              usuarios.setNewUser({ email: '', password: '', nombre: '', role_id: '', almacen_id: '' });
+            }
+            usuarios.setShowNewUser(true);
+          }}
           onEditUser={usuarios.startEdit}
           onSetPassword={(uid, name) => { usuarios.setPasswordModal({ userId: uid, nombre: name }); usuarios.setNewPassword(''); }}
           onToggleEstado={usuarios.toggleEstado}
@@ -92,7 +100,9 @@ export default function UsuariosPage() {
           quickRoleName={usuarios.quickRoleName} setQuickRoleName={usuarios.setQuickRoleName}
           quickCreateAlmacen={usuarios.quickCreateAlmacen} setQuickCreateAlmacen={usuarios.setQuickCreateAlmacen}
           quickAlmacenName={usuarios.quickAlmacenName} setQuickAlmacenName={usuarios.setQuickAlmacenName}
-          onQuickCreateRole={usuarios.quickCreateRoleAction} onQuickCreateAlmacen={usuarios.quickCreateAlmacenAction}
+          onQuickCreateRole={() => usuarios.quickCreateRoleAction(async () => {
+            if (empresa?.id) await rolesHook.loadRoles(empresa.id);
+          })} onQuickCreateAlmacen={usuarios.quickCreateAlmacenAction}
           onCreate={() => usuarios.createUser(availableSlots, subscription.maxUsuarios)}
           onClose={() => usuarios.setShowNewUser(false)}
         />

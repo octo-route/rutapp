@@ -9,6 +9,7 @@ const CATALOGS: Record<string, { title: string; tableName: string; queryKey: str
   zonas: { title: 'Zonas', tableName: 'zonas', queryKey: 'zonas', columns: [{ key: 'nombre', label: 'Nombre' }] },
   listas: { title: 'Listas de precios', tableName: 'listas', queryKey: 'listas', columns: [{ key: 'nombre', label: 'Nombre' }] },
   almacenes: { title: 'Almacenes', tableName: 'almacenes', queryKey: 'almacenes', columns: [{ key: 'nombre', label: 'Nombre' }] },
+  cajas: { title: 'Cajas', tableName: 'cajas', queryKey: 'cajas', columns: [{ key: 'nombre', label: 'Nombre' }] },
 };
 
 export default function CatalogPage() {

@@ -20,7 +20,8 @@ export const PRODUCTO_COLUMNS = [
   'tiene_comision','tipo_comision','pct_comision','status','almacenes','tiene_iva','tiene_ieps',
   'calculo_costo','codigo_sat','contador','contador_tarifas','iva_pct','ieps_pct','ieps_tipo',
   'costo_incluye_impuestos','usa_listas_precio','marca_id','clasificacion_id','lista_id','tarifa_id',
-  'unidad_venta_id','unidad_compra_id','unidad_sat_id','created_at',
+  'unidad_venta_id','unidad_compra_id','unidad_sat_id','costos_adicionales','es_granel',
+  'unidad_granel','vende_por_presentaciones','created_at',
 ] as const;
 
 export const VENTA_COLUMNS = [
@@ -96,7 +97,7 @@ export const TARIFA_COLUMNS = [
 ] as const;
 
 export const TARIFA_LINEA_COLUMNS = [
-  'id','tarifa_id','aplica_a','producto_ids','clasificacion_ids','tipo_calculo','precio',
+  'id','tarifa_id','aplica_a','producto_ids','clasificacion_ids','presentacion_ids','tipo_calculo','precio',
   'precio_minimo','margen_pct','descuento_pct','redondeo','base_precio','lista_precio_id','created_at',
 ] as const;
 

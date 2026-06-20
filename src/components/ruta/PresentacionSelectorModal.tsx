@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Plus, Minus } from 'lucide-react';
 import { useCurrency } from '@/hooks/useCurrency';
 import type { ProductoPresentacion } from '@/hooks/usePresentaciones';
+import { resolvePresentacionPricing, resolveProductPricing } from '@/lib/priceResolver';
 
 interface Props {
   open: boolean;
@@ -12,15 +13,27 @@ interface Props {
   precioPorUnidadBase: number;
   /** Máximo permitido (en unidad base). Infinity si no hay límite. */
   stockMax?: number;
+  tarifaRules?: any[];
+  clienteListaPrecioId?: string | null;
   onConfirm: (data: {
     cantidadBase: number;
     paquetes: number | null;
     presentacion: ProductoPresentacion | null;
-    precioUnitario: number; // por unidad base
+    pricing: ReturnType<typeof resolveProductPricing>;
   }) => void;
 }
 
-export function PresentacionSelectorModal({ open, onClose, producto, presentaciones, precioPorUnidadBase, stockMax = Infinity, onConfirm }: Props) {
+export function PresentacionSelectorModal({
+  open,
+  onClose,
+  producto,
+  presentaciones,
+  precioPorUnidadBase,
+  stockMax = Infinity,
+  tarifaRules,
+  clienteListaPrecioId,
+  onConfirm
+}: Props) {
   const { symbol } = useCurrency();
   const [mode, setMode] = useState<'pres' | 'libre'>('pres');
   const [presId, setPresId] = useState<string | null>('base'); // 'base' para la unidad base (1 pz)
@@ -60,19 +73,54 @@ export function PresentacionSelectorModal({ open, onClose, producto, presentacio
   const fmtNum = (n: number, dec = 2) => n.toLocaleString('es-MX', { minimumFractionDigits: dec, maximumFractionDigits: dec });
   const fmtQty = (n: number) => n.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
 
+  // Resolve base product pricing and presentation pricing using rules
+  const rules = tarifaRules ?? [];
+  const prodForPricing = {
+    id: producto.id,
+    precio_principal: producto.precio_principal ?? 0,
+    costo: producto.costo ?? 0,
+    clasificacion_id: producto.clasificacion_id,
+    tiene_iva: producto.tiene_iva,
+    iva_pct: producto.iva_pct ?? 16,
+    tiene_ieps: producto.tiene_ieps,
+    ieps_pct: producto.ieps_pct ?? 0,
+    ieps_tipo: producto.ieps_tipo,
+    usa_listas_precio: producto.usa_listas_precio,
+  };
+
+  const basePricing = resolveProductPricing(rules, prodForPricing, clienteListaPrecioId);
+
+  const getResolvedPresPricing = (p: ProductoPresentacion) => {
+    return resolvePresentacionPricing(
+      rules,
+      { id: p.id, factor_base: p.factor_base, precio_especial: p.precio_especial },
+      prodForPricing,
+      basePricing,
+      clienteListaPrecioId
+    );
+  };
+
   let cantidadBase = 0;
-  let precioUnitario = precioPorUnidadBase;
+  let pricingForBaseUnit: ReturnType<typeof resolveProductPricing> = basePricing;
 
   if (mode === 'pres') {
     cantidadBase = (esGranel && pesoOvr && pesoOvr > 0) ? pesoOvr : (paqNum * factor);
-    if (!isBaseSelected && presSel && presSel.precio_especial != null && factor > 0) {
-      precioUnitario = Number(presSel.precio_especial) / factor;
+    if (!isBaseSelected && presSel && factor > 0) {
+      const resolvedPres = getResolvedPresPricing(presSel);
+      pricingForBaseUnit = {
+        unitPrice: resolvedPres.unitPrice / factor,
+        displayPrice: resolvedPres.displayPrice / factor,
+        rawUnitPrice: resolvedPres.rawUnitPrice / factor,
+        rawDisplayPrice: resolvedPres.rawDisplayPrice / factor,
+        basePrecio: resolvedPres.basePrecio,
+        appliedRule: resolvedPres.appliedRule,
+      };
     }
   } else {
     cantidadBase = Math.max(0, Number(pesoLibre) || 0);
   }
 
-  const subtotal = cantidadBase * precioUnitario;
+  const subtotal = cantidadBase * pricingForBaseUnit.displayPrice;
   const excedeStock = Number.isFinite(stockMax) && cantidadBase > stockMax;
   const canConfirm = cantidadBase > 0 && !excedeStock;
 
@@ -82,7 +130,7 @@ export function PresentacionSelectorModal({ open, onClose, producto, presentacio
       cantidadBase,
       paquetes: mode === 'pres' && !isBaseSelected ? paqNum : null,
       presentacion: mode === 'pres' && !isBaseSelected ? presSel : null,
-      precioUnitario,
+      pricing: pricingForBaseUnit,
     });
     onClose();
   };
@@ -98,7 +146,7 @@ export function PresentacionSelectorModal({ open, onClose, producto, presentacio
         <div className="sticky top-0 bg-card border-b border-border px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between z-10 rounded-t-2xl sm:rounded-2xl">
           <div>
             <h3 className="text-base sm:text-xl font-semibold">{producto.nombre}</h3>
-            <p className="text-[12px] sm:text-sm text-muted-foreground">{symbol}{fmtNum(precioPorUnidadBase)} / {unidad}{Number.isFinite(stockMax) && <> · <span className="text-foreground">Stock: {fmtQty(stockMax)} {unidad}</span></>}</p>
+            <p className="text-[12px] sm:text-sm text-muted-foreground">{symbol}{fmtNum(basePricing.displayPrice)} / {unidad}{Number.isFinite(stockMax) && <> · <span className="text-foreground">Stock: {fmtQty(stockMax)} {unidad}</span></>}</p>
           </div>
           <button onClick={onClose} className="p-2 rounded hover:bg-accent"><X className="h-5 w-5" /></button>
         </div>
@@ -128,13 +176,14 @@ export function PresentacionSelectorModal({ open, onClose, producto, presentacio
                     className={`text-left rounded-lg px-3 py-3 border-2 transition-all ${isBaseSelected ? 'border-primary bg-primary/10' : 'border-border bg-card hover:bg-accent/40'}`}>
                     <p className="text-sm sm:text-base font-semibold leading-tight">1 {unidad}</p>
                     <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5">Unidad base</p>
-                    <p className="text-sm sm:text-base font-bold text-primary mt-1">{symbol}{fmtNum(precioPorUnidadBase)}</p>
+                    <p className="text-sm sm:text-base font-bold text-primary mt-1">{symbol}{fmtNum(basePricing.displayPrice)}</p>
                   </button>
                 )}
 
                 {presActivas.map(p => {
                   const active = p.id === presId;
-                  const pUnit = p.precio_especial ?? (precioPorUnidadBase * Number(p.factor_base));
+                  const resolved = getResolvedPresPricing(p);
+                  const pUnit = resolved.displayPrice;
                   return (
                     <button key={p.id} onClick={() => setPresId(p.id)}
                       className={`text-left rounded-lg px-3 py-3 border-2 transition-all ${active ? 'border-primary bg-primary/10' : 'border-border bg-card hover:bg-accent/40'}`}>

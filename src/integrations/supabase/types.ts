@@ -14,6 +14,38 @@ export type Database = {
   }
   public: {
     Tables: {
+      cajas: {
+        Row: {
+          activo: boolean
+          created_at: string
+          empresa_id: string
+          id: string
+          nombre: string
+        }
+        Insert: {
+          activo?: boolean
+          created_at?: string
+          empresa_id: string
+          id?: string
+          nombre: string
+        }
+        Update: {
+          activo?: boolean
+          created_at?: string
+          empresa_id?: string
+          id?: string
+          nombre?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cajas_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ajustes_inventario: {
         Row: {
           almacen_id: string | null
@@ -4578,6 +4610,7 @@ export type Database = {
           precio: number
           precio_minimo: number | null
           producto_ids: string[]
+          presentacion_ids: string[]
           redondeo: string
           tarifa_id: string
           tipo_calculo: Database["public"]["Enums"]["tipo_calculo_tarifa"]
@@ -4593,10 +4626,11 @@ export type Database = {
           id?: string
           lista_precio_id?: string | null
           margen_pct?: number | null
-          notas?: string | null
+          notes?: string | null
           precio?: number
           precio_minimo?: number | null
           producto_ids?: string[]
+          presentacion_ids?: string[]
           redondeo?: string
           tarifa_id: string
           tipo_calculo?: Database["public"]["Enums"]["tipo_calculo_tarifa"]
@@ -4616,6 +4650,7 @@ export type Database = {
           precio?: number
           precio_minimo?: number | null
           producto_ids?: string[]
+          presentacion_ids?: string[]
           redondeo?: string
           tarifa_id?: string
           tipo_calculo?: Database["public"]["Enums"]["tipo_calculo_tarifa"]
@@ -6268,7 +6303,7 @@ export type Database = {
         | "nota_credito"
         | "devolucion_dinero"
         | "descuento_venta"
-      aplica_a_tarifa: "todos" | "categoria" | "producto"
+      aplica_a_tarifa: "todos" | "categoria" | "producto" | "presentacion"
       aplica_promocion:
         | "todos"
         | "producto"
@@ -6474,7 +6509,7 @@ export const Constants = {
         "devolucion_dinero",
         "descuento_venta",
       ],
-      aplica_a_tarifa: ["todos", "categoria", "producto"],
+      aplica_a_tarifa: ["todos", "categoria", "producto", "presentacion"],
       aplica_promocion: [
         "todos",
         "producto",

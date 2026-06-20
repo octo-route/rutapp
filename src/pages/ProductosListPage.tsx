@@ -28,6 +28,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useListPreferences, groupData } from "@/hooks/useListPreferences";
 import { cn, fmtNum } from "@/lib/utils";
 import { useCurrency } from "@/hooks/useCurrency";
+import { calcularCostoTotal } from "@/lib/priceResolver";
 
 const PRODUCTOS_COLUMNS: ExportColumn[] = [
   { key: "codigo", header: "Código", width: 12 },
@@ -324,10 +325,10 @@ export default function ProductosListPage() {
                 {fmt(p.precio_principal)}
               </td>
               <td className="py-1.5 px-3 text-right hidden md:table-cell text-muted-foreground tabular-nums">
-                {fmt(p.costo)}
+                {fmt(calcularCostoTotal(p.costo ?? 0, p.costos_adicionales))}
               </td>
               <td className="py-1.5 px-3 text-right hidden xl:table-cell text-muted-foreground tabular-nums font-mono text-xs">
-                {fmt((p.costo ?? 0) / (p.factor_conversion || 1))}
+                {fmt(calcularCostoTotal(p.costo ?? 0, p.costos_adicionales) / (p.factor_conversion || 1))}
               </td>
               <td className="py-1.5 px-3 text-right hidden lg:table-cell tabular-nums">
                 <span

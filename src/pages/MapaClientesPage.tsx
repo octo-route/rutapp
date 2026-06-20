@@ -318,11 +318,11 @@ export default function MapaClientesPage() {
   // Load saved route order for current day/vendedor combination
   const { data: savedOrder, refetch: refetchSavedOrder } = useQuery({
     queryKey: ['cliente-orden-ruta', empresa?.id, diaFilter, vendedorFilter],
-    enabled: !!empresa?.id && !!diaFilter,
+    enabled: !!empresa?.id,
     queryFn: async () => {
       let q = supabase
         .from('cliente_orden_ruta' as any)
-        .select('cliente_id, orden, vendedor_id, origin_lat, origin_lng, origin_label')
+        .select('cliente_id, orden, vendedor_id, origin_lat, origin_lng, origin_label, polyline, distance_meters, duration')
         .eq('empresa_id', empresa!.id)
         .order('vendedor_id', { ascending: true, nullsFirst: false })
         .order('orden', { ascending: true });
@@ -337,9 +337,203 @@ export default function MapaClientesPage() {
         origin_lat: number | null;
         origin_lng: number | null;
         origin_label: string | null;
+        polyline: string | null;
+        distance_meters: number;
+        duration: string;
       }[];
     },
   });
+
+
+
+  const filtered = useMemo(() => {
+    let result = clientes ?? [];
+    if (zonaFilter) result = result.filter((c: any) => c.zona_id === zonaFilter);
+    if (vendedorFilter) result = result.filter((c: any) => c.vendedor_id === vendedorFilter);
+    if (diaFilter) result = result.filter((c: any) => c.dia_visita?.some((d: string) => d.toLowerCase() === diaFilter.toLowerCase()));
+    return result;
+  }, [clientes, zonaFilter, vendedorFilter, diaFilter]);
+
+  const withGps = useMemo(() => filtered.filter((c: any) => c.gps_lat && c.gps_lng), [filtered]);
+
+  const mapCenter = useMemo(() => {
+    return withGps.length > 0 ? { lat: withGps[0].gps_lat, lng: withGps[0].gps_lng } : defaultCenter;
+  }, [withGps[0]?.gps_lat, withGps[0]?.gps_lng]);
+  const withoutGps = useMemo(() => filtered.filter((c: any) => !c.gps_lat || !c.gps_lng), [filtered]);
+
+  const todayClients = useMemo(() => filtered.filter((c: any) => c.dia_visita?.some((d: string) => d.toLowerCase() === DIA_HOY.toLowerCase())), [filtered]);
+  const visitedCount = useMemo(() => {
+    if (!ventasHoy) return 0;
+    return todayClients.filter((c: any) => ventasHoy.has(c.id)).length;
+  }, [todayClients, ventasHoy]);
+
+  const activeFiltersCount = [zonaFilter, vendedorFilter, diaFilter, statusFilter].filter(Boolean).length;
+
+  // Drag and drop states for route stops
+  const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  /**
+   * Resolve the origin for a vendedor in INDIVIDUAL mode.
+   * Strategy: vendor's profiles.almacen_id with gps → fallback to first almacen with gps → fallback to common origin.
+   */
+  const resolveIndividualOrigin = useCallback(async (vendedor_id: string): Promise<OriginValue | null> => {
+    if (vendedor_id === '__sin_vendedor__') return originPoint;
+    const { data: prof } = await (supabase
+      .from('profiles') as any)
+      .select('almacen_id, almacenes:almacen_id (id, nombre, gps_lat, gps_lng)')
+      .eq('id', vendedor_id)
+      .maybeSingle();
+    const a = prof?.almacenes;
+    if (a?.gps_lat != null && a?.gps_lng != null) {
+      return { lat: Number(a.gps_lat), lng: Number(a.gps_lng), label: a.nombre };
+    }
+    return originPoint;
+  }, [originPoint]);
+
+  /** Persist the optimized order(s) into cliente_orden_ruta */
+  const persistOrder = useCallback(async (groups: { vendedor_id: string | null; ordered: string[]; origin?: OriginValue | null }[]) => {
+    for (const g of groups) {
+      let delQ = (supabase.from('cliente_orden_ruta' as any) as any)
+        .delete().eq('empresa_id', empresa!.id);
+      delQ = diaFilter ? delQ.eq('dia', diaFilter) : delQ.is('dia', null);
+      delQ = g.vendedor_id ? delQ.eq('vendedor_id', g.vendedor_id) : delQ.is('vendedor_id', null);
+      await delQ;
+      const rows = g.ordered.map((id, idx) => ({
+        empresa_id: empresa!.id,
+        cliente_id: id,
+        dia: diaFilter || null,
+        vendedor_id: g.vendedor_id,
+        origin_lat: g.origin?.lat ?? null,
+        origin_lng: g.origin?.lng ?? null,
+        origin_label: g.origin?.label ?? null,
+        orden: idx + 1,
+      }));
+      if (rows.length > 0) {
+        await (supabase.from('cliente_orden_ruta' as any) as any).insert(rows);
+      }
+    }
+  }, [empresa, diaFilter]);
+
+  const fetchSingleRouteDetails = useCallback(async (orderedIds: string[], overrideOrigin?: OriginValue | null) => {
+    if (orderedIds.length === 0) return;
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) return;
+
+      const origin = overrideOrigin ?? (vendedorFilter ? await resolveIndividualOrigin(vendedorFilter) : null) ?? originPoint;
+      if (!origin) return;
+
+      const waypoints = orderedIds
+        .map(id => withGps.find((c: any) => c.id === id))
+        .filter((c: any) => c?.gps_lat && c?.gps_lng)
+        .map((c: any) => ({ id: c.id, lat: Number(c.gps_lat), lng: Number(c.gps_lng) }));
+
+      if (waypoints.length === 0) return;
+
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/optimize-route`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          routes: [{ key: vendedorFilter || 'default', origin: { lat: origin.lat, lng: origin.lng }, waypoints, preserve_order: true }],
+          dia_filtro: diaFilter || null,
+        }),
+      });
+      if (!res.ok) return;
+      const result = await res.json();
+      const r = result.routes?.[0];
+      if (r && !r.error) {
+        setRouteResult(prev => {
+          if (!prev) return null;
+          if (JSON.stringify(prev.orderedIds) !== JSON.stringify(orderedIds)) return prev;
+          return {
+            ...prev,
+            polyline: r.polyline ?? null,
+            distance_meters: r.distance_meters ?? 0,
+            duration: r.duration ?? '0s',
+          };
+        });
+
+        // Cache the newly fetched polyline back to the database so next reload doesn't hit the API
+        if (r.polyline) {
+          let q = supabase.from('cliente_orden_ruta').update({
+            polyline: r.polyline,
+            distance_meters: r.distance_meters ?? 0,
+            duration: r.duration ?? '0s',
+          }).eq('empresa_id', empresa!.id);
+          
+          if (vendedorFilter) q = q.eq('vendedor_id', vendedorFilter);
+          else q = q.is('vendedor_id', null);
+          
+          if (diaFilter) q = q.eq('dia', diaFilter);
+          else q = q.is('dia', null);
+          
+          q.then(({ error }) => {
+            if (error) console.error('Failed to cache polyline:', error);
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Could not fetch street polyline:', err);
+    }
+  }, [vendedorFilter, resolveIndividualOrigin, originPoint, withGps, diaFilter]);
+
+  const handleMoveStop = async (idx: number, direction: 'up' | 'down') => {
+    if (!routeResult) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= routeResult.orderedIds.length) return;
+
+    const newOrderedIds = [...routeResult.orderedIds];
+    const temp = newOrderedIds[idx];
+    newOrderedIds[idx] = newOrderedIds[targetIdx];
+    newOrderedIds[targetIdx] = temp;
+
+    // 1. Update local state immediately
+    setRouteResult(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        orderedIds: newOrderedIds,
+      };
+    });
+
+    // 2. Persist to DB
+    const origin = (vendedorFilter ? await resolveIndividualOrigin(vendedorFilter) : null) ?? originPoint;
+    await persistOrder([{ vendedor_id: vendedorFilter || null, ordered: newOrderedIds, origin }]);
+    await refetchSavedOrder();
+
+    // 3. Recalculate route polyline and stats in the background
+    await fetchSingleRouteDetails(newOrderedIds);
+  };
+
+  const handleMoveStopDrop = async (fromIdx: number, toIdx: number) => {
+    if (!routeResult) return;
+    if (fromIdx === toIdx) return;
+    if (fromIdx < 0 || fromIdx >= routeResult.orderedIds.length || toIdx < 0 || toIdx >= routeResult.orderedIds.length) return;
+
+    const newOrderedIds = [...routeResult.orderedIds];
+    const [movedItem] = newOrderedIds.splice(fromIdx, 1);
+    newOrderedIds.splice(toIdx, 0, movedItem);
+
+    // 1. Update local state immediately
+    setRouteResult(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        orderedIds: newOrderedIds,
+      };
+    });
+
+    // 2. Persist to DB
+    const origin = (vendedorFilter ? await resolveIndividualOrigin(vendedorFilter) : null) ?? originPoint;
+    await persistOrder([{ vendedor_id: vendedorFilter || null, ordered: newOrderedIds, origin }]);
+    await refetchSavedOrder();
+
+    // 3. Recalculate route polyline and stats in the background
+    await fetchSingleRouteDetails(newOrderedIds);
+  };
 
   // Restore saved route automatically when filters change
   useEffect(() => {
@@ -352,14 +546,11 @@ export default function MapaClientesPage() {
       }
       // Group by vendedor_id
       const groups = new Map<string, {
-        rows: {
-          cliente_id: string;
-          orden: number;
-          origin_lat: number | null;
-          origin_lng: number | null;
-          origin_label: string | null;
-        }[];
+        rows: typeof savedOrder;
         savedOrigin: OriginValue | null;
+        polyline: string | null;
+        distance_meters: number;
+        duration: string;
       }>();
       for (const row of savedOrder) {
         const key = row.vendedor_id ?? '__sin_vendedor__';
@@ -369,11 +560,19 @@ export default function MapaClientesPage() {
             savedOrigin: row.origin_lat != null && row.origin_lng != null
               ? { lat: Number(row.origin_lat), lng: Number(row.origin_lng), label: row.origin_label ?? 'Origen guardado' }
               : null,
+            polyline: row.polyline ?? null,
+            distance_meters: row.distance_meters ?? 0,
+            duration: row.duration ?? '0s',
           });
         }
         const group = groups.get(key)!;
         if (!group.savedOrigin && row.origin_lat != null && row.origin_lng != null) {
           group.savedOrigin = { lat: Number(row.origin_lat), lng: Number(row.origin_lng), label: row.origin_label ?? 'Origen guardado' };
+        }
+        if (!group.polyline && row.polyline) {
+          group.polyline = row.polyline;
+          group.distance_meters = row.distance_meters ?? 0;
+          group.duration = row.duration ?? '0s';
         }
         group.rows.push(row);
       }
@@ -384,16 +583,46 @@ export default function MapaClientesPage() {
       const groupKeys = Array.from(groups.keys());
       if (groupKeys.length <= 1) {
         setMultiResults(null);
-        setRouteResult({
-          orderedIds: savedOrder.map(o => o.cliente_id),
-          polyline: null,
-          distance_meters: 0,
-          duration: '',
+        const oIds = savedOrder.map(o => o.cliente_id);
+        const group = groupKeys.length === 1 ? groups.get(groupKeys[0]) : null;
+        const savedOrigin = group?.savedOrigin ?? null;
+        if (savedOrigin) {
+          setOriginPoint(prev => {
+            if (!prev || prev.lat !== savedOrigin.lat || prev.lng !== savedOrigin.lng) return savedOrigin;
+            return prev;
+          });
+        }
+        setRouteResult(prev => {
+          if (prev && JSON.stringify(prev.orderedIds) === JSON.stringify(oIds)) {
+            // Already initialized, don't wipe out polyline
+            return prev;
+          }
+          
+          if (group && group.polyline) {
+            // Fast path: polyline is already cached in the database
+            return {
+              orderedIds: oIds,
+              polyline: group.polyline,
+              distance_meters: group.distance_meters,
+              duration: group.duration,
+            };
+          } else {
+            // Slow path: polyline is missing, need to fetch from Google Maps
+            if (!cancelled) {
+              setTimeout(() => fetchSingleRouteDetails(oIds, savedOrigin), 0);
+            }
+            return {
+              orderedIds: oIds,
+              polyline: null,
+              distance_meters: 0,
+              duration: '',
+            };
+          }
         });
         return;
       }
 
-      // Build initial entries (no polyline yet) so the map shows colored stops immediately
+      // Build initial entries using cached polyline if available
       const initialEntries: RouteResultEntry[] = groupKeys.map(vid => {
         const group = groups.get(vid)!;
         const rows = group.rows.sort((a, b) => a.orden - b.orden);
@@ -403,9 +632,9 @@ export default function MapaClientesPage() {
           vendedor_nombre: vendedor?.nombre ?? (vid === '__sin_vendedor__' ? 'Sin vendedor' : 'Vendedor'),
           origin: group.savedOrigin ?? { lat: 0, lng: 0, label: 'Guardado' },
           optimized_order: rows.map(r => r.cliente_id),
-          polyline: null,
-          distance_meters: 0,
-          duration: '0s',
+          polyline: group.polyline,
+          distance_meters: group.distance_meters,
+          duration: group.duration,
           original_distance_meters: 0,
         };
       });
@@ -489,30 +718,7 @@ export default function MapaClientesPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [savedOrder, vendedores, clientes, originPoint, diaFilter]);
-
-  const filtered = useMemo(() => {
-    let result = clientes ?? [];
-    if (zonaFilter) result = result.filter((c: any) => c.zona_id === zonaFilter);
-    if (vendedorFilter) result = result.filter((c: any) => c.vendedor_id === vendedorFilter);
-    if (diaFilter) result = result.filter((c: any) => c.dia_visita?.some((d: string) => d.toLowerCase() === diaFilter.toLowerCase()));
-    return result;
-  }, [clientes, zonaFilter, vendedorFilter, diaFilter]);
-
-  const withGps = useMemo(() => filtered.filter((c: any) => c.gps_lat && c.gps_lng), [filtered]);
-
-  const mapCenter = useMemo(() => {
-    return withGps.length > 0 ? { lat: withGps[0].gps_lat, lng: withGps[0].gps_lng } : defaultCenter;
-  }, [withGps[0]?.gps_lat, withGps[0]?.gps_lng]);
-  const withoutGps = useMemo(() => filtered.filter((c: any) => !c.gps_lat || !c.gps_lng), [filtered]);
-
-  const todayClients = useMemo(() => filtered.filter((c: any) => c.dia_visita?.some((d: string) => d.toLowerCase() === DIA_HOY.toLowerCase())), [filtered]);
-  const visitedCount = useMemo(() => {
-    if (!ventasHoy) return 0;
-    return todayClients.filter((c: any) => ventasHoy.has(c.id)).length;
-  }, [todayClients, ventasHoy]);
-
-  const activeFiltersCount = [zonaFilter, vendedorFilter, diaFilter, statusFilter].filter(Boolean).length;
+  }, [savedOrder, vendedores, clientes, originPoint, diaFilter, fetchSingleRouteDetails]);
 
   const clearSelection = useCallback(() => {
     setSelectionPath([]);
@@ -932,9 +1138,24 @@ export default function MapaClientesPage() {
   }, [withGps, originPoint]);
 
   const polylinePoints = useMemo(() => {
-    if (!routeResult?.polyline) return null;
-    return decodePolyline(routeResult.polyline);
-  }, [routeResult]);
+    if (!routeResult) return null;
+    if (routeResult.polyline) return decodePolyline(routeResult.polyline);
+
+    // Fallback: straight lines
+    const fallback: { lat: number; lng: number }[] = [];
+    if (originPoint) fallback.push({ lat: originPoint.lat, lng: originPoint.lng });
+
+    const lookup = new Map<string, any>();
+    for (const c of withGps) lookup.set(c.id, c);
+
+    for (const cid of routeResult.orderedIds) {
+      const c = lookup.get(cid);
+      if (c && c.gps_lat != null && c.gps_lng != null) {
+        fallback.push({ lat: Number(c.gps_lat), lng: Number(c.gps_lng) });
+      }
+    }
+    return fallback.length >= 2 ? fallback : null;
+  }, [routeResult, originPoint, withGps]);
 
   const orderedClients = useMemo(() => {
     if (!routeResult) return null;
@@ -971,23 +1192,7 @@ export default function MapaClientesPage() {
 
   const isMultiVendor = clientsByVendedor.length > 1 && !vendedorFilter;
 
-  /**
-   * Resolve the origin for a vendedor in INDIVIDUAL mode.
-   * Strategy: vendor's profiles.almacen_id with gps → fallback to first almacen with gps → fallback to common origin.
-   */
-  const resolveIndividualOrigin = async (vendedor_id: string): Promise<OriginValue | null> => {
-    if (vendedor_id === '__sin_vendedor__') return originPoint;
-    const { data: prof } = await (supabase
-      .from('profiles') as any)
-      .select('almacen_id, almacenes:almacen_id (id, nombre, gps_lat, gps_lng)')
-      .eq('id', vendedor_id)
-      .maybeSingle();
-    const a = prof?.almacenes;
-    if (a?.gps_lat != null && a?.gps_lng != null) {
-      return { lat: Number(a.gps_lat), lng: Number(a.gps_lng), label: a.nombre };
-    }
-    return originPoint;
-  };
+
 
   const handleOptimize = async () => {
     if (!originPoint) { toast.error('Primero establece un punto de partida'); return; }
@@ -1079,29 +1284,7 @@ export default function MapaClientesPage() {
     }
   };
 
-  /** Persist the optimized order(s) into cliente_orden_ruta */
-  const persistOrder = async (groups: { vendedor_id: string | null; ordered: string[]; origin?: OriginValue | null }[]) => {
-    for (const g of groups) {
-      let delQ = (supabase.from('cliente_orden_ruta' as any) as any)
-        .delete().eq('empresa_id', empresa!.id);
-      delQ = diaFilter ? delQ.eq('dia', diaFilter) : delQ.is('dia', null);
-      delQ = g.vendedor_id ? delQ.eq('vendedor_id', g.vendedor_id) : delQ.is('vendedor_id', null);
-      await delQ;
-      const rows = g.ordered.map((id, idx) => ({
-        empresa_id: empresa!.id,
-        cliente_id: id,
-        dia: diaFilter || null,
-        vendedor_id: g.vendedor_id,
-        origin_lat: g.origin?.lat ?? null,
-        origin_lng: g.origin?.lng ?? null,
-        origin_label: g.origin?.label ?? null,
-        orden: idx + 1,
-      }));
-      if (rows.length > 0) {
-        await (supabase.from('cliente_orden_ruta' as any) as any).insert(rows);
-      }
-    }
-  };
+
 
   const handleApplyMulti = async () => {
     if (!multiResults) return;
@@ -1273,24 +1456,26 @@ export default function MapaClientesPage() {
               <PenLine className="h-3.5 w-3.5" />
               Lápiz
             </button>
-            <button
-              onClick={() => setShowOriginPicker(s => !s)}
-              className={cn("flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors",
-                originPoint ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600"
-                  : "bg-background border-border text-muted-foreground")}>
-              <Navigation className="h-3.5 w-3.5" />
-              {originPoint ? `✓ ${originPoint.label ?? 'Origen'}` : 'Origen'}
-            </button>
-            {showOriginPicker && (
-              <div className="absolute top-full right-0 mt-2 z-20 w-72 bg-card border border-border rounded-xl shadow-lg p-3">
-                <OriginPicker
-                  value={originPoint}
-                  onChange={(v) => { setOriginPoint(v); setRouteResult(null); setMultiResults(null); if (v) setShowOriginPicker(false); }}
-                  onPickFromMapRequest={() => { setSettingOrigin(true); setShowOriginPicker(false); toast.info('Click en el mapa'); }}
-                  pickingFromMap={settingOrigin}
-                />
-              </div>
-            )}
+            <div className="relative">
+              <button
+                onClick={() => setShowOriginPicker(s => !s)}
+                className={cn("flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors",
+                  originPoint ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600"
+                    : "bg-background border-border text-muted-foreground")}>
+                <Navigation className="h-3.5 w-3.5" />
+                {originPoint ? `✓ ${originPoint.label ?? 'Origen'}` : 'Origen'}
+              </button>
+              {showOriginPicker && (
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-20 w-72 bg-card border border-border rounded-xl shadow-lg p-3">
+                  <OriginPicker
+                    value={originPoint}
+                    onChange={(v) => { setOriginPoint(v); setRouteResult(null); setMultiResults(null); if (v) setShowOriginPicker(false); }}
+                    onPickFromMapRequest={() => { setSettingOrigin(true); setShowOriginPicker(false); toast.info('Click en el mapa'); }}
+                    pickingFromMap={settingOrigin}
+                  />
+                </div>
+              )}
+            </div>
             {isAdmin && originPoint && withGps.length >= 1 && (
               <button onClick={handleOptimize} disabled={optimizing}
                 className={cn("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all",
@@ -1381,12 +1566,12 @@ export default function MapaClientesPage() {
           )}
         </div>
 
-        {/* Quota widget — top right (above origin picker on desktop) */}
-        <div className="absolute top-3 right-3 z-10 hidden md:block max-w-[320px]">
+        {/* Quota widget — bottom center */}
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 hidden md:block max-w-[320px] w-full px-4">
           <RouteOptimizationQuotaWidget />
         </div>
-        {/* Mobile: just below KPIs */}
-        <div className="md:hidden absolute top-3 left-2 right-2 z-10">
+        {/* Mobile: bottom center */}
+        <div className="md:hidden absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] px-2 z-10">
           <RouteOptimizationQuotaWidget />
         </div>
 
@@ -1765,19 +1950,71 @@ export default function MapaClientesPage() {
                 {orderedClients.map((c: any, idx: number) => {
                   const visited = ventasHoy?.has(c.id);
                   return (
-                    <button key={c.id}
-                      onClick={() => { setSelectedCliente(c); mapRef.current?.panTo({ lat: c.gps_lat, lng: c.gps_lng }); }}
-                      className="flex items-center gap-2.5 px-3 py-2.5 border-b border-border/30 last:border-0 w-full text-left hover:bg-accent/30 transition-colors">
-                      <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0",
-                        visited ? "bg-[hsl(var(--success))] text-white" : "bg-primary text-primary-foreground")}>
-                        {visited ? '✓' : idx + 1}
+                    <div key={c.id}
+                      draggable="true"
+                      onDragStart={(e) => {
+                        setDraggingIdx(idx);
+                        e.dataTransfer.setData('text/plain', String(idx));
+                      }}
+                      onDragEnd={() => {
+                        setDraggingIdx(null);
+                        setDragOverIdx(null);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (dragOverIdx !== idx) setDragOverIdx(idx);
+                      }}
+                      onDragLeave={() => {
+                        setDragOverIdx(null);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                        handleMoveStopDrop(fromIdx, idx);
+                        setDraggingIdx(null);
+                        setDragOverIdx(null);
+                      }}
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-2 border-b border-border/30 last:border-0 w-full hover:bg-accent/10 transition-all cursor-move select-none",
+                        draggingIdx === idx && "opacity-40 bg-accent/20",
+                        dragOverIdx === idx && "border-t-2 border-t-primary"
+                      )}
+                    >
+                      <button
+                        onClick={() => { setSelectedCliente(c); mapRef.current?.panTo({ lat: c.gps_lat, lng: c.gps_lng }); }}
+                        className="flex-1 flex items-center gap-2.5 min-w-0 text-left"
+                      >
+                        <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0",
+                          visited ? "bg-[hsl(var(--success))] text-white" : "bg-primary text-primary-foreground")}>
+                          {visited ? '✓' : idx + 1}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-medium text-foreground truncate">{c.nombre}</div>
+                          {c.direccion && <div className="text-[10px] text-muted-foreground truncate">{c.direccion}</div>}
+                        </div>
+                        {visited && <CheckCircle2 className="h-3.5 w-3.5 text-[hsl(var(--success))] shrink-0" />}
+                      </button>
+
+                      {/* Botones de subir y bajar */}
+                      <div className="flex flex-col shrink-0 gap-0.5 ml-1">
+                        <button
+                          disabled={idx === 0}
+                          onClick={(e) => { e.stopPropagation(); handleMoveStop(idx, 'up'); }}
+                          className="p-1 hover:bg-accent/40 rounded disabled:opacity-30 disabled:hover:bg-transparent text-muted-foreground hover:text-foreground transition-colors"
+                          title="Subir"
+                        >
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          disabled={idx === orderedClients.length - 1}
+                          onClick={(e) => { e.stopPropagation(); handleMoveStop(idx, 'down'); }}
+                          className="p-1 hover:bg-accent/40 rounded disabled:opacity-30 disabled:hover:bg-transparent text-muted-foreground hover:text-foreground transition-colors"
+                          title="Bajar"
+                        >
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-medium text-foreground truncate">{c.nombre}</div>
-                        {c.direccion && <div className="text-[10px] text-muted-foreground truncate">{c.direccion}</div>}
-                      </div>
-                      {visited && <CheckCircle2 className="h-3.5 w-3.5 text-[hsl(var(--success))] shrink-0" />}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -1796,6 +2033,7 @@ export default function MapaClientesPage() {
             applying={applying}
             applied={applied}
             onClose={() => { setMultiResults(null); setApplied(false); }}
+            onEdit={(vid) => setVendedorFilter(vid === '__sin_vendedor__' ? '' : vid)}
           />
         )}
 

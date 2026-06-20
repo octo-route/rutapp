@@ -37,6 +37,7 @@ import { toast } from "sonner";
 import TicketVenta from "@/components/ruta/TicketVenta";
 import {
   resolveProductPricing,
+  resolvePresentacionPricing,
   type TarifaLineaRule,
 } from "@/lib/priceResolver";
 import {
@@ -770,9 +771,28 @@ export default function PuntoVentaPage() {
           const pBase = productos.find(p => p.id === pr.producto_id);
           if (pBase) {
             const pricing = getProductPricing(pBase);
-            const precioBase = Number(pricing?.displayPrice ?? pBase.precio_principal ?? 0);
             const factor = Number(pr.factor_base);
-            const unitPrice = pr.precio_especial != null ? (Number(pr.precio_especial) / factor) : precioBase;
+            const resolvedPres = resolvePresentacionPricing(
+              (effectiveTarifaLineas ?? []) as any[],
+              { id: pr.id, factor_base: factor, precio_especial: pr.precio_especial },
+              {
+                id: pBase.id,
+                precio_principal: pBase.precio_principal ?? 0,
+                costo: pBase.costo ?? 0,
+                clasificacion_id: pBase.clasificacion_id,
+                tiene_iva: pBase.tiene_iva,
+                iva_pct: pBase.iva_pct ?? 16,
+                tiene_ieps: pBase.tiene_ieps,
+                ieps_pct: pBase.ieps_pct ?? 0,
+                ieps_tipo: pBase.ieps_tipo,
+                usa_listas_precio: pBase.usa_listas_precio,
+              },
+              pricing,
+              clienteListaPrecioId
+            );
+            const unitPrice = factor > 0 ? (resolvedPres.unitPrice / factor) : 0;
+            const rawUnitPrice = factor > 0 ? (resolvedPres.rawUnitPrice / factor) : 0;
+            const rawDisplayPrice = factor > 0 ? (resolvedPres.rawDisplayPrice / factor) : 0;
             
             setCart((prev) => [
               ...prev,
@@ -781,15 +801,15 @@ export default function PuntoVentaPage() {
                 codigo: pr.codigo_barras || pBase.codigo,
                 nombre: `${pBase.nombre} - ${pr.nombre}`,
                 precio_unitario: unitPrice,
-                precio_unitario_sin_redondeo: unitPrice,
-                precio_display_sin_redondeo: unitPrice,
+                precio_unitario_sin_redondeo: rawUnitPrice,
+                precio_display_sin_redondeo: rawDisplayPrice,
                 cantidad: factor,
                 tiene_iva: pBase.tiene_iva ?? false,
                 iva_pct: pBase.tiene_iva ? (pBase.iva_pct ?? 16) : 0,
                 tiene_ieps: pBase.tiene_ieps ?? false,
                 ieps_pct: pBase.tiene_ieps ? (pBase.ieps_pct ?? 0) : 0,
                 unidad: pBase.es_granel ? (pBase.unidad_granel ?? "kg") : "pz",
-                base_precio: pricing.basePrecio as BasePrecioMode,
+                base_precio: resolvedPres.basePrecio as BasePrecioMode,
                 redondeo: pricing.appliedRule?.redondeo ?? "ninguno",
                 _max_stock: (pBase.vender_sin_stock || pBase.es_combo || pBase.se_puede_inventariar === false) ? Infinity : (pBase.cantidad ?? 0),
                 _es_granel: pBase.es_granel ?? false,
@@ -1732,6 +1752,19 @@ export default function PuntoVentaPage() {
                       const pricing = getProductPricing(p);
                       const listaNombre =
                         clienteListaNombre || defaultListaNombre || "General";
+                      const prodPresentaciones = presentaciones.filter((pr: any) => pr.producto_id === p.id);
+                      let equivalentText = null;
+                      if (prodPresentaciones.length > 0 && stock > 0 && !p.es_combo && p.se_puede_inventariar !== false) {
+                        const pres = prodPresentaciones[0];
+                        const factor = Number(pres.factor_base) || 1;
+                        if (factor > 1) {
+                          const presCount = Math.floor(stock / factor);
+                          const remainder = stock % factor;
+                          if (presCount > 0) {
+                            equivalentText = `${presCount} ${pres.nombre}${remainder > 0 ? ` + ${remainder} ${unidad}` : ""}`;
+                          }
+                        }
+                      }
                       return (
                         <tr
                           key={p.id}
@@ -1752,6 +1785,11 @@ export default function PuntoVentaPage() {
                                     COMBO
                                   </span>
                                 )}
+                                {prodPresentaciones.length > 0 && (
+                                  <span className="ml-2 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[8px] font-bold text-primary">
+                                    <Package className="w-3 h-3 mr-0.5" /> {prodPresentaciones.length} pres.
+                                  </span>
+                                )}
                               </span>
                               <span className="text-[10px] text-muted-foreground font-mono shrink-0">
                                 {p.codigo}
@@ -1769,13 +1807,18 @@ export default function PuntoVentaPage() {
                               /{unidad}
                             </span>
                           </td>
-                          <td
-                            className={`px-2 py-2 text-right font-semibold whitespace-nowrap ${p.es_combo || p.se_puede_inventariar === false ? "text-muted-foreground" : stock > 0 ? "text-green-600" : "text-destructive"}`}
-                          >
-                            {p.es_combo || p.se_puede_inventariar === false ? "—" : fmtNum(stock)}{" "}
-                            <span className="text-[9px] font-normal text-muted-foreground">
-                              {unidad}
-                            </span>
+                          <td className="px-2 py-2 text-right whitespace-nowrap">
+                            <div className={`font-semibold ${p.es_combo || p.se_puede_inventariar === false ? "text-muted-foreground" : stock > 0 ? "text-green-600" : "text-destructive"}`}>
+                              {p.es_combo || p.se_puede_inventariar === false ? "—" : fmtNum(stock)}{" "}
+                              <span className="text-[9px] font-normal text-muted-foreground">
+                                {unidad}
+                              </span>
+                            </div>
+                            {equivalentText && (
+                              <div className="text-[9px] font-medium text-primary mt-0.5">
+                                {equivalentText}
+                              </div>
+                            )}
                           </td>
                           <td className="px-2 py-2 text-right">
                             <Plus className="h-3.5 w-3.5 text-muted-foreground inline" />
@@ -1801,6 +1844,20 @@ export default function PuntoVentaPage() {
                 {filteredProducts.map((p) => {
                   const inCart = cart.find((c) => c.producto_id === p.id);
                   const stock = p.cantidad ?? 0;
+                  const unidad = (p as any).es_granel ? ((p as any).unidad_granel || "kg") : "pz";
+                  const prodPresentaciones = presentaciones.filter((pr: any) => pr.producto_id === p.id);
+                  let equivalentText = null;
+                  if (prodPresentaciones.length > 0 && stock > 0 && !p.es_combo && p.se_puede_inventariar !== false) {
+                    const pres = prodPresentaciones[0];
+                    const factor = Number(pres.factor_base) || 1;
+                    if (factor > 1) {
+                      const presCount = Math.floor(stock / factor);
+                      const remainder = stock % factor;
+                      if (presCount > 0) {
+                        equivalentText = `${presCount} ${pres.nombre}${remainder > 0 ? ` + ${remainder} ${unidad}` : ""}`;
+                      }
+                    }
+                  }
                   return (
                     <button
                       key={p.id}
@@ -1835,6 +1892,11 @@ export default function PuntoVentaPage() {
                             C
                           </span>
                         )}
+                        {prodPresentaciones.length > 0 && (
+                          <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1 py-0.5 text-[7px] font-bold text-primary leading-none">
+                            <Package className="w-2.5 h-2.5 mr-0.5" /> {prodPresentaciones.length}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[8px] text-muted-foreground font-mono">
                         {p.codigo}
@@ -1844,16 +1906,21 @@ export default function PuntoVentaPage() {
                           {fmtM(getProductPricing(p).displayPrice)}
                           <span className="text-[7px] font-normal text-muted-foreground ml-0.5">
                             /
-                            {(p as any).es_granel
-                              ? (p as any).unidad_granel
-                              : "pz"}
+                            {unidad}
                           </span>
                         </span>
-                        <span
-                          className={`text-[8px] font-medium ${p.es_combo || p.se_puede_inventariar === false ? "text-muted-foreground" : stock > 0 ? "text-green-600" : "text-destructive"}`}
-                        >
-                          {p.es_combo || p.se_puede_inventariar === false ? "—" : fmtNum(stock)}
-                        </span>
+                        <div className="flex flex-col items-end">
+                          <span
+                            className={`text-[8px] font-medium ${p.es_combo || p.se_puede_inventariar === false ? "text-muted-foreground" : stock > 0 ? "text-green-600" : "text-destructive"}`}
+                          >
+                            {p.es_combo || p.se_puede_inventariar === false ? "—" : fmtNum(stock)}
+                          </span>
+                          {equivalentText && (
+                            <span className="text-[7px] font-medium text-primary leading-none mt-0.5">
+                              {equivalentText}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </button>
                   );
@@ -3011,18 +3078,18 @@ export default function PuntoVentaPage() {
               ? Infinity
               : Number(selectedProductoPresentacion?.cantidad ?? 0)
           }
+          tarifaRules={effectiveTarifaLineas ?? []}
+          clienteListaPrecioId={clienteListaPrecioId}
           onConfirm={(payload: any) => {
-            const pricing = getProductPricing(selectedProductoPresentacion);
-
             setCart((prev) => [
               ...prev,
               {
                 producto_id: selectedProductoPresentacion.id,
-                codigo: selectedProductoPresentacion.codigo,
-                nombre: selectedProductoPresentacion.nombre,
-                precio_unitario: payload.precioUnitario,
-                precio_unitario_sin_redondeo: payload.precioUnitario,
-                precio_display_sin_redondeo: payload.precioUnitario,
+                codigo: payload.presentacion?.codigo_barras || selectedProductoPresentacion.codigo,
+                nombre: payload.presentacion ? `${selectedProductoPresentacion.nombre} - ${payload.presentacion.nombre}` : selectedProductoPresentacion.nombre,
+                precio_unitario: payload.pricing.unitPrice,
+                precio_unitario_sin_redondeo: payload.pricing.rawUnitPrice,
+                precio_display_sin_redondeo: payload.pricing.rawDisplayPrice,
                 cantidad: payload.cantidadBase,
                 tiene_iva: selectedProductoPresentacion.tiene_iva ?? false,
                 iva_pct: selectedProductoPresentacion.tiene_iva
@@ -3032,9 +3099,9 @@ export default function PuntoVentaPage() {
                 ieps_pct: selectedProductoPresentacion.tiene_ieps
                   ? (selectedProductoPresentacion.ieps_pct ?? 0)
                   : 0,
-                unidad: selectedProductoPresentacion.unidad_granel ?? "kg",
-                base_precio: pricing.basePrecio as BasePrecioMode,
-                redondeo: pricing.appliedRule?.redondeo ?? "ninguno",
+                unidad: selectedProductoPresentacion.es_granel ? (selectedProductoPresentacion.unidad_granel ?? "kg") : "pz",
+                base_precio: payload.pricing.basePrecio as BasePrecioMode,
+                redondeo: payload.pricing.appliedRule?.redondeo ?? "ninguno",
                 _max_stock: selectedProductoPresentacion.vender_sin_stock
                   ? Infinity
                   : (selectedProductoPresentacion.cantidad ?? 0),

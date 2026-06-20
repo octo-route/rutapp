@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Polyline, Marker } from '@react-google-maps/api';
-import { Eye, EyeOff, Loader2, Route as RouteIcon, TrendingDown, ChevronDown, ChevronUp, Save } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Route as RouteIcon, TrendingDown, ChevronDown, ChevronUp, Save, PenLine } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /** 12 contrasting colors for routes */
@@ -58,6 +58,7 @@ interface Props {
   applying: boolean;
   applied: boolean;
   onClose: () => void;
+  onEdit?: (vendedor_id: string) => void;
 }
 
 /** Format a duration in "1234s" → "20 min" or "1h 5min" */
@@ -178,7 +179,7 @@ export function MultiRouteOverlay({ results, clientesById, visibility, hidePolyl
 }
 
 export default function MultiRoutePanel({
-  results, clientesById, visibility, onToggleVisibility, onApply, applying, applied, onClose,
+  results, clientesById, visibility, onToggleVisibility, onApply, applying, applied, onClose, onEdit,
 }: Props) {
   const [expanded, setExpanded] = useState(true);
 
@@ -223,6 +224,15 @@ export default function MultiRoutePanel({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <div className="text-xs font-semibold text-foreground truncate flex-1">{r.vendedor_nombre}</div>
+                        {onEdit && r.vendedor_id !== '__sin_vendedor__' && (
+                          <button
+                            onClick={() => onEdit(r.vendedor_id)}
+                            className="p-0.5 text-muted-foreground hover:text-foreground"
+                            title="Editar orden de paradas"
+                          >
+                            <PenLine className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <button
                           onClick={() => onToggleVisibility(r.vendedor_id)}
                           className="p-0.5 text-muted-foreground hover:text-foreground"

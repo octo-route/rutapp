@@ -378,7 +378,7 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('productos')
-        .select('id, codigo, nombre, precio_principal, precio_sugerido_publico, costo, tiene_iva, iva_pct, tiene_ieps, ieps_pct, ieps_tipo')
+        .select('id, codigo, nombre, precio_principal, precio_sugerido_publico, costo, tiene_iva, iva_pct, tiene_ieps, ieps_pct, ieps_tipo, costo_incluye_impuestos')
         .eq('empresa_id', empresa!.id)
         .in('id', selectedIds);
       if (error) throw error;
@@ -412,7 +412,10 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
     for (const linea of stagedLines) {
       const prod = productMap.get(linea.componente_id);
       const costoUnitario = Number(prod?.costo) || 0;
-      total += linea.cantidad * costoUnitario;
+      const incluyeImp = prod?.costo_incluye_impuestos;
+      const taxMult = 1 + ((prod?.tiene_iva ? Number(prod?.iva_pct) || 16 : 0) + (prod?.tiene_ieps ? Number(prod?.ieps_pct) || 0 : 0)) / 100;
+      const costoSin = (incluyeImp && taxMult > 0) ? (costoUnitario / taxMult) : costoUnitario;
+      total += linea.cantidad * costoSin;
     }
     return Number(total.toFixed(2));
   }, [stagedLines, productMap]);
@@ -422,13 +425,14 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
     for (const linea of stagedLines) {
       const prod = productMap.get(linea.componente_id);
       const costoUnitario = Number(prod?.costo) || 0;
+      const incluyeImp = prod?.costo_incluye_impuestos;
       const tieneIva = prod?.tiene_iva;
       const ivaPct = tieneIva ? Number(prod?.iva_pct) || 16 : 0;
       const tieneIeps = prod?.tiene_ieps;
       const iepsPct = tieneIeps ? Number(prod?.ieps_pct) || 0 : 0;
       
       const taxMult = 1 + (ivaPct + iepsPct) / 100;
-      const costoConImpuestos = costoUnitario * taxMult;
+      const costoConImpuestos = incluyeImp ? costoUnitario : (costoUnitario * taxMult);
 
       total += linea.cantidad * costoConImpuestos;
     }
@@ -987,13 +991,14 @@ export default function ComboLineModal({ open, onOpenChange, comboId }: Props) {
                         stagedLines.map((linea) => {
                           const prod = productMap.get(linea.componente_id);
                           const costoUnitario = Number(prod?.costo) || 0;
+                          const incluyeImp = prod?.costo_incluye_impuestos;
                           const tieneIva = prod?.tiene_iva;
                           const ivaPct = tieneIva ? Number(prod?.iva_pct) || 16 : 0;
                           const tieneIeps = prod?.tiene_ieps;
                           const iepsPct = tieneIeps ? Number(prod?.ieps_pct) || 0 : 0;
                           
                           const taxMult = 1 + (ivaPct + iepsPct) / 100;
-                          const costoConImpuestos = costoUnitario * taxMult;
+                          const costoConImpuestos = incluyeImp ? costoUnitario : (costoUnitario * taxMult);
                           const totalLineaCostoConImp = costoConImpuestos * linea.cantidad;
 
                           const tagsImpuestos = [];

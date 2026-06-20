@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,6 +7,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { useCajaTurno } from '@/hooks/useCajaTurno';
 import { toast } from 'sonner';
 import { LockOpen } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface Props {
   open: boolean;
@@ -15,17 +19,45 @@ interface Props {
 
 export function AbrirTurnoModal({ open, onOpenChange }: Props) {
   const { abrirTurno } = useCajaTurno();
-  const [cajaNombre, setCajaNombre] = useState('Caja Principal');
+  const { empresa } = useAuth();
+  const [cajaNombre, setCajaNombre] = useState('');
   const [fondo, setFondo] = useState('');
   const [notas, setNotas] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const { data: cajas, isLoading: loadingCajas } = useQuery({
+    queryKey: ['cajas-activas', empresa?.id],
+    enabled: !!empresa?.id && open,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cajas')
+        .select('*')
+        .eq('empresa_id', empresa!.id)
+        .eq('activo', true)
+        .order('nombre');
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  useEffect(() => {
+    if (open && cajas && cajas.length > 0) {
+      const exists = cajas.some(c => c.nombre === cajaNombre);
+      if (!exists) {
+        setCajaNombre(cajas[0].nombre);
+      }
+    } else if (!open) {
+      setCajaNombre('');
+    }
+  }, [open, cajas]);
+
   const handleSubmit = async () => {
     const monto = parseFloat(fondo) || 0;
     if (monto < 0) { toast.error('El fondo no puede ser negativo'); return; }
+    if (!cajaNombre.trim()) { toast.error('Debe seleccionar una caja'); return; }
     setBusy(true);
     try {
-      await abrirTurno.mutateAsync({ caja_nombre: cajaNombre.trim() || 'Caja Principal', fondo_inicial: monto, notas: notas.trim() || undefined });
+      await abrirTurno.mutateAsync({ caja_nombre: cajaNombre.trim(), fondo_inicial: monto, notas: notas.trim() || undefined });
       toast.success('Turno abierto');
       onOpenChange(false);
       setFondo(''); setNotas('');
@@ -35,6 +67,8 @@ export function AbrirTurnoModal({ open, onOpenChange }: Props) {
       setBusy(false);
     }
   };
+
+  const hasNoCajas = !loadingCajas && (!cajas || cajas.length === 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -47,7 +81,28 @@ export function AbrirTurnoModal({ open, onOpenChange }: Props) {
         <div className="space-y-4 py-2">
           <div>
             <Label>Nombre de caja</Label>
-            <Input value={cajaNombre} onChange={(e) => setCajaNombre(e.target.value)} placeholder="Caja Principal" />
+            {loadingCajas ? (
+              <div className="text-xs text-muted-foreground animate-pulse py-2">
+                Cargando cajas...
+              </div>
+            ) : hasNoCajas ? (
+              <div className="text-xs text-destructive py-2 font-medium">
+                No hay cajas registradas en el catálogo. Registra una caja activa en Catálogos &gt; Cajas para poder abrir turno.
+              </div>
+            ) : (
+              <Select value={cajaNombre} onValueChange={setCajaNombre}>
+                <SelectTrigger className="w-full mt-1.5">
+                  <SelectValue placeholder="Selecciona una caja..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {cajas.map((c) => (
+                    <SelectItem key={c.id} value={c.nombre}>
+                      {c.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
           <div>
             <Label>Fondo inicial (efectivo en caja)</Label>
@@ -67,9 +122,12 @@ export function AbrirTurnoModal({ open, onOpenChange }: Props) {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancelar</Button>
-          <Button onClick={handleSubmit} disabled={busy}>{busy ? 'Abriendo…' : 'Abrir turno'}</Button>
+          <Button onClick={handleSubmit} disabled={busy || hasNoCajas || !cajaNombre}>
+            {busy ? 'Abriendo…' : 'Abrir turno'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+

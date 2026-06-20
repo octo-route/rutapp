@@ -55,6 +55,11 @@ export function useRutaVenta(opts?: { onAlmacenMissing?: () => void }) {
   const [descuentoExtraValor, setDescuentoExtraValor] = useState<number>(0);
   const [descuentoExtraMotivo, setDescuentoExtraMotivo] = useState<string>('');
 
+  const [showPresentacionModal, setShowPresentacionModal] = useState(false);
+  const [selectedProductoPresentacion, setSelectedProductoPresentacion] = useState<any | null>(null);
+
+  const { data: presentaciones = [] } = useOfflineQuery('producto_presentaciones' as any, { empresa_id: empresa?.id, activo: true }, { enabled: !!empresa?.id });
+
   const { hasPermiso, isOwner } = usePermisos();
   const canChangePrice = isOwner || hasPermiso('ventas.cambiar_precio', 'ver');
   const canApplyDiscount = isOwner || hasPermiso('ventas.aplicar_descuento', 'ver');
@@ -352,6 +357,17 @@ export function useRutaVenta(opts?: { onAlmacenMissing?: () => void }) {
   };
 
   const addToCart = (p: any, esCambio = false) => {
+    if (!esCambio) {
+      const productoPresentaciones = presentaciones.filter(
+        (pr: any) => pr.producto_id === p.id
+      );
+      if (productoPresentaciones.length > 0) {
+        setSelectedProductoPresentacion(p);
+        setShowPresentacionModal(true);
+        return;
+      }
+    }
+
     const maxQty = esCambio ? Infinity : getMaxQty(p.id);
     const existing = cart.find(c => c.producto_id === p.id && c.es_cambio === esCambio);
     if (existing) {
@@ -820,5 +836,10 @@ export function useRutaVenta(opts?: { onAlmacenMissing?: () => void }) {
     descuentoExtraTipo, setDescuentoExtraTipo,
     descuentoExtraValor, setDescuentoExtraValor,
     descuentoExtraMotivo, setDescuentoExtraMotivo,
+    // Presentaciones
+    presentaciones,
+    showPresentacionModal, setShowPresentacionModal,
+    selectedProductoPresentacion, setSelectedProductoPresentacion,
+    tarifaLineasOffline, clienteListaPrecioId,
   };
 }

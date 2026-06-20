@@ -3,7 +3,10 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, X } from 'lucide-react';
 import { OdooField } from '@/components/OdooFormField';
 import SearchableSelect from '@/components/SearchableSelect';
-import type { Producto, Marca, Proveedor, Clasificacion, Lista, Unidad, UnidadSat } from '@/types';
+import { CostosAdicionalesModal } from '@/components/producto/CostosAdicionalesModal';
+import type { Producto, Marca, Proveedor, Clasificacion, Lista, Unidad, UnidadSat, ProductoCostoAdicional } from '@/types';
+import { calcularCostoTotal } from '@/lib/priceResolver';
+
 
 interface TarifaOption { id: string; nombre: string; tarifa_id?: string }
 import { useCurrency } from '@/hooks/useCurrency';
@@ -81,6 +84,10 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
 
   // Modal de confirmación para cambios de cálculo de costo
   const [modalConfig, setModalConfig] = useState<{ type: string; pendingVal: any } | null>(null);
+
+  // Modal para gastos adicionales
+  const [isCostosModalOpen, setIsCostosModalOpen] = useState(false);
+  const costoTotal = calcularCostoTotal(form.costo ?? 0, form.costos_adicionales);
 
   const handleCalculoCostoChange = (newVal: any) => {
     const prevVal = form.calculo_costo ?? 'promedio';
@@ -209,6 +216,35 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
             }
           />
 
+          {/* Gastos Adicionales y Costo Total */}
+          <div className="odoo-field-row mb-1">
+            <span className="odoo-field-label">Gastos adicionales</span>
+            <div className="flex flex-col gap-1 items-start">
+              <button
+                type="button"
+                onClick={() => setIsCostosModalOpen(true)}
+                className="text-[12px] text-primary hover:underline font-medium"
+              >
+                {form.costos_adicionales?.length ? `${form.costos_adicionales.length} gasto(s) configurado(s)` : 'Configurar gastos (Flete, etc.)'}
+              </button>
+            </div>
+          </div>
+
+          <OdooField
+            label="Costo total"
+            value={costoTotal}
+            type="number"
+            teal
+            readOnly
+            help
+            helpText="Costo Base + Gastos Adicionales. Este costo se utiliza para el cálculo de reglas de precio y márgenes."
+            format={v => `${symbol} ${(v ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            labelSuffix={isMethodAuto(form.calculo_costo ?? 'promedio') && !isNew
+              ? <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">Auto</span>
+              : undefined
+            }
+          />
+
           <OdooField
             label="Precio sugerido público"
             value={(form as any).precio_sugerido_publico}
@@ -287,6 +323,14 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
           document.body
         );
       })()}
+
+      <CostosAdicionalesModal
+        isOpen={isCostosModalOpen}
+        onClose={() => setIsCostosModalOpen(false)}
+        costoBase={form.costo ?? 0}
+        costosAdicionales={form.costos_adicionales || []}
+        onSave={(costos) => setForm(f => ({ ...f, costos_adicionales: costos }))}
+      />
     </>
   );
 }

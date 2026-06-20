@@ -161,13 +161,14 @@ export function useUsuarios() {
     loadUsuarios();
   }, [loadUsuarios]);
 
-  const quickCreateRoleAction = useCallback(async () => {
+  const quickCreateRoleAction = useCallback(async (onSuccess?: () => Promise<void>) => {
     if (!quickRoleName.trim() || !empresa?.id) return;
     const { data } = await supabase.from('roles').insert({ empresa_id: empresa.id, nombre: quickRoleName.trim() }).select('id').single();
     if (data) {
+      if (onSuccess) await onSuccess();
+      await loadUsuarios(false);
       setNewUser(prev => ({ ...prev, role_id: data.id }));
       toast.success('Rol creado');
-      loadUsuarios(false);
     }
     setQuickCreateRole(false);
   }, [quickRoleName, empresa?.id, loadUsuarios]);
@@ -176,9 +177,9 @@ export function useUsuarios() {
     if (!quickAlmacenName.trim() || !empresa?.id) return;
     const { data } = await supabase.from('almacenes').insert({ empresa_id: empresa.id, nombre: quickAlmacenName.trim() }).select('id').single();
     if (data) {
+      await loadUsuarios(false);
       setNewUser(prev => ({ ...prev, almacen_id: data.id }));
       toast.success('Almacén creado');
-      loadUsuarios(false);
     }
     setQuickCreateAlmacen(false);
   }, [quickAlmacenName, empresa?.id, loadUsuarios]);

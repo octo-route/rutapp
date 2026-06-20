@@ -6,9 +6,10 @@
  */
 
 export interface TarifaLineaRule {
-  aplica_a: string; // 'todos' | 'producto' | 'categoria'
+  aplica_a: string; // 'todos' | 'producto' | 'categoria' | 'presentacion'
   producto_ids: string[];
   clasificacion_ids: string[];
+  presentacion_ids?: string[];
   tipo_calculo: string; // 'precio_fijo' | 'margen_costo' | 'descuento_precio'
   precio: number;
   precio_minimo: number | null;
@@ -30,6 +31,7 @@ export interface ProductForPricing {
   ieps_pct?: number;
   ieps_tipo?: string;
   usa_listas_precio?: boolean;
+  costos_adicionales?: { id: string; tipo: 'valor' | 'porcentaje'; valor: number }[];
 }
 
 export interface ResolvedProductPricing {
@@ -39,6 +41,19 @@ export interface ResolvedProductPricing {
   rawDisplayPrice: number;
   basePrecio: string;
   appliedRule: TarifaLineaRule | null;
+}
+
+export function calcularCostoTotal(costoBase: number, adicionales?: { tipo: 'valor' | 'porcentaje'; valor: number }[]): number {
+  if (!adicionales || adicionales.length === 0) return costoBase;
+  let total = costoBase;
+  for (const adic of adicionales) {
+    if (adic.tipo === 'porcentaje') {
+      total += costoBase * (adic.valor / 100);
+    } else {
+      total += adic.valor;
+    }
+  }
+  return total;
 }
 
 function round2(value: number): number {
@@ -98,7 +113,8 @@ export function calculateRawPrice(rule: TarifaLineaRule, producto: ProductForPri
     precio = rule.precio ?? 0;
     if (precio <= 0 && (rule.precio_minimo ?? 0) <= 0) return null;
   } else if (rule.tipo_calculo === 'margen_costo') {
-    precio = (producto.costo ?? 0) * (1 + (rule.margen_pct ?? 0) / 100);
+    const costoTotal = calcularCostoTotal(producto.costo ?? 0, producto.costos_adicionales);
+    precio = costoTotal * (1 + (rule.margen_pct ?? 0) / 100);
   } else if (rule.tipo_calculo === 'descuento_precio') {
     precio = producto.precio_principal * (1 - (rule.descuento_pct ?? 0) / 100);
   }
@@ -220,4 +236,115 @@ export function resolveProductPrice(
   listaPrecioId?: string | null
 ): number {
   return resolveProductPricing(rules, producto, listaPrecioId).unitPrice;
+}
+
+export interface PresentacionForPricing {
+  id: string;
+  factor_base: number;
+  precio_especial?: number | null;
+}
+
+export function resolvePresentacionPricing(
+  rules: TarifaLineaRule[],
+  presentacion: PresentacionForPricing,
+  producto: ProductForPricing,
+  baseProductPricing: ResolvedProductPricing,
+  listaPrecioId?: string | null
+): ResolvedProductPricing {
+  if (producto.usa_listas_precio === false) {
+    let unitPrice: number;
+    let displayPrice: number;
+    let basePrecio: 'sin_impuestos' | 'con_impuestos' = 'sin_impuestos';
+
+    if (presentacion.precio_especial != null) {
+      displayPrice = round2(presentacion.precio_especial);
+      const divisor = getTaxMultiplier(producto);
+      unitPrice = divisor > 0 ? round2(displayPrice / divisor) : displayPrice;
+      basePrecio = 'con_impuestos';
+    } else {
+      unitPrice = round2(baseProductPricing.unitPrice * presentacion.factor_base);
+      displayPrice = round2(baseProductPricing.displayPrice * presentacion.factor_base);
+      basePrecio = baseProductPricing.basePrecio as any;
+    }
+
+    return {
+      unitPrice,
+      displayPrice,
+      rawUnitPrice: unitPrice,
+      rawDisplayPrice: displayPrice,
+      basePrecio,
+      appliedRule: null,
+    };
+  }
+
+  const filtered = listaPrecioId
+    ? rules.filter(r => r.lista_precio_id === listaPrecioId || !r.lista_precio_id)
+    : rules.filter(r => !r.lista_precio_id);
+
+  const rule = filtered.find(
+    r => r.aplica_a === 'presentacion' && (r.presentacion_ids ?? []).includes(presentacion.id)
+  );
+
+  if (!rule) {
+    let unitPrice: number;
+    let displayPrice: number;
+    let basePrecio: 'sin_impuestos' | 'con_impuestos' = 'sin_impuestos';
+
+    if (presentacion.precio_especial != null) {
+      displayPrice = round2(presentacion.precio_especial);
+      const divisor = getTaxMultiplier(producto);
+      unitPrice = divisor > 0 ? round2(displayPrice / divisor) : displayPrice;
+      basePrecio = 'con_impuestos';
+    } else {
+      unitPrice = round2(baseProductPricing.unitPrice * presentacion.factor_base);
+      displayPrice = round2(baseProductPricing.displayPrice * presentacion.factor_base);
+      basePrecio = baseProductPricing.basePrecio as any;
+    }
+
+    return {
+      unitPrice,
+      displayPrice,
+      rawUnitPrice: unitPrice,
+      rawDisplayPrice: displayPrice,
+      basePrecio,
+      appliedRule: null,
+    };
+  }
+
+  let rawBase = 0;
+  if (rule.tipo_calculo === 'precio_fijo') {
+    rawBase = rule.precio ?? 0;
+  } else if (rule.tipo_calculo === 'margen_costo') {
+    const costoTotal = calcularCostoTotal(producto.costo ?? 0, producto.costos_adicionales);
+    const presentationCost = costoTotal * presentacion.factor_base;
+    rawBase = presentationCost * (1 + (rule.margen_pct ?? 0) / 100);
+  } else if (rule.tipo_calculo === 'descuento_precio') {
+    const basePresPrice = presentacion.precio_especial != null 
+      ? presentacion.precio_especial 
+      : producto.precio_principal * presentacion.factor_base;
+    rawBase = basePresPrice * (1 - (rule.descuento_pct ?? 0) / 100);
+  }
+
+  const raw = Math.max(rawBase, rule.precio_minimo ?? 0);
+
+  let unitPrice: number;
+  let displayPrice: number;
+
+  if (rule.base_precio === 'con_impuestos') {
+    displayPrice = round2(applyRedondeo(raw, rule.redondeo));
+    const divisor = getTaxMultiplier(producto);
+    unitPrice = divisor > 0 ? round2(displayPrice / divisor) : displayPrice;
+  } else {
+    unitPrice = round2(applyRedondeo(raw, rule.redondeo));
+    displayPrice = round2(unitPrice * getTaxMultiplier(producto));
+  }
+
+  return {
+    unitPrice,
+    displayPrice,
+    rawUnitPrice: unitPrice,
+    rawDisplayPrice: displayPrice,
+    basePrecio: rule.base_precio ?? 'sin_impuestos',
+    appliedRule: rule,
+  };
 }

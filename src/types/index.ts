@@ -4,11 +4,18 @@ export type FrecuenciaVisita = 'diaria' | 'semanal' | 'quincenal' | 'mensual';
 export type TipoComision = 'porcentaje' | 'monto_fijo';
 export type CalculoCosto = 'promedio' | 'ultimo' | 'estandar' | 'manual' | 'ultimo_compra' | 'ultimo_proveedor';
 export type TipoTarifa = 'general' | 'por_cliente' | 'por_ruta';
-export type AplicaATarifa = 'todos' | 'categoria' | 'producto';
+export type AplicaATarifa = 'todos' | 'categoria' | 'producto' | 'presentacion';
 export type TipoCalculoTarifa = 'margen_costo' | 'descuento_precio' | 'precio_fijo';
 export type TipoVenta = 'pedido' | 'venta_directa';
 export type CondicionPago = 'contado' | 'credito' | 'por_definir';
 export type StatusVenta = 'borrador' | 'confirmado' | 'entregado' | 'facturado' | 'cancelado';
+
+export interface ProductoCostoAdicional {
+  id: string;
+  nombre: string;
+  tipo: 'valor' | 'porcentaje';
+  valor: number;
+}
 
 export interface Producto {
   id: string;
@@ -62,6 +69,8 @@ export interface Producto {
   es_granel: boolean;
   unidad_granel: string;
   vende_por_presentaciones?: boolean;
+  costos_adicionales?: ProductoCostoAdicional[];
+
   contador: number;
   contador_tarifas: number;
   created_at: string;
@@ -90,6 +99,7 @@ export interface TarifaLinea {
   tarifa_id: string;
   producto_ids: string[];
   clasificacion_ids: string[];
+  presentacion_ids: string[];
   aplica_a: AplicaATarifa;
   tipo_calculo: TipoCalculoTarifa;
   precio: number;

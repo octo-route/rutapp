@@ -7,6 +7,7 @@ import type { Producto, TipoCalculoTarifa } from '@/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePresentaciones } from '@/hooks/usePresentaciones';
 
 interface PreciosTabProps {
   form: Partial<Producto>;
@@ -20,6 +21,7 @@ interface PreciosTabProps {
 export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew, navigate }: PreciosTabProps) {
   const { symbol: cs, fmt } = useCurrency();
   const { empresa } = useAuth();
+  const { data: dbPresentaciones } = usePresentaciones(productoId);
   const saveLinea = useSaveTarifaLinea();
   const deleteLineaMut = useDeleteTarifaLinea();
   const saveTarifaMut = useSaveTarifa();
@@ -32,8 +34,9 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
   const [editingCol, setEditingCol] = useState<string | null>(null);
   const [editVal, setEditVal] = useState<Record<string, unknown>>({});
   const [newRule, setNewRule] = useState({
-    aplica_a: 'producto' as 'producto' | 'categoria' | 'todos',
+    aplica_a: 'producto' as 'producto' | 'categoria' | 'todos' | 'presentacion',
     clasificacion_ids: [] as string[],
+    presentacion_ids: [] as string[],
     tarifa_id: '',
     lista_precio_id: '',
     tipo_calculo: 'precio_fijo' as TipoCalculoTarifa,
@@ -91,6 +94,7 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
   const handleSaveRule = async () => {
     if (!newRule.lista_precio_id) { toast.error('Selecciona una lista de precios'); return; }
     if (newRule.aplica_a === 'categoria' && newRule.clasificacion_ids.length === 0) { toast.error('Selecciona al menos una categoría'); return; }
+    if (newRule.aplica_a === 'presentacion' && newRule.presentacion_ids.length === 0) { toast.error('Selecciona al menos una presentación'); return; }
 
     const existing = (tarifaLineas ?? []) as any[];
     const listaId = newRule.lista_precio_id || null;
@@ -98,6 +102,10 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
       const existLista = l.lista_precios?.id ?? l.lista_precio_id ?? null;
       if (existLista !== listaId) return false;
       if (newRule.aplica_a === 'producto' && l.aplica_a === 'producto' && (l.producto_ids ?? []).includes(productoId)) return true;
+      if (newRule.aplica_a === 'presentacion' && l.aplica_a === 'presentacion') {
+        const overlap = newRule.presentacion_ids.some((pid: string) => (l.presentacion_ids ?? []).includes(pid));
+        if (overlap) return true;
+      }
       if (newRule.aplica_a === 'categoria' && l.aplica_a === 'categoria') {
         const overlap = newRule.clasificacion_ids.some((cid: string) => (l.clasificacion_ids ?? []).includes(cid));
         if (overlap) return true;
@@ -117,12 +125,13 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
         aplica_a: newRule.aplica_a, tipo_calculo: newRule.tipo_calculo,
         precio: newRule.precio, margen_pct: newRule.margen_pct, descuento_pct: newRule.descuento_pct,
         precio_minimo: newRule.precio_minimo,
-        producto_ids: newRule.aplica_a === 'producto' ? [productoId!] : [],
+        producto_ids: ['producto', 'presentacion'].includes(newRule.aplica_a) ? [productoId!] : [],
         clasificacion_ids: newRule.aplica_a === 'categoria' ? newRule.clasificacion_ids : [],
+        presentacion_ids: newRule.aplica_a === 'presentacion' ? newRule.presentacion_ids : [],
       } as any);
       toast.success('Precio agregado');
       setShowModal(false);
-      setNewRule({ aplica_a: 'producto', clasificacion_ids: [], tarifa_id: '', lista_precio_id: '', tipo_calculo: 'precio_fijo', precio: 0, margen_pct: 0, descuento_pct: 0, precio_minimo: 0 });
+      setNewRule({ aplica_a: 'producto', clasificacion_ids: [], presentacion_ids: [], tarifa_id: '', lista_precio_id: '', tipo_calculo: 'precio_fijo', precio: 0, margen_pct: 0, descuento_pct: 0, precio_minimo: 0 });
     } catch (err: any) { toast.error(err.message); }
   };
 
@@ -159,6 +168,13 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
 
   const aplica_label = (l: any) => {
     if (l.aplica_a === 'producto') return 'Este producto';
+    if (l.aplica_a === 'presentacion') {
+      const names = (l.presentacion_ids ?? []).map((pid: string) => {
+        const p = (dbPresentaciones ?? []).find((pr: any) => pr.id === pid);
+        return (p as any)?.nombre ?? pid.slice(0, 6);
+      });
+      return names.length ? `Presentación: ${names.join(', ')}` : 'Presentación';
+    }
     if (l.aplica_a === 'categoria') {
       const names = (l.clasificacion_ids ?? []).map((cid: string) => {
         const c = (clasificaciones ?? []).find((cl: any) => cl.id === cid);
@@ -184,10 +200,18 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
                 <span className="odoo-field-label">Aplica a</span>
                 <select className="input-odoo py-1 text-[13px]" value={newRule.aplica_a}
                   onChange={e => {
-                    const val = e.target.value as 'producto' | 'categoria' | 'todos';
-                    setNewRule(p => ({ ...p, aplica_a: val, clasificacion_ids: val === 'categoria' && form.clasificacion_id ? [form.clasificacion_id] : [] }));
+                    const val = e.target.value as 'producto' | 'categoria' | 'todos' | 'presentacion';
+                    const isPres = val === 'presentacion';
+                    setNewRule(p => ({
+                      ...p,
+                      aplica_a: val,
+                      clasificacion_ids: val === 'categoria' && form.clasificacion_id ? [form.clasificacion_id] : [],
+                      presentacion_ids: [],
+                      precio_minimo: isPres ? 0 : (form.costo ?? 0)
+                    }));
                   }}>
                   <option value="producto">Este producto</option>
+                  <option value="presentacion">Presentación</option>
                   <option value="categoria">Categoría</option>
                   <option value="todos">Todos los productos</option>
                 </select>
@@ -200,6 +224,48 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
             </div>
             {newRule.aplica_a === 'producto' && (
               <div className="odoo-field-row"><span className="odoo-field-label">Producto</span><span className="text-[13px] font-medium">{form.nombre ?? '—'}</span></div>
+            )}
+            {newRule.aplica_a === 'presentacion' && (
+              <div className="odoo-field-row">
+                <span className="odoo-field-label">Presentaciones</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {(dbPresentaciones ?? []).map((p: any) => {
+                    const selected = newRule.presentacion_ids.includes(p.id);
+                    return (
+                      <button key={p.id} type="button" onClick={() => {
+                        const isCurrentlySelected = selected;
+                        const nextIds = isCurrentlySelected 
+                          ? newRule.presentacion_ids.filter(id => id !== p.id) 
+                          : [...newRule.presentacion_ids, p.id];
+                        
+                        let nextCost = newRule.precio_minimo;
+                        if (!isCurrentlySelected) {
+                          nextCost = (form.costo ?? 0) * Number(p.factor_base);
+                        } else if (nextIds.length > 0) {
+                          const firstRemaining = (dbPresentaciones ?? []).find((pr: any) => pr.id === nextIds[0]);
+                          if (firstRemaining) {
+                            nextCost = (form.costo ?? 0) * Number(firstRemaining.factor_base);
+                          }
+                        } else {
+                          nextCost = 0;
+                        }
+
+                        setNewRule(prev => ({ 
+                          ...prev, 
+                          presentacion_ids: nextIds,
+                          precio_minimo: nextCost
+                        }));
+                      }}
+                        className={`text-[12px] px-2 py-0.5 rounded-full border transition-colors ${selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary/50'}`}>
+                        {p.nombre || `Factor ${p.factor_base}`}
+                      </button>
+                    );
+                  })}
+                  {(dbPresentaciones ?? []).length === 0 && (
+                    <span className="text-xs text-muted-foreground">No hay presentaciones definidas para este producto.</span>
+                  )}
+                </div>
+              </div>
             )}
             {newRule.aplica_a === 'categoria' && (
               <div className="odoo-field-row">

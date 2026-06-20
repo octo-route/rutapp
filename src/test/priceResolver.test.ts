@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveProductPrice, resolveProductPricing, calculatePrice, toDisplayPrice, type TarifaLineaRule } from '@/lib/priceResolver';
+import { resolveProductPrice, resolveProductPricing, calculatePrice, toDisplayPrice, resolvePresentacionPricing, type TarifaLineaRule } from '@/lib/priceResolver';
 import { productoBasico, productoConIeps, productoDirecto } from './fixtures/productos';
 import { reglaPrecioFijo, reglaMargenCosto, reglaDescuento } from './fixtures/tarifas';
 
@@ -133,5 +133,103 @@ describe('usa_listas_precio = false – always uses precio_principal', () => {
 
   it('usa_listas_precio = true still applies rules normally', () => {
     expect(resolveProductPrice([reglaPrecioFijo], productoBasico)).toBe(12);
+  });
+});
+
+describe('resolvePresentacionPricing', () => {
+  const presentacionCaja = {
+    id: 'pres-caja-12',
+    factor_base: 12,
+    precio_especial: null
+  };
+
+  const presentacionConEspecial = {
+    id: 'pres-caja-6',
+    factor_base: 6,
+    precio_especial: 50
+  };
+
+  it('uses default fallback pricing when no rules match (no precio_especial)', () => {
+    const basePricing = resolveProductPricing([], productoBasico); // unitPrice = 10, displayPrice = 11.6
+    const pricing = resolvePresentacionPricing([], presentacionCaja, productoBasico, basePricing);
+    // 10 * 12 = 120 (unitPrice), 11.6 * 12 = 139.2 (displayPrice)
+    expect(pricing.unitPrice).toBe(120);
+    expect(pricing.displayPrice).toBe(139.2);
+  });
+
+  it('uses default fallback pricing when no rules match (with precio_especial)', () => {
+    const basePricing = resolveProductPricing([], productoBasico);
+    const pricing = resolvePresentacionPricing([], presentacionConEspecial, productoBasico, basePricing);
+    // precio_especial = 50 (displayPrice con impuestos). Divisor = 1.16. unitPrice = 50 / 1.16 = 43.10
+    expect(pricing.displayPrice).toBe(50);
+    expect(pricing.unitPrice).toBe(43.1);
+  });
+
+  it('applies presentation rule of type precio_fijo', () => {
+    const rule: TarifaLineaRule = {
+      aplica_a: 'presentacion',
+      producto_ids: [],
+      clasificacion_ids: [],
+      presentacion_ids: ['pres-caja-12'],
+      tipo_calculo: 'precio_fijo',
+      precio: 100, // sin impuestos
+      precio_minimo: null,
+      margen_pct: null,
+      descuento_pct: null,
+      redondeo: 'ninguno',
+      base_precio: 'sin_impuestos',
+      lista_precio_id: null
+    };
+
+    const basePricing = resolveProductPricing([], productoBasico);
+    const pricing = resolvePresentacionPricing([rule], presentacionCaja, productoBasico, basePricing);
+    // unitPrice = 100, displayPrice = 100 * 1.16 = 116
+    expect(pricing.unitPrice).toBe(100);
+    expect(pricing.displayPrice).toBe(116);
+  });
+
+  it('applies presentation rule of type margen_costo', () => {
+    const rule: TarifaLineaRule = {
+      aplica_a: 'presentacion',
+      producto_ids: [],
+      clasificacion_ids: [],
+      presentacion_ids: ['pres-caja-12'],
+      tipo_calculo: 'margen_costo',
+      precio: 0,
+      precio_minimo: null,
+      margen_pct: 50, // 50% margin
+      descuento_pct: null,
+      redondeo: 'ninguno',
+      base_precio: 'sin_impuestos',
+      lista_precio_id: null
+    };
+
+    const basePricing = resolveProductPricing([], productoBasico); // product cost = 5
+    const pricing = resolvePresentacionPricing([rule], presentacionCaja, productoBasico, basePricing);
+    // presentation cost = 5 * 12 = 60. unitPrice = 60 * 1.5 = 90
+    expect(pricing.unitPrice).toBe(90);
+    expect(pricing.displayPrice).toBe(104.4); // 90 * 1.16
+  });
+
+  it('applies presentation rule of type descuento_precio', () => {
+    const rule: TarifaLineaRule = {
+      aplica_a: 'presentacion',
+      producto_ids: [],
+      clasificacion_ids: [],
+      presentacion_ids: ['pres-caja-12'],
+      tipo_calculo: 'descuento_precio',
+      precio: 0,
+      precio_minimo: null,
+      margen_pct: null,
+      descuento_pct: 10, // 10% discount
+      redondeo: 'ninguno',
+      base_precio: 'sin_impuestos',
+      lista_precio_id: null
+    };
+
+    const basePricing = resolveProductPricing([], productoBasico); // principal price = 10
+    const pricing = resolvePresentacionPricing([rule], presentacionCaja, productoBasico, basePricing);
+    // standard presentation price = 10 * 12 = 120. unitPrice = 120 * 0.9 = 108
+    expect(pricing.unitPrice).toBe(108);
   });
 });
