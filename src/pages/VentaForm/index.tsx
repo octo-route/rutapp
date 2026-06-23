@@ -36,7 +36,7 @@ export default function VentaFormPage() {
   const {
     id, isNew, form, lineas, setLineas, readOnly, isLoading,
     profile, user, empresa, navigate, queryClient,
-    clientesList, productosList, tarifasList, almacenesList,
+    clientesList, productosList, tarifasList, almacenesList, vendedoresList,
     entregasExistentes, entregasActivas, hayEntregas, remaining, fullyDelivered, canCreateEntrega, lineDeliverySummary,
     pagosData, totalPagado, saldoPendiente, totals, promoResults,
     pdfBlob, setPdfBlob, showPdfModal, setShowPdfModal, showFacturaDrawer, setShowFacturaDrawer,
@@ -166,6 +166,7 @@ export default function VentaFormPage() {
   const clienteOptions = (clientesList ?? []).map(c => ({ value: c.id, label: `${c.codigo ? c.codigo + ' · ' : ''}${c.nombre}` }));
   const tarifaOptions = (tarifasList ?? []).map(t => ({ value: t.id, label: t.nombre }));
   const almacenOptions = (almacenesList ?? []).map(a => ({ value: a.id, label: a.nombre }));
+  const vendedorOptions = (vendedoresList ?? []).map(v => ({ value: v.id, label: v.nombre }));
   const clienteNombre = clientesList?.find(c => c.id === form.cliente_id)?.nombre;
   const steps = form.entrega_inmediata ? VENTA_STEPS_INMEDIATA : VENTA_STEPS_FULL;
 
@@ -254,7 +255,7 @@ export default function VentaFormPage() {
       <div className="p-3 sm:p-5 space-y-4 max-w-[1200px]">
         <div className="bg-card border border-border rounded-md p-5">
           {readOnly && <div className="mb-3 text-xs text-muted-foreground bg-muted/60 border border-border px-3 py-2 rounded flex items-center gap-2"><span className="inline-block w-2 h-2 rounded-full bg-muted-foreground/50" />Esta venta está {form.status} y no se puede editar.</div>}
-          <VentaFormFields form={form} readOnly={readOnly} isNew={isNew} clienteOptions={clienteOptions} tarifaOptions={tarifaOptions} almacenOptions={almacenOptions} clienteNombre={clienteNombre} totalPagado={totalPagado} saldoPendiente={saldoPendiente} set={set} onClienteChange={onClienteChange} />
+          <VentaFormFields form={form} readOnly={readOnly} isNew={isNew} clienteOptions={clienteOptions} tarifaOptions={tarifaOptions} almacenOptions={almacenOptions} vendedorOptions={vendedorOptions} clienteNombre={clienteNombre} totalPagado={totalPagado} saldoPendiente={saldoPendiente} set={set} onClienteChange={onClienteChange} />
         </div>
         <div className="bg-card border border-border rounded-md">
           <OdooTabs tabs={[

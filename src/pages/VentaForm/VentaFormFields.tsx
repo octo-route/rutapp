@@ -12,6 +12,7 @@ interface Props {
   clienteOptions: { value: string; label: string }[];
   tarifaOptions: { value: string; label: string }[];
   almacenOptions: { value: string; label: string }[];
+  vendedorOptions: { value: string; label: string }[];
   clienteNombre?: string;
   totalPagado: number;
   saldoPendiente: number;
@@ -19,7 +20,7 @@ interface Props {
   onClienteChange: (cId: string) => void;
 }
 
-export function VentaFormFields({ form, readOnly, isNew, clienteOptions, almacenOptions, clienteNombre, totalPagado, saldoPendiente, set, onClienteChange }: Props) {
+export function VentaFormFields({ form, readOnly, isNew, clienteOptions, almacenOptions, vendedorOptions, clienteNombre, totalPagado, saldoPendiente, set, onClienteChange }: Props) {
   const isMobile = useIsMobile();
   const { fmt } = useCurrency();
 
@@ -62,6 +63,10 @@ export function VentaFormFields({ form, readOnly, isNew, clienteOptions, almacen
   const renderAlmacen = () => readOnly
     ? <div className="text-[13px] py-1.5 px-1 text-foreground">{almacenOptions.find(a => a.value === form.almacen_id)?.label || 'Sin almacén'}</div>
     : <SearchableSelect options={almacenOptions} value={form.almacen_id ?? ''} onChange={val => set('almacen_id', val || null)} placeholder="Buscar almacén..." />;
+
+  const renderVendedor = () => readOnly
+    ? <div className="text-[13px] py-1.5 px-1 text-foreground">{vendedorOptions.find(v => v.value === form.vendedor_id)?.label || '—'}</div>
+    : <SearchableSelect options={vendedorOptions} value={form.vendedor_id ?? ''} onChange={v => set('vendedor_id', v)} placeholder="Buscar vendedor..." />;
 
   const renderEntrega = () => (
     <>
@@ -133,6 +138,7 @@ export function VentaFormFields({ form, readOnly, isNew, clienteOptions, almacen
         </div>
         <div><label className="label-odoo">Folio</label><div className="text-[13px] text-muted-foreground py-1.5 px-1">{form.folio || (isNew ? 'Al guardar' : '—')}</div></div>
         <div><label className="label-odoo label-required">Almacén</label>{renderAlmacen()}</div>
+        <div><label className="label-odoo">Vendedor</label>{renderVendedor()}</div>
         {renderDescuentoExtra()}
         {renderSaldo()}
       </div>
@@ -153,6 +159,7 @@ export function VentaFormFields({ form, readOnly, isNew, clienteOptions, almacen
       </div>
       <div className="space-y-3">
         <div><label className="label-odoo label-required">Almacén</label>{renderAlmacen()}</div>
+        <div><label className="label-odoo">Vendedor</label>{renderVendedor()}</div>
         {renderDescuentoExtra()}
         {renderSaldo()}
       </div>

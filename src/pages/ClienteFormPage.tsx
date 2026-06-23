@@ -240,6 +240,10 @@ export default function ClienteFormPage() {
 
   const [form, setForm] = useState<Partial<Cliente>>(defaultCliente);
   const [originalForm, setOriginalForm] = useState<Partial<Cliente>>(defaultCliente);
+  const isPublicoGeneral = useMemo(() => {
+    const n = form.nombre?.toLowerCase().trim() ?? '';
+    return n === 'público general' || n === 'público en general' || n === 'publico general' || n === 'publico en general';
+  }, [form.nombre]);
   const [starred, setStarred] = useState(false);
   const [capturingGps, setCapturingGps] = useState(false);
   const [parsingCsf, setParsingCsf] = useState(false);
@@ -335,9 +339,15 @@ export default function ClienteFormPage() {
     if (!form.nombre) { toast.error('Nombre es obligatorio'); return; }
     if (!(form as any).lista_precio_id) { toast.error('Lista de precios es obligatoria'); return; }
     if (!form.frecuencia) { toast.error('Frecuencia de visita es obligatoria'); return; }
-    if (!form.dia_visita || form.dia_visita.length === 0) { toast.error('Selecciona al menos un día de visita'); return; }
+    if (!isPublicoGeneral && (!form.dia_visita || form.dia_visita.length === 0)) { toast.error('Selecciona al menos un día de visita'); return; }
     try {
-      const result = await saveMutation.mutateAsync(isNew ? form : { ...form, id });
+      const finalForm = { ...form };
+      if (isPublicoGeneral) {
+        finalForm.credito = false;
+        finalForm.limite_credito = 0;
+        finalForm.dias_credito = 0;
+      }
+      const result = await saveMutation.mutateAsync(isNew ? finalForm : { ...finalForm, id });
       // Save pedido sugerido
       const clienteId = isNew ? result?.id : id;
       if (clienteId && pedidoDirty) {
@@ -348,7 +358,8 @@ export default function ClienteFormPage() {
         setPedidoDirty(false);
       }
       toast.success('Cliente guardado');
-      setOriginalForm({ ...form });
+      setOriginalForm({ ...finalForm });
+      setForm(finalForm);
       if (isNew && result?.id) {
         navigate(fromRuta ? '/ruta/clientes' : `/clientes/${result.id}`, { replace: true });
       }
@@ -704,7 +715,7 @@ export default function ClienteFormPage() {
                   <OdooField label="Frecuencia" value={form.frecuencia} onChange={v => set('frecuencia', v as FrecuenciaVisita)} type="select" required
                     options={frecuenciaOpts} />
                   <div className="odoo-field-row">
-                    <span className="odoo-field-label">Días de visita *</span>
+                    <span className="odoo-field-label">Días de visita {!isPublicoGeneral && '*'}</span>
                     <div className="flex flex-wrap gap-1">
                       {DIAS.map(d => (
                         <button key={d} onClick={() => toggleDia(d)}
@@ -728,15 +739,23 @@ export default function ClienteFormPage() {
                     options={cobradores?.map(c => ({ value: c.id, label: c.nombre })) ?? []} />
                 </OdooSection>
                 <OdooSection title="Crédito">
-                  <div className="odoo-field-row">
-                    <span className="odoo-field-label">¿Crédito?</span>
-                    <input type="checkbox" checked={!!form.credito} onChange={e => set('credito', e.target.checked)} className="rounded border-input" />
-                  </div>
-                  {form.credito && (
+                  {isPublicoGeneral ? (
+                    <p className="text-[11px] text-muted-foreground italic py-1">
+                      El cliente Público general no puede tener crédito.
+                    </p>
+                  ) : (
                     <>
-                      <OdooField label="Límite de Crédito" value={form.limite_credito} onChange={v => set('limite_credito', +v)} type="number"
-                        format={(v: number) => currFmt(v ?? 0)} />
-                      <OdooField label="Días de Crédito" value={form.dias_credito} onChange={v => set('dias_credito', +v)} type="number" />
+                      <div className="odoo-field-row">
+                        <span className="odoo-field-label">¿Crédito?</span>
+                        <input type="checkbox" checked={!!form.credito} onChange={e => set('credito', e.target.checked)} className="rounded border-input" />
+                      </div>
+                      {form.credito && (
+                        <>
+                          <OdooField label="Límite de Crédito" value={form.limite_credito} onChange={v => set('limite_credito', +v)} type="number"
+                            format={(v: number) => currFmt(v ?? 0)} />
+                          <OdooField label="Días de Crédito" value={form.dias_credito} onChange={v => set('dias_credito', +v)} type="number" />
+                        </>
+                      )}
                     </>
                   )}
                 </OdooSection>

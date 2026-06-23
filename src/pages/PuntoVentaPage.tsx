@@ -29,6 +29,7 @@ import {
   ArrowUp,
   ListOrdered,
   LockOpen,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -220,6 +221,100 @@ export default function PuntoVentaPage() {
   const [selectedProductoPresentacion, setSelectedProductoPresentacion] =
     useState<any>(null);
   const isMobile = useIsMobile();
+
+  // Estado de respaldo para el modo Venta Rápida
+  const [mainCartBackup, setMainCartBackup] = useState<{
+    cart: PosItem[];
+    clienteId: string | null;
+    clienteNombre: string;
+    clienteTarifaId: string | null;
+    clienteListaPrecioId: string | null;
+    clienteListaNombre: string | null;
+    clienteCredito: boolean;
+    clienteDiasCredito: number;
+    clienteLimiteCredito: number;
+    condicion: "contado" | "credito";
+  } | null>(null);
+
+  const activateQuickSale = () => {
+    // 1. Respaldar el estado actual de la venta principal
+    setMainCartBackup({
+      cart,
+      clienteId,
+      clienteNombre,
+      clienteTarifaId,
+      clienteListaPrecioId,
+      clienteListaNombre,
+      clienteCredito,
+      clienteDiasCredito,
+      clienteLimiteCredito,
+      condicion,
+    });
+
+    // 2. Limpiar el estado de la pantalla para la venta rápida
+    setCart([]);
+    setClienteId(null);
+    setClienteNombre("Público general");
+    setClienteTarifaId(null);
+    setClienteListaPrecioId(null);
+    setClienteListaNombre(null);
+    setClienteCredito(false);
+    setClienteDiasCredito(0);
+    setClienteLimiteCredito(0);
+    setCondicion("contado");
+    setPayMode("efectivo");
+    setPayEfectivo("");
+    setPayTransferencia("");
+    setPayTarjeta("");
+    setRefTransferencia("");
+    setRefTarjeta("");
+    setFechaVencimiento("");
+    setSearch("");
+    setShowPago(false);
+
+    toast.success("Venta principal pausada. Modo Venta Rápida activo.");
+  };
+
+  const restoreMainCart = () => {
+    if (!mainCartBackup) return;
+
+    // Restaurar los estados respaldados
+    setCart(mainCartBackup.cart);
+    setClienteId(mainCartBackup.clienteId);
+    setClienteNombre(mainCartBackup.clienteNombre);
+    setClienteTarifaId(mainCartBackup.clienteTarifaId);
+    setClienteListaPrecioId(mainCartBackup.clienteListaPrecioId);
+    setClienteListaNombre(mainCartBackup.clienteListaNombre);
+    setClienteCredito(mainCartBackup.clienteCredito);
+    setClienteDiasCredito(mainCartBackup.clienteDiasCredito);
+    setClienteLimiteCredito(mainCartBackup.clienteLimiteCredito);
+    setCondicion(mainCartBackup.condicion);
+
+    // Reiniciar inputs de pago
+    setPayMode("efectivo");
+    setPayEfectivo("");
+    setPayTransferencia("");
+    setPayTarjeta("");
+    setRefTransferencia("");
+    setRefTarjeta("");
+    setFechaVencimiento("");
+    setSearch("");
+    setShowPago(false);
+
+    // Limpiar el respaldo
+    setMainCartBackup(null);
+    toast.success("Venta principal restaurada.");
+  };
+
+  const handleCloseTicket = () => {
+    setShowTicket(false);
+    setLastVentaData(null);
+    if (mainCartBackup) {
+      restoreMainCart();
+    } else {
+      clearAll();
+    }
+  };
 
   // When viewing another company (super admin), fetch its first almacen instead of using profile's
   const { data: overrideAlmacen } = useQuery({
@@ -1054,26 +1149,42 @@ export default function PuntoVentaPage() {
   const fmt = (n: number) => fmtC(n);
   const fmtM = fmt;
 
-  const clearAll = () => {
-    setCart([]);
-    setClienteId(null);
-    setClienteNombre("Público general");
-    setClienteTarifaId(null);
-    setClienteListaPrecioId(null);
-    setClienteListaNombre(null);
-    setClienteCredito(false);
-    setClienteDiasCredito(0);
-    setClienteLimiteCredito(0);
-    setCondicion("contado");
-    setPayMode("efectivo");
-    setShowPago(false);
-    setPayEfectivo("");
-    setPayTransferencia("");
-    setPayTarjeta("");
-    setRefTransferencia("");
-    setRefTarjeta("");
-    setFechaVencimiento("");
-    setSearch("");
+  const clearAll = (forceResetMain = false) => {
+    if (mainCartBackup && !forceResetMain) {
+      setCart([]);
+      setPayMode("efectivo");
+      setShowPago(false);
+      setPayEfectivo("");
+      setPayTransferencia("");
+      setPayTarjeta("");
+      setRefTransferencia("");
+      setRefTarjeta("");
+      setFechaVencimiento("");
+      setSearch("");
+    } else {
+      setCart([]);
+      setClienteId(null);
+      setClienteNombre("Público general");
+      setClienteTarifaId(null);
+      setClienteListaPrecioId(null);
+      setClienteListaNombre(null);
+      setClienteCredito(false);
+      setClienteDiasCredito(0);
+      setClienteLimiteCredito(0);
+      setCondicion("contado");
+      setPayMode("efectivo");
+      setShowPago(false);
+      setPayEfectivo("");
+      setPayTransferencia("");
+      setPayTarjeta("");
+      setRefTransferencia("");
+      setRefTarjeta("");
+      setFechaVencimiento("");
+      setSearch("");
+      if (forceResetMain) {
+        setMainCartBackup(null);
+      }
+    }
   };
 
   // Auto-print ticket when sale completes
@@ -1529,8 +1640,19 @@ export default function PuntoVentaPage() {
               {clienteNombre}
             </span>
           </button>
+          {cart.length > 0 && !mainCartBackup && (
+            <button
+              onClick={activateQuickSale}
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[11px] font-bold transition-all shadow-sm shadow-amber-500/20 shrink-0"
+              title="Poner en espera e iniciar venta rápida"
+            >
+              <Zap className="h-3.5 w-3.5 text-amber-100" />
+              <span className="hidden xs:inline">Venta Rápida</span>
+              <span className="xs:hidden">Rápida</span>
+            </button>
+          )}
           <button
-            onClick={clearAll}
+            onClick={() => clearAll(false)}
             className="text-[11px] text-destructive font-medium hover:underline shrink-0"
           >
             Limpiar
@@ -1559,6 +1681,23 @@ export default function PuntoVentaPage() {
 
         </div>
       </header>
+
+      {mainCartBackup && (
+        <div className="bg-amber-500 text-white text-xs sm:text-sm font-semibold px-4 py-2.5 flex items-center justify-between gap-3 shadow-inner select-none shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Zap className="h-4 w-4 animate-pulse text-amber-100 shrink-0" />
+            <span className="truncate">
+              Modo Venta Rápida Activo — Venta principal en espera ({mainCartBackup.cart.length} {mainCartBackup.cart.length === 1 ? 'producto' : 'productos'})
+            </span>
+          </div>
+          <button
+            onClick={restoreMainCart}
+            className="bg-white text-amber-600 px-3 py-1 rounded-md text-[11px] sm:text-xs font-bold hover:bg-amber-50 transition-all shadow-sm shrink-0 active:scale-95"
+          >
+            Volver a la venta principal
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 flex overflow-hidden relative">
         {/* ─── LEFT: Products ─── */}
@@ -2734,11 +2873,7 @@ export default function PuntoVentaPage() {
       {showTicket && lastVentaData && (
         <div
           className="fixed inset-0 z-50 bg-foreground/40 flex items-center justify-center"
-          onClick={() => {
-            setShowTicket(false);
-            setLastVentaData(null);
-            clearAll();
-          }}
+          onClick={handleCloseTicket}
         >
           <div
             className="bg-card rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-border max-h-[90vh] flex flex-col"
@@ -2749,11 +2884,7 @@ export default function PuntoVentaPage() {
                 <Check className="h-4 w-4 text-primary" /> Venta registrada
               </h3>
               <button
-                onClick={() => {
-                  setShowTicket(false);
-                  setLastVentaData(null);
-                  clearAll();
-                }}
+                onClick={handleCloseTicket}
                 className="p-1 rounded-md hover:bg-accent"
               >
                 <X className="h-4 w-4 text-muted-foreground" />
@@ -2827,11 +2958,7 @@ export default function PuntoVentaPage() {
                   const ticketAncho = (empresa as any)?.ticket_ancho ?? "58";
                   printTicket(td, { ticketAncho });
                 }}
-                onClose={() => {
-                  setShowTicket(false);
-                  setLastVentaData(null);
-                  clearAll();
-                }}
+                onClose={handleCloseTicket}
               />
             </div>
             <div className="px-5 pb-4 pt-2 border-t border-border flex gap-2">
@@ -2882,11 +3009,7 @@ export default function PuntoVentaPage() {
                 <Receipt className="h-4 w-4" /> Reimprimir
               </button>
               <button
-                onClick={() => {
-                  setShowTicket(false);
-                  setLastVentaData(null);
-                  clearAll();
-                }}
+                onClick={handleCloseTicket}
                 className="flex-1 bg-primary text-primary-foreground rounded-xl py-3 text-[13px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
               >
                 <Check className="h-4 w-4" /> Listo

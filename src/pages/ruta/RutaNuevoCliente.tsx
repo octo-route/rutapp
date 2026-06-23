@@ -53,6 +53,7 @@ export default function RutaNuevoCliente() {
   const [capturingGps, setCapturingGps] = useState(false);
   const [showExtra, setShowExtra] = useState(false);
   const [saving, setSaving] = useState(false);
+  const isPublicoGeneral = form.nombre?.toLowerCase().trim() === 'público general' || form.nombre?.toLowerCase().trim() === 'público en general' || form.nombre?.toLowerCase().trim() === 'publico general' || form.nombre?.toLowerCase().trim() === 'publico en general';
 
   const set = (key: keyof Cliente, value: any) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -91,11 +92,17 @@ export default function RutaNuevoCliente() {
     if (!form.nombre?.trim()) { toast.error('Nombre es obligatorio'); return; }
     if (!(form as any).lista_precio_id) { toast.error('Lista de precios es obligatoria'); return; }
     if (!form.frecuencia) { toast.error('Frecuencia de visita es obligatoria'); return; }
-    if (!form.dia_visita || form.dia_visita.length === 0) { toast.error('Selecciona al menos un día de visita'); return; }
+    if (!isPublicoGeneral && (!form.dia_visita || form.dia_visita.length === 0)) { toast.error('Selecciona al menos un día de visita'); return; }
 
     setSaving(true);
     try {
-      await saveMutation.mutateAsync(form);
+      const finalForm = { ...form };
+      if (isPublicoGeneral) {
+        finalForm.credito = false;
+        finalForm.limite_credito = 0;
+        finalForm.dias_credito = 0;
+      }
+      await saveMutation.mutateAsync(finalForm);
       toast.success('Cliente creado');
       navigate('/ruta', { replace: true });
     } catch (err: any) {
@@ -213,7 +220,7 @@ export default function RutaNuevoCliente() {
             </select>
           </MField>
 
-          <MField label="Días de visita" required>
+          <MField label="Días de visita" required={!isPublicoGeneral}>
             <div className="flex flex-wrap gap-2">
               {DIAS.map(d => (
                 <button
@@ -259,32 +266,40 @@ export default function RutaNuevoCliente() {
             </select>
           </MField>
 
-          <div className="flex items-center gap-3">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">¿Crédito?</label>
-            <button
-              type="button"
-              onClick={() => set('credito', !form.credito)}
-              className={cn(
-                "h-8 w-14 rounded-full transition-colors relative",
-                form.credito ? "bg-primary" : "bg-input"
-              )}
-            >
-              <span className={cn(
-                "absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-transform",
-                form.credito ? "translate-x-7" : "translate-x-1"
-              )} />
-            </button>
-          </div>
+          {isPublicoGeneral ? (
+            <p className="text-xs text-muted-foreground italic py-1">
+              El cliente Público general no puede tener crédito.
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">¿Crédito?</label>
+                <button
+                  type="button"
+                  onClick={() => set('credito', !form.credito)}
+                  className={cn(
+                    "h-8 w-14 rounded-full transition-colors relative",
+                    form.credito ? "bg-primary" : "bg-input"
+                  )}
+                >
+                  <span className={cn(
+                    "absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-transform",
+                    form.credito ? "translate-x-7" : "translate-x-1"
+                  )} />
+                </button>
+              </div>
 
-          {form.credito && (
-            <div className="grid grid-cols-2 gap-3">
-              <MField label="Límite crédito">
-                <input className={inputCls} type="number" placeholder="0.00" value={form.limite_credito ?? 0} onChange={e => set('limite_credito', +e.target.value)} />
-              </MField>
-              <MField label="Días crédito">
-                <input className={inputCls} type="number" placeholder="0" value={form.dias_credito ?? 0} onChange={e => set('dias_credito', +e.target.value)} />
-              </MField>
-            </div>
+              {form.credito && (
+                <div className="grid grid-cols-2 gap-3">
+                  <MField label="Límite crédito">
+                    <input className={inputCls} type="number" placeholder="0.00" value={form.limite_credito ?? 0} onChange={e => set('limite_credito', +e.target.value)} />
+                  </MField>
+                  <MField label="Días crédito">
+                    <input className={inputCls} type="number" placeholder="0" value={form.dias_credito ?? 0} onChange={e => set('dias_credito', +e.target.value)} />
+                  </MField>
+                </div>
+              )}
+            </>
           )}
         </section>
 

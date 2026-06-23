@@ -184,6 +184,7 @@ export const PATH_MODULE_MAP: Record<string, string> = {
   '/dashboard': 'dashboard',
   '/supervisor': 'supervisor',
   '/ventas': 'ventas',
+  '/ventas/cotizaciones': 'ventas',
   '/ventas/reporte-diario': 'ventas.reporte_diario',
   '/ventas/devoluciones': 'ventas.devoluciones',
   '/ventas/cobranza': 'ventas.cobranza',

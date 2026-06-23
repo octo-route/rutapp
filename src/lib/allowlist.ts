@@ -37,6 +37,17 @@ export const VENTA_LINEA_COLUMNS = [
   'lista_precio_id','precio_manual',
 ] as const;
 
+export const COTIZACION_COLUMNS = [
+  'id','empresa_id','folio','status','cliente_id','vendedor_id','condicion_pago','tarifa_id',
+  'fecha','fecha_vencimiento','notas','subtotal','descuento_total','iva_total','ieps_total',
+  'total','venta_id','created_at',
+] as const;
+
+export const COTIZACION_LINEA_COLUMNS = [
+  'id','cotizacion_id','producto_id','descripcion','cantidad','unidad_id','precio_unitario',
+  'descuento_pct','subtotal','iva_pct','ieps_pct','iva_monto','ieps_monto','total','notas','created_at',
+] as const;
+
 export const COMPRA_COLUMNS = [
   'id','empresa_id','folio','fecha','subtotal','iva_total','total','saldo_pendiente','status',
   'condicion_pago','dias_credito','notas','notas_pago','proveedor_id','almacen_id','created_at',

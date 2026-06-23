@@ -9,6 +9,7 @@ export type TipoCalculoTarifa = 'margen_costo' | 'descuento_precio' | 'precio_fi
 export type TipoVenta = 'pedido' | 'venta_directa';
 export type CondicionPago = 'contado' | 'credito' | 'por_definir';
 export type StatusVenta = 'borrador' | 'confirmado' | 'entregado' | 'facturado' | 'cancelado';
+export type StatusCotizacion = 'borrador' | 'enviada' | 'aceptada' | 'rechazada' | 'vencida';
 
 export interface ProductoCostoAdicional {
   id: string;
@@ -277,6 +278,55 @@ export interface VentaLinea {
   notas?: string;
   facturado?: boolean;
   factura_cfdi_id?: string;
+  created_at: string;
+  // joined
+  productos?: { id: string; codigo: string; nombre: string; precio_principal: number; tiene_iva: boolean; tiene_ieps: boolean; tasa_iva_id: string | null; tasa_ieps_id: string | null; unidad_venta_id: string | null; codigo_sat?: string; udem_sat_id?: string };
+  unidades?: { nombre: string; abreviatura?: string };
+}
+
+export interface Cotizacion {
+  id: string;
+  empresa_id: string;
+  folio?: string;
+  status: StatusCotizacion;
+  cliente_id?: string;
+  vendedor_id?: string;
+  condicion_pago: CondicionPago;
+  tarifa_id?: string;
+  fecha: string;
+  fecha_vencimiento?: string;
+  notas?: string;
+  subtotal: number;
+  descuento_total: number;
+  iva_total: number;
+  ieps_total: number;
+  total: number;
+  venta_id?: string;
+  created_at: string;
+  // joined
+  clientes?: { nombre: string; email?: string; telefono?: string };
+  vendedores?: { nombre: string };
+  tarifas?: { nombre: string };
+  ventas?: { folio: string };
+  cotizacion_lineas?: CotizacionLinea[];
+}
+
+export interface CotizacionLinea {
+  id: string;
+  cotizacion_id: string;
+  producto_id?: string;
+  descripcion?: string;
+  cantidad: number;
+  unidad_id?: string;
+  precio_unitario: number;
+  descuento_pct: number;
+  subtotal: number;
+  iva_pct: number;
+  ieps_pct: number;
+  iva_monto: number;
+  ieps_monto: number;
+  total: number;
+  notas?: string;
   created_at: string;
   // joined
   productos?: { id: string; codigo: string; nombre: string; precio_principal: number; tiene_iva: boolean; tiene_ieps: boolean; tasa_iva_id: string | null; tasa_ieps_id: string | null; unidad_venta_id: string | null; codigo_sat?: string; udem_sat_id?: string };

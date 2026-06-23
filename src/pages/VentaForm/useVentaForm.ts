@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useVenta, useSaveVenta, useSaveVentaLinea, useDeleteVentaLinea, useDeleteVenta } from '@/hooks/useVentas';
 import { useProductosForSelect, useAlmacenes, useTarifasForSelect } from '@/hooks/useData';
-import { useClientes } from '@/hooks/useClientes';
+import { useClientes, useVendedores } from '@/hooks/useClientes';
 import { useEntregasByPedido, useCrearEntrega, calcRemainingQty } from '@/hooks/useEntregas';
 import { supabase } from '@/lib/supabase';
 import { resolveProductPricing, type TarifaLineaRule, type ProductForPricing } from '@/lib/priceResolver';
@@ -60,6 +60,7 @@ export function useVentaForm() {
   const { data: productosListRaw } = useProductosForSelect();
   const { data: tarifasList } = useTarifasForSelect();
   const { data: almacenesList } = useAlmacenes();
+  const { data: vendedoresList } = useVendedores();
   const crearEntrega = useCrearEntrega();
   const [form, setForm] = useState<Partial<Venta>>(emptyVenta());
   const [lineas, setLineas] = useState<Partial<VentaLinea>[]>([emptyLine()]);
@@ -570,7 +571,7 @@ export function useVentaForm() {
   return {
     id, isNew, form, lineas, setLineas, dirty, readOnly, isLoading,
     profile, user, empresa, navigate, queryClient,
-    clientesList, productosList, tarifasList, almacenesList,
+    clientesList, productosList, tarifasList, almacenesList, vendedoresList,
     entregasExistentes, entregasActivas, hayEntregas, remaining, fullyDelivered, canCreateEntrega, lineDeliverySummary,
     pagosData, totalPagado, saldoPendiente, totals: finalTotals, promoResults, tarifaRules,
     pdfBlob, setPdfBlob, showPdfModal, setShowPdfModal, showFacturaDrawer, setShowFacturaDrawer,

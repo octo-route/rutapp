@@ -49,6 +49,7 @@ const navItems: NavItem[] = [
     icon: ShoppingCart,
     path: '/ventas',
     children: [
+      { label: 'Cotizaciones', path: '/ventas/cotizaciones' },
       { label: 'Todas las ventas', path: '/ventas' },
       { label: 'Cobranza', path: '/ventas/cobranza' },
       { label: 'Promociones', path: '/ventas/promociones' },
