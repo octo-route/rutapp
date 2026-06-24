@@ -382,10 +382,29 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
 
               const srcLinea = isEditing ? { ...linea, ...editVal } : linea;
               const pr = form.precio_principal ?? 0;
-              let rawSinImp = 0;
-              if (srcLinea.tipo_calculo === 'margen_costo') rawSinImp = Math.max(costo * (1 + ((srcLinea.margen_pct as number) ?? 0) / 100), (srcLinea.precio_minimo as number) ?? 0);
-              else if (srcLinea.tipo_calculo === 'descuento_precio') rawSinImp = Math.max(pr * (1 - ((srcLinea.descuento_pct as number) ?? 0) / 100), (srcLinea.precio_minimo as number) ?? 0);
-              else rawSinImp = Math.max((srcLinea.precio as number) ?? 0, (srcLinea.precio_minimo as number) ?? 0);
+
+              let ruleFactor = 1;
+              if (srcLinea.aplica_a === 'presentacion' && srcLinea.presentacion_ids?.length > 0) {
+                const p = (dbPresentaciones ?? []).find((pr: any) => pr.id === srcLinea.presentacion_ids[0]);
+                if (p) ruleFactor = Number(p.factor_base) || 1;
+              }
+              const costoEfectivo = costo * ruleFactor;
+              const prEfectivo = pr * ruleFactor;
+
+              let calcSinImp = 0;
+              if (srcLinea.tipo_calculo === 'margen_costo') {
+                calcSinImp = costoEfectivo * (1 + ((srcLinea.margen_pct as number) ?? 0) / 100);
+              } else if (srcLinea.tipo_calculo === 'descuento_precio') {
+                calcSinImp = prEfectivo * (1 - ((srcLinea.descuento_pct as number) ?? 0) / 100);
+              } else {
+                if (basePrecio === 'con_impuestos') {
+                  calcSinImp = ((srcLinea.precio as number) ?? 0) / taxMult;
+                } else {
+                  calcSinImp = (srcLinea.precio as number) ?? 0;
+                }
+              }
+
+              const rawSinImp = Math.max(calcSinImp, (srcLinea.precio_minimo as number) ?? 0);
 
               let precioSinImp: number, precioConImp: number;
               if (basePrecio === 'con_impuestos') {

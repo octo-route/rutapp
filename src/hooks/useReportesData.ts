@@ -3,28 +3,38 @@ import { supabase } from '@/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAllPages } from '@/lib/supabasePaginate';
 
-export function useReportesData(desde: string, hasta: string, vendedorIds?: string[], statusFilter?: string[]) {
+export function useReportesData(desde: string, hasta: string, vendedorIds?: string[], statusFilter?: string[], cajaNombres?: string[]) {
   const { empresa } = useAuth();
   return useQuery({
-    queryKey: ['reportes-full', empresa?.id, desde, hasta, vendedorIds, statusFilter],
+    queryKey: ['reportes-full', empresa?.id, desde, hasta, vendedorIds, statusFilter, cajaNombres],
     enabled: !!empresa?.id,
     staleTime: 2 * 60 * 1000, // 2 min stale for reports
     queryFn: async () => {
       const eid = empresa!.id;
       const hasVendorFilter = vendedorIds && vendedorIds.length > 0;
+      const hasCajaFilter = cajaNombres && cajaNombres.length > 0;
 
       const activeStatuses = (statusFilter && statusFilter.length > 0 ? statusFilter : ['borrador', 'confirmado', 'entregado', 'facturado']) as any;
 
       // --- All queries paginated to avoid 1000-row cap ---
       const ventas = await fetchAllPages<any>((from, to) => {
-        let q = supabase.from('ventas').select('id, folio, fecha, fecha_entrega, total, saldo_pendiente, status, tipo, condicion_pago, cliente_id, vendedor_id, subtotal, iva_total, ieps_total, descuento_total, clientes(nombre), vendedores:profiles!vendedor_id(nombre)').eq('empresa_id', eid).eq('es_saldo_inicial', false).gte('fecha', desde).lte('fecha', hasta).in('status', activeStatuses).range(from, to);
+        let selectStr = 'id, folio, fecha, fecha_entrega, total, saldo_pendiente, status, tipo, condicion_pago, cliente_id, vendedor_id, subtotal, iva_total, ieps_total, descuento_total, clientes(nombre), vendedores:profiles!vendedor_id(nombre)';
+        if (hasCajaFilter) selectStr += ', caja_turnos!inner(caja_nombre)';
+        
+        let q = supabase.from('ventas').select(selectStr).eq('empresa_id', eid).eq('es_saldo_inicial', false).gte('fecha', desde).lte('fecha', hasta).in('status', activeStatuses).range(from, to);
         if (hasVendorFilter) q = q.in('vendedor_id', vendedorIds);
+        if (hasCajaFilter) q = q.in('caja_turnos.caja_nombre', cajaNombres);
         return q;
       });
 
       const ventaLineas = await fetchAllPages<any>((from, to) => {
-        let q = supabase.from('venta_lineas').select('producto_id, cantidad, precio_unitario, total, subtotal, productos(codigo, nombre), venta_id, ventas!inner(empresa_id, fecha, status, cliente_id, vendedor_id, clientes(nombre), vendedores:profiles!vendedor_id(nombre))').eq('ventas.empresa_id', eid).gte('ventas.fecha', desde).lte('ventas.fecha', hasta).in('ventas.status', activeStatuses).range(from, to);
+        let selectStr = 'producto_id, cantidad, precio_unitario, total, subtotal, productos(codigo, nombre), venta_id, ventas!inner(empresa_id, fecha, status, cliente_id, vendedor_id, clientes(nombre), vendedores:profiles!vendedor_id(nombre)';
+        if (hasCajaFilter) selectStr += ', caja_turnos!inner(caja_nombre)';
+        selectStr += ')';
+
+        let q = supabase.from('venta_lineas').select(selectStr).eq('ventas.empresa_id', eid).gte('ventas.fecha', desde).lte('ventas.fecha', hasta).in('ventas.status', activeStatuses).range(from, to);
         if (hasVendorFilter) q = q.in('ventas.vendedor_id', vendedorIds);
+        if (hasCajaFilter) q = q.in('ventas.caja_turnos.caja_nombre', cajaNombres);
         return q;
       });
 
@@ -72,15 +82,20 @@ export function useReportesData(desde: string, hasta: string, vendedorIds?: stri
 
       // Gastos de caja (POS): viven en caja_movimientos con tipo='gasto'.
       // Se incluyen en el reporte etiquetados como "POS" para que se vean junto a los demás.
-      const cajaGastosRaw = hasVendorFilter ? [] : await fetchAllPages<any>((from, to) =>
-        supabase.from('caja_movimientos')
-          .select('id, monto, motivo, created_at, user_id, tipo')
+      const cajaGastosRaw = hasVendorFilter ? [] : await fetchAllPages<any>((from, to) => {
+        let selectStr = 'id, monto, motivo, created_at, user_id, tipo';
+        if (hasCajaFilter) selectStr += ', caja_turnos!inner(caja_nombre)';
+        
+        let q = supabase.from('caja_movimientos')
+          .select(selectStr)
           .eq('empresa_id', eid)
           .eq('tipo', 'gasto')
           .gte('created_at', `${desde}T00:00:00`)
           .lte('created_at', `${hasta}T23:59:59`)
-          .range(from, to)
-      );
+          .range(from, to);
+        if (hasCajaFilter) q = q.in('caja_turnos.caja_nombre', cajaNombres);
+        return q;
+      });
       const cajaGastos = cajaGastosRaw.map((m: any) => ({
         id: `caja_${m.id}`,
         monto: m.monto,

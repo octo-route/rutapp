@@ -186,7 +186,7 @@ export function ProductoGeneralFields({ form, set, setForm, marcas, clasificacio
             type="number"
             teal
             help
-            helpText={`Costo unitario del producto (por ${salesUnitName}). Si el cálculo es automático, este campo se bloqueará al guardar y se actualizará con cada compra. Para productos nuevos, este valor sirve como costo inicial.`}
+            helpText={`Costo base del producto (por 1 ${salesUnitName}). ¡Importante! Este es el costo que se tomará como base matemática para calcular los márgenes de ganancia. Si configuras presentaciones, el costo de éstas se calculará multiplicando este valor.`}
             readOnly={isMethodAuto(form.calculo_costo ?? 'promedio') && !isNew}
             onChange={v => set('costo', +v)}
             format={v => `${symbol} ${(v ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}

@@ -88,7 +88,7 @@ export default function FacturacionCfdiPage() {
       return data;
     },
     onSuccess: (data) => {
-      if (data.ok) toast.success('Conexión con Facturama exitosa ✓');
+      if (data.ok) toast.success('Conexión exitosa ✓');
       else toast.error(`Error de conexión: status ${data.status}`);
     },
     onError: (e: any) => toast.error(e.message),

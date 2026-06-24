@@ -21,6 +21,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useReportesData } from "@/hooks/useReportesData";
 import { useVendedores } from "@/hooks/useClientes";
+import { supabase } from "@/lib/supabase";
+import { useQuery } from "@tanstack/react-query";
 import { ReporteResumen } from "@/components/reportes/ReporteResumen";
 import { ReporteVentasProducto } from "@/components/reportes/ReporteVentasProducto";
 import { ReporteVentasCliente } from "@/components/reportes/ReporteVentasCliente";
@@ -337,13 +339,30 @@ export default function ReportesPage() {
       .split("T")[0],
   );
   const [selectedVendedores, setSelectedVendedores] = useState<string[]>([]);
+  const [selectedCajas, setSelectedCajas] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const { data: vendedoresList } = useVendedores();
+  
+  const { data: cajasList } = useQuery({
+    queryKey: ['cajas-reporte', empresa?.id],
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cajas')
+        .select('*')
+        .eq('empresa_id', empresa!.id)
+        .order('nombre');
+      if (error) throw error;
+      return data;
+    }
+  });
+
   const { data, isLoading, error } = useReportesData(
     desde,
     hasta,
     selectedVendedores.length > 0 ? selectedVendedores : undefined,
     selectedStatuses.length > 0 ? selectedStatuses : undefined,
+    selectedCajas.length > 0 ? selectedCajas : undefined
   );
   if (error) console.error("[ReportesPage] query error:", error);
   const [tab, setTab] = useState<ReportTab>("resumen");
@@ -383,6 +402,12 @@ export default function ReportesPage() {
   const toggleStatus = (val: string) => {
     setSelectedStatuses((prev) =>
       prev.includes(val) ? prev.filter((v) => v !== val) : [...prev, val],
+    );
+  };
+
+  const toggleCaja = (nombre: string) => {
+    setSelectedCajas((prev) =>
+      prev.includes(nombre) ? prev.filter((v) => v !== nombre) : [...prev, nombre],
     );
   };
 
@@ -442,6 +467,62 @@ export default function ReportesPage() {
             onChange={(e) => setHasta(e.target.value)}
             className="input-odoo text-[13px] w-36"
           />
+
+          {/* Caja multi-select */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className={cn(
+                  "input-odoo text-[13px] flex items-center gap-1.5 min-w-[140px] max-w-[220px] truncate",
+                  selectedCajas.length > 0 &&
+                    "border-primary/60 bg-primary/5",
+                )}
+              >
+                <BoxIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">
+                  {selectedCajas.length === 0
+                    ? "Todas las cajas"
+                    : selectedCajas.length === 1
+                      ? selectedCajas[0]
+                      : `${selectedCajas.length} cajas`}
+                </span>
+                <ChevronDown className="h-3 w-3 shrink-0 ml-auto text-muted-foreground" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-0" align="end">
+              <div className="max-h-60 overflow-y-auto p-1">
+                {cajasList?.map((c) => (
+                  <label
+                    key={c.id}
+                    className="flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-accent cursor-pointer text-[13px]"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedCajas.includes(c.nombre)}
+                      onChange={() => toggleCaja(c.nombre)}
+                      className="rounded border-input"
+                    />
+                    <span className="truncate">{c.nombre}</span>
+                  </label>
+                ))}
+                {(!cajasList || cajasList.length === 0) && (
+                  <p className="text-[12px] text-muted-foreground p-3 text-center">
+                    Sin cajas
+                  </p>
+                )}
+              </div>
+              {selectedCajas.length > 0 && (
+                <div className="border-t border-border p-1.5">
+                  <button
+                    onClick={() => setSelectedCajas([])}
+                    className="w-full text-[12px] text-muted-foreground hover:text-foreground py-1 flex items-center justify-center gap-1"
+                  >
+                    <X className="h-3 w-3" /> Limpiar filtro
+                  </button>
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
 
           {/* Vendedor multi-select */}
           <Popover>
@@ -566,7 +647,7 @@ export default function ReportesPage() {
       </div>
 
       {/* Active filter chips */}
-      {(selectedVendedores.length > 0 || selectedStatuses.length > 0) && (
+      {(selectedVendedores.length > 0 || selectedStatuses.length > 0 || selectedCajas.length > 0) && (
         <div className="flex items-center gap-1.5 flex-wrap print:hidden">
           <span className="text-[11px] text-muted-foreground">
             Filtrando por:
@@ -579,6 +660,20 @@ export default function ReportesPage() {
               {name}
               <button
                 onClick={() => toggleVendedor(selectedVendedores[i])}
+                className="hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          {selectedCajas.map((caja) => (
+            <span
+              key={caja}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-medium"
+            >
+              Caja: {caja}
+              <button
+                onClick={() => toggleCaja(caja)}
                 className="hover:text-destructive"
               >
                 <X className="h-3 w-3" />
@@ -653,6 +748,11 @@ export default function ReportesPage() {
             activeFilters.push({
               label: "Vendedor",
               value: vendedorNames.join(", "),
+            });
+          if (selectedCajas.length > 0)
+            activeFilters.push({
+              label: "Caja",
+              value: selectedCajas.join(", "),
             });
           if (selectedStatuses.length > 0)
             activeFilters.push({

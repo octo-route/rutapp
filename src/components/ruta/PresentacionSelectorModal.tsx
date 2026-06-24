@@ -240,7 +240,7 @@ export function PresentacionSelectorModal({
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Precio unitario:</span>
-              <span className="tabular-nums">{symbol}{fmtNum(precioUnitario)} / {unidad}</span>
+              <span className="tabular-nums">{symbol}{fmtNum(pricingForBaseUnit.displayPrice)} / {unidad}</span>
             </div>
             <div className="flex justify-between text-base sm:text-lg pt-2 border-t border-border/60">
               <span className="font-semibold">Subtotal:</span>

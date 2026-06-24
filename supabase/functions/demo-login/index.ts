@@ -6,8 +6,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const DEMO_EMAIL = "demo@octoapp.mx";
-const DEMO_PASSWORD = "demo1234";
+const DEMO_EMAIL = "administracion@octoapp.mx";
+const DEMO_PASSWORD = "123456";
 const DEMO_EMPRESA_NOMBRE = "Distribuidora Demo";
 
 Deno.serve(async (req) => {
@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
           email: DEMO_EMAIL,
           password: DEMO_PASSWORD,
           email_confirm: true,
-          user_metadata: { full_name: "Admin Demo", empresa_nombre: DEMO_EMPRESA_NOMBRE },
+          user_metadata: { full_name: "Admin OctoApp", empresa_nombre: DEMO_EMPRESA_NOMBRE },
         });
       if (createErr) {
         // Race condition: user may have been created between listUsers and createUser
@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
       estado: "Nuevo León",
       cp: "64000",
       telefono: "8112345678",
-      email: "demo@octoapp.mx",
+      email: DEMO_EMAIL,
       razon_social: "Distribuidora Demo S.A. de C.V.",
       regimen_fiscal: "601",
       moneda: "MXN",
@@ -111,7 +111,13 @@ Deno.serve(async (req) => {
     
     const deleteOp = async (table: string) => {
       const { error } = await admin.from(table).delete().eq("empresa_id", eid);
-      if (error && error.code !== "42P01") { // 42P01 is undefined_table
+      if (
+        error &&
+        error.code !== "42P01" &&
+        error.code !== "42703" &&
+        error.code !== "PGRST205" &&
+        error.code !== "PGRST204"
+      ) { // 42P01/PGRST205: undefined_table, 42703/PGRST204: undefined_column
         throw new Error(`Error deleting from ${table}: ${error.message} (${error.code})`);
       }
     };
