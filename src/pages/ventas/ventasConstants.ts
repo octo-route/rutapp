@@ -86,6 +86,26 @@ export const VENTAS_DEFAULT_COLUMN_VISIBILITY: Record<string, boolean> = VENTAS_
   {} as Record<string, boolean>
 );
 
+export const VENTAS_PRODUCTOS_TABLE_COLUMNS: { key: string; label: string; required?: boolean; defaultVisible: boolean }[] = [
+  { key: 'folio', label: 'Folio', required: true, defaultVisible: true },
+  { key: 'tipo', label: 'Tipo', defaultVisible: true },
+  { key: 'cliente', label: 'Cliente', defaultVisible: true },
+  { key: 'vendedor', label: 'Vendedor', defaultVisible: true },
+  { key: 'fecha', label: 'Fecha / Hora', defaultVisible: true },
+  { key: 'codigo', label: 'Código', defaultVisible: true },
+  { key: 'producto', label: 'Producto', required: true, defaultVisible: true },
+  { key: 'cantidad', label: 'Cantidad', required: true, defaultVisible: true },
+  { key: 'precio_unitario', label: 'P. Unit.', defaultVisible: true },
+  { key: 'total', label: 'Total', required: true, defaultVisible: true },
+  { key: 'status', label: 'Estado', defaultVisible: true },
+];
+
+export const VENTAS_PRODUCTOS_DEFAULT_COLUMN_VISIBILITY: Record<string, boolean> = VENTAS_PRODUCTOS_TABLE_COLUMNS.reduce(
+  (acc, c) => { acc[c.key] = c.defaultVisible; return acc; },
+  {} as Record<string, boolean>
+);
+
+
 export const GROUP_BY_OPTIONS = [
   { value: 'status', label: 'Estado' },
   { value: 'tipo', label: 'Tipo' },

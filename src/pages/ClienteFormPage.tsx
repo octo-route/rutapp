@@ -152,7 +152,7 @@ function ClientePreciosTab({ tarifaId, listaPrecioId }: { tarifaId?: string; lis
               <th className="th-odoo text-left">Código</th>
               <th className="th-odoo text-left">Producto</th>
               <th className="th-odoo text-right">Costo</th>
-              <th className="th-odoo text-right">Precio base</th>
+              <th className="th-odoo text-right">Precio de venta</th>
               <th className="th-odoo text-right">Precio s/imp</th>
               <th className="th-odoo text-right">Precio c/imp</th>
               <th className="th-odoo text-left">Regla</th>

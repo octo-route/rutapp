@@ -11,6 +11,7 @@ import { Save, Trash, ArrowLeft, RefreshCw } from 'lucide-react';
 import type { StatusCotizacion } from '@/types';
 import SearchableSelect from '@/components/SearchableSelect';
 import { useAlmacenes } from '@/hooks/useData';
+import { PresentacionSelectorModal } from '@/components/ruta/PresentacionSelectorModal';
 
 export default function CotizacionFormPage() {
   const isMobile = useIsMobile();
@@ -21,6 +22,7 @@ export default function CotizacionFormPage() {
 
   const {
     id, isNew, form, lineas, setLineas, readOnly, canEditCotizacion, isLoading,
+    productBeingConfigured, setProductBeingConfigured, handleConfirmPresentacion, handleEditPresentacion,
     navigate, clientesList, productosList, tarifasList, vendedoresList,
     totals, saveCotizacion,
     set, handleProductSelect, handleSave, handleDelete, handleStatusChange, handleConvertToVenta,
@@ -94,7 +96,7 @@ export default function CotizacionFormPage() {
         
         <div className="bg-card border border-border rounded-md">
           <OdooTabs tabs={[
-            { key: 'lineas', label: 'Líneas de cotización', content: <CotizacionLineasTab lineas={lineas} productosList={productosList ?? []} readOnly={readOnly} totals={totals} promoResults={[]} onProductSelect={handleProductSelect} onUpdateLine={updateLine} onRemoveLine={removeLine} onAddLine={addLine} setCellRef={setCellRef} onCellKeyDown={handleCellKeyDown} navigateCell={navigateCell} setLineas={setLineas} readOnlyForm={readOnly} saldoPendiente={0} /> },
+            { key: 'lineas', label: 'Líneas de cotización', content: <CotizacionLineasTab lineas={lineas} productosList={productosList ?? []} readOnly={readOnly} totals={totals} promoResults={[]} onProductSelect={handleProductSelect} onUpdateLine={updateLine} onRemoveLine={removeLine} onAddLine={addLine} setCellRef={setCellRef} onCellKeyDown={handleCellKeyDown} navigateCell={navigateCell} setLineas={setLineas} onEditPresentacion={handleEditPresentacion} readOnlyForm={readOnly} saldoPendiente={0} /> },
             { key: 'notas', label: 'Notas', content: <div className="p-4">{readOnly ? <p className="text-[13px] text-foreground whitespace-pre-wrap">{form.notas || 'Sin notas'}</p> : <textarea className="input-odoo w-full min-h-[100px]" value={form.notas ?? ''} onChange={e => set('notas', e.target.value)} placeholder="Notas para el cliente..." />}</div> },
           ]} />
         </div>
@@ -143,6 +145,18 @@ export default function CotizacionFormPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Presentaciones Modal */}
+      {productBeingConfigured && (
+        <PresentacionSelectorModal
+          open={!!productBeingConfigured}
+          producto={productBeingConfigured.producto}
+          presentaciones={productBeingConfigured.presentaciones}
+          precioPorUnidadBase={productBeingConfigured.precioBase}
+          onConfirm={handleConfirmPresentacion}
+          onClose={() => setProductBeingConfigured(null)}
+        />
+      )}
     </div>
   );
 }

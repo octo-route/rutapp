@@ -13,7 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 
 const YOUTUBE_CHANNEL_URL = 'https://www.youtube.com/@OctoAppMx'; // cambiar por el canal real de tutoriales cuando esté listo
-const SUPER_ADMIN_EMAIL = 'diego.leon@uniline.mx'; // cambiar por el email 
+const SUPER_ADMIN_EMAIL = 'administracion@octoapp.mx'; // cambiar por el email 
 
 const MODULES: { value: string; label: string }[] = [
   { value: 'dashboard', label: 'Dashboard' },

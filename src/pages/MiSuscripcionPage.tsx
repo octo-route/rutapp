@@ -875,7 +875,7 @@ export default function MiSuscripcionPage() {
           </Card>
 
           {/* Timbres Section — solo visible para super admin */}
-          {user?.email === 'diego.leon@uniline.mx' && (
+          {user?.email === 'administracion@octoapp.mx' && (
           <Card>
             <CardContent className="p-6">
               <h2 className="text-lg font-bold text-foreground flex items-center gap-2 mb-1">

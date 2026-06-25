@@ -21,12 +21,12 @@ interface Props {
 
 export function AbrirTurnoModal({ open, onOpenChange }: Props) {
   const { abrirTurno } = useCajaTurno();
-  const { empresa } = useAuth();
+  const { empresa, profile } = useAuth();
   const [cajaNombre, setCajaNombre] = useState('');
   const [fondo, setFondo] = useState('');
   const [notas, setNotas] = useState('');
   const [busy, setBusy] = useState(false);
-  const { hasModulo } = usePermisos();
+  const { hasModulo, isOwner } = usePermisos();
   const navigate = useNavigate();
   const canManageCajas = hasModulo('catalogo.cajas');
 
@@ -45,16 +45,21 @@ export function AbrirTurnoModal({ open, onOpenChange }: Props) {
     }
   });
 
+  const filteredCajas = cajas?.filter(c => {
+    if (!c.almacen_id) return true;
+    return isOwner || profile?.almacen_id === c.almacen_id;
+  }) ?? [];
+
   useEffect(() => {
-    if (open && cajas && cajas.length > 0) {
-      const exists = cajas.some(c => c.nombre === cajaNombre);
+    if (open && filteredCajas && filteredCajas.length > 0) {
+      const exists = filteredCajas.some(c => c.nombre === cajaNombre);
       if (!exists) {
-        setCajaNombre(cajas[0].nombre);
+        setCajaNombre(filteredCajas[0].nombre);
       }
     } else if (!open) {
       setCajaNombre('');
     }
-  }, [open, cajas]);
+  }, [open, filteredCajas]);
 
   const handleSubmit = async () => {
     const monto = parseFloat(fondo) || 0;
@@ -73,7 +78,7 @@ export function AbrirTurnoModal({ open, onOpenChange }: Props) {
     }
   };
 
-  const hasNoCajas = !loadingCajas && (!cajas || cajas.length === 0);
+  const hasNoCajas = !loadingCajas && (!cajas || filteredCajas.length === 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -90,12 +95,16 @@ export function AbrirTurnoModal({ open, onOpenChange }: Props) {
                 <LockOpen className="h-6 w-6 text-destructive" />
               </div>
               <div>
-                <h3 className="font-semibold text-lg text-foreground">No hay cajas registradas</h3>
+                <h3 className="font-semibold text-lg text-foreground">
+                  {!cajas || cajas.length === 0 ? 'No hay cajas registradas' : 'Sin cajas disponibles'}
+                </h3>
                 <p className="text-sm text-muted-foreground mt-1 px-4">
-                  Para poder abrir un turno, primero necesitas registrar una caja en el catálogo.
+                  {!cajas || cajas.length === 0
+                    ? 'Para poder abrir un turno, primero necesitas registrar una caja en el catálogo.'
+                    : 'No tienes cajas asignadas a tu almacén. Contacta a un administrador.'}
                 </p>
               </div>
-              {canManageCajas && (
+              {canManageCajas && (!cajas || cajas.length === 0) && (
                 <Button 
                   className="mt-2"
                   onClick={() => {
@@ -121,7 +130,7 @@ export function AbrirTurnoModal({ open, onOpenChange }: Props) {
                       <SelectValue placeholder="Selecciona una caja..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {cajas?.map((c) => (
+                      {filteredCajas.map((c) => (
                         <SelectItem key={c.id} value={c.nombre}>
                           {c.nombre}
                         </SelectItem>

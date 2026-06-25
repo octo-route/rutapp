@@ -15,9 +15,10 @@ interface Props {
   onRemoveLine: (idx: number) => void;
   setLineas?: React.Dispatch<React.SetStateAction<Partial<VentaLinea>[]>>;
   currencySymbol?: string;
+  onEditPresentacion?: (idx: number) => void;
 }
 
-export function VentaLineaMobile({ idx, line: l, lineas, productosList, readOnly, onProductSelect, onUpdateLine, onRemoveLine, setLineas, currencySymbol: cs = '$' }: Props) {
+export function VentaLineaMobile({ idx, line: l, lineas, productosList, readOnly, onProductSelect, onUpdateLine, onRemoveLine, setLineas, currencySymbol: cs = '$', onEditPresentacion }: Props) {
   const { fmt } = useCurrency();
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const qty = Number(l.cantidad) || 0;
@@ -50,6 +51,7 @@ export function VentaLineaMobile({ idx, line: l, lineas, productosList, readOnly
           {readOnly ? (
             <>
               <div className="text-sm font-medium truncate">{displayLabel}</div>
+              {l.presentacion_nombre && <div className="text-xs text-muted-foreground">Empaque: {l.presentacion_nombre}</div>}
               {prod?._stock != null && <div className="text-[10px] text-muted-foreground font-medium">Stock: {prod.es_combo || prod.se_puede_inventariar === false ? "—" : prod._stock}</div>}
             </>
           ) : (
@@ -58,6 +60,14 @@ export function VentaLineaMobile({ idx, line: l, lineas, productosList, readOnly
               value={l.producto_id ?? ''} displayText={prod ? `${prod.codigo} · ${prod.nombre}` : (snapshotProd ? `${snapshotProd.codigo ?? ''}${snapshotProd.codigo && snapshotProd.nombre ? ' · ' : ''}${snapshotProd.nombre ?? ''}` : undefined)}
               onSelect={pid => onProductSelect(idx, pid)} autoFocus={idx === lineas.length - 1 && isEmpty} readOnly={readOnly}
             />
+          )}
+          {l.presentacion_nombre && !readOnly && (
+            <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+              <span>📦 Empaque: {l.presentacion_nombre}</span>
+              {onEditPresentacion && (
+                <button onClick={() => onEditPresentacion(idx)} className="text-primary hover:underline ml-1">(Cambiar)</button>
+              )}
+            </div>
           )}
           {!isEmpty && (
             <div className="flex flex-wrap gap-1 mt-1">
@@ -72,22 +82,59 @@ export function VentaLineaMobile({ idx, line: l, lineas, productosList, readOnly
         <div className="grid grid-cols-3 gap-2">
           <div>
             <label className="text-[10px] text-muted-foreground block">Cantidad {prod?.es_granel && <span className="text-primary font-medium">({prod.unidad_granel})</span>}{prod?._stock != null && <span className="ml-1">(Disp: {prod.es_combo || prod.se_puede_inventariar === false ? "—" : prod._stock})</span>}</label>
-            {readOnly ? <span className="text-sm font-medium">{l.cantidad} {prod?.es_granel ? prod.unidad_granel : unidadLabel}</span> : (
-              <div className="flex items-center gap-1">
-                <input type="number" inputMode={prod?.es_granel ? "decimal" : "numeric"} className="inline-edit-input text-sm text-right !py-1 w-full" value={l.cantidad ?? ''} onChange={e => onUpdateLine(idx, 'cantidad', e.target.value)} min="0" step={prod?.es_granel ? "0.001" : "1"} onFocus={e => e.target.select()} />
-                <span className="text-[10px] text-muted-foreground shrink-0">{prod?.es_granel ? prod.unidad_granel : unidadLabel}</span>
+            {readOnly ? (
+              <div className="text-sm font-medium">
+                {l.cantidad}
+                {prod?.es_granel && <span className="text-xs text-muted-foreground ml-1">{prod.unidad_granel}</span>}
+                {l.paquetes && <span className="text-xs text-muted-foreground ml-1">({l.paquetes} paq)</span>}
+              </div>
+            ) : l.presentacion_id ? (
+              <div>
+                <div className="flex items-center gap-1 w-24">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="inline-edit-input w-full"
+                    value={l.paquetes ?? ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (setLineas) {
+                        setLineas(prev => {
+                          const next = [...prev];
+                          const line = { ...next[idx] };
+                          line.paquetes = val ? Number(val) : null;
+                          line.cantidad = line.paquetes != null ? line.paquetes * Number(line.presentacion_factor || 1) : 0;
+                          next[idx] = line as any;
+                          return next;
+                        });
+                      }
+                    }}
+                    onFocus={e => e.target.select()}
+                  />
+                  <span className="text-[10px] text-muted-foreground">paq</span>
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">({l.cantidad} pz)</div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 w-24">
+                <input type="number" inputMode={prod?.es_granel ? "decimal" : "numeric"} className="inline-edit-input w-full" value={l.cantidad ?? ''} onChange={e => onUpdateLine(idx, 'cantidad', e.target.value)} min="0" step={prod?.es_granel ? "0.001" : "1"} />
+                {prod?.es_granel && <span className="text-[10px] text-muted-foreground">{prod.unidad_granel}</span>}
               </div>
             )}
           </div>
           <div>
             <label className="text-[10px] text-muted-foreground block">Precio</label>
-            {readOnly ? <span className="text-sm">{fmt(price)}</span> : (
+            {readOnly ? <span className="text-sm">{fmt(l.presentacion_id ? price * Number(l.presentacion_factor || 1) : price)}</span> : (
               <div className="space-y-1">
                 <input
                   type="number" inputMode="decimal" className="inline-edit-input text-sm text-right !py-1 w-full"
-                  value={l.precio_unitario ?? ''}
+                  value={l.presentacion_id ? (l.precio_unitario ? Number(l.precio_unitario) * Number(l.presentacion_factor || 1) : '') : (l.precio_unitario ?? '')}
                   onChange={e => {
-                    onUpdateLine(idx, 'precio_unitario', e.target.value);
+                    const val = e.target.value;
+                    const newPrice = val ? Number(val) : 0;
+                    const finalPrice = l.presentacion_id ? newPrice / Number(l.presentacion_factor || 1) : newPrice;
+                    onUpdateLine(idx, 'precio_unitario', finalPrice);
                     if (setLineas) {
                       setLineas(prev => {
                         const next = [...prev];
@@ -103,6 +150,7 @@ export function VentaLineaMobile({ idx, line: l, lineas, productosList, readOnly
                     producto={prod}
                     currentListaPrecioId={(l as any).lista_precio_id ?? null}
                     isManual={!!(l as any).precio_manual}
+                    presentacionFactor={l.presentacion_id ? Number(l.presentacion_factor || 1) : undefined}
                     compact
                     onSelectLista={(listaPrecioId, _tarifaId, unitPrice, displayPrice) => {
                       setLineas(prev => {

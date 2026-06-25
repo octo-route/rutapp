@@ -84,7 +84,7 @@ export function useCotizacion(id?: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('cotizaciones')
-        .select('*, clientes(nombre, email, telefono), vendedores:profiles!vendedor_id(nombre), tarifas(nombre), ventas(folio), cotizacion_lineas(*, productos(id, codigo, nombre, precio_principal, tiene_iva, tiene_ieps, tasa_iva_id, tasa_ieps_id, unidad_venta_id), unidades(nombre, abreviatura))')
+        .select('*, clientes(nombre, email, telefono), vendedores:profiles!vendedor_id(nombre), tarifas(nombre), ventas(folio), cotizacion_lineas(*, productos(id, codigo, nombre, precio_principal, tiene_iva, tiene_ieps, tasa_iva_id, tasa_ieps_id, unidad_venta_id, usa_listas_precio), unidades(nombre, abreviatura))')
         .eq('id', id!)
         .maybeSingle();
 

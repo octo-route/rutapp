@@ -17,12 +17,14 @@ interface Props {
   onSelectLista: (
     listaPrecioId: string | null,
     tarifaId: string | null,
-    unitPrice: number,
-    displayPrice: number,
+    unitPrice: number, // Base unit price
+    displayPrice: number, // Base display price
     listaNombre: string,
   ) => void;
   /** Render trigger as compact badge */
   compact?: boolean;
+  /** Factor de presentacion para mostrar el precio por paquete */
+  presentacionFactor?: number;
 }
 
 interface ListaOption {
@@ -42,7 +44,7 @@ interface ListaOption {
  * switch the price list per line.
  */
 export function ListaPrecioPicker({
-  producto, currentListaPrecioId, currentTarifaId, isManual, disabled, onSelectLista, compact,
+  producto, currentListaPrecioId, currentTarifaId, isManual, disabled, onSelectLista, compact, presentacionFactor,
 }: Props) {
   const { empresa } = useAuth();
   const { fmt } = useCurrency();
@@ -72,10 +74,8 @@ export function ListaPrecioPicker({
     },
   });
 
-  const options: ListaOption[] = useMemo(() => {
-    if (!producto || !pricingData) return [];
-    const { tarifas, listas, rules } = pricingData;
-    const pf: ProductForPricing = {
+  const pf: ProductForPricing = useMemo(() => {
+    return {
       id: producto.id,
       precio_principal: Number(producto.precio_principal) || 0,
       costo: Number(producto.costo) || 0,
@@ -87,6 +87,11 @@ export function ListaPrecioPicker({
       ieps_tipo: producto.ieps_tipo,
       usa_listas_precio: producto.usa_listas_precio,
     };
+  }, [producto]);
+
+  const options: ListaOption[] = useMemo(() => {
+    if (!producto || !pricingData) return [];
+    const { tarifas, listas, rules } = pricingData;
 
     const result: ListaOption[] = [];
     // For each lista_precio, compute price using its tarifa's rules
@@ -102,23 +107,23 @@ export function ListaPrecioPicker({
         tarifa_nombre: tarifa.nombre,
         es_principal: !!lista.es_principal,
         unitPrice: r.unitPrice,
-        displayPrice: r.displayPrice,
+        displayPrice: r.displayPrice * (presentacionFactor || 1),
         hasRule: !!r.appliedRule,
       });
     }
     // Sort: principal first, then by name
     result.sort((a, b) => (a.es_principal === b.es_principal ? a.lista_nombre.localeCompare(b.lista_nombre) : a.es_principal ? -1 : 1));
     return result;
-  }, [producto, pricingData]);
+  }, [producto, pricingData, pf]);
 
   const currentLabel = useMemo(() => {
     if (isManual) return 'Manual';
-    if (!currentListaPrecioId) return 'Base';
+    if (!currentListaPrecioId) return 'General';
     const opt = options.find(o => o.lista_precio_id === currentListaPrecioId);
     return opt?.lista_nombre ?? '—';
   }, [isManual, currentListaPrecioId, options]);
 
-  if (!producto) return null;
+  if (!producto || producto.usa_listas_precio === false) return null;
 
   const triggerCls = compact
     ? cn(
@@ -153,6 +158,43 @@ export function ListaPrecioPicker({
           {options.length === 0 && (
             <div className="px-3 py-4 text-xs text-muted-foreground text-center">Sin listas configuradas</div>
           )}
+          {options.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const defaultPricing = resolveProductPricing([], pf, null);
+                onSelectLista(null, null, defaultPricing.unitPrice, defaultPricing.displayPrice, 'General');
+                setOpen(false);
+              }}
+              className={cn(
+                "w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-accent border-b border-border/50 last:border-0",
+                !currentListaPrecioId && !isManual && "bg-primary/5",
+              )}
+            >
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                {!currentListaPrecioId && !isManual && <Check className="h-3 w-3 text-primary shrink-0" />}
+                <div className="min-w-0">
+                  <div className="font-medium truncate">General</div>
+                  <div className="text-[10px] text-muted-foreground truncate">
+                    Precio regular
+                  </div>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                {(() => {
+                  const defaultPricing = resolveProductPricing([], pf, null);
+                  return (
+                    <>
+                      <div className="font-semibold">{fmt(defaultPricing.displayPrice)}</div>
+                      {defaultPricing.displayPrice !== defaultPricing.unitPrice && (
+                        <div className="text-[9px] text-muted-foreground">neto: {fmt(defaultPricing.unitPrice)}</div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </button>
+          )}
           {options.map(opt => {
             const isCurrent = !isManual && opt.lista_precio_id === currentListaPrecioId;
             return (
@@ -174,7 +216,7 @@ export function ListaPrecioPicker({
                   <div className="min-w-0">
                     <div className="font-medium truncate">{opt.lista_nombre}</div>
                     <div className="text-[10px] text-muted-foreground truncate">
-                      {opt.tarifa_nombre}{!opt.hasRule && ' · sin regla (precio base)'}
+                      {opt.tarifa_nombre}{!opt.hasRule && ' · sin regla (precio general)'}
                     </div>
                   </div>
                 </div>

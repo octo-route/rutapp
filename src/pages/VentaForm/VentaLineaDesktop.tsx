@@ -20,9 +20,10 @@ interface Props {
   navigateCell: (row: number, col: number, dir: 'next' | 'prev') => void;
   setLineas: React.Dispatch<React.SetStateAction<Partial<VentaLinea>[]>>;
   currencySymbol?: string;
+  onEditPresentacion?: (idx: number) => void;
 }
 
-export function VentaLineaDesktop({ idx, line: l, isLast, lineas, productosList, readOnly, onProductSelect, onUpdateLine, onRemoveLine, setCellRef, onCellKeyDown, navigateCell, setLineas, currencySymbol: cs = '$' }: Props) {
+export function VentaLineaDesktop({ idx, line: l, isLast, lineas, productosList, readOnly, onProductSelect, onUpdateLine, onRemoveLine, setCellRef, onCellKeyDown, navigateCell, setLineas, currencySymbol: cs = '$', onEditPresentacion }: Props) {
   const { fmt } = useCurrency();
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const qty = Number(l.cantidad) || 0;
@@ -74,13 +75,21 @@ export function VentaLineaDesktop({ idx, line: l, isLast, lineas, productosList,
     <tr className={cn("border-b border-table-border transition-colors group", isEmpty ? "bg-transparent" : "hover:bg-table-hover")}>
       <td className="py-1.5 px-2 text-muted-foreground text-xs">{isEmpty ? '' : idx + 1}</td>
       <td className="py-1 px-2">
-        {readOnly ? <span className="text-[12px]">{prodDisplay ? `${prodDisplay.codigo ?? ''} · ${prodDisplay.nombre}`.replace(/^ · /, '') : (l.descripcion || '—')}{prod?._stock != null && <span className="ml-1.5 text-[10px] text-muted-foreground font-medium">(Stock: {prod.es_combo || prod.se_puede_inventariar === false ? "—" : prod._stock})</span>}</span> : (
+        {readOnly ? <span className="text-[12px]">{prodDisplay ? `${prodDisplay.codigo ?? ''} · ${prodDisplay.nombre}`.replace(/^ · /, '') : (l.descripcion || '—')}{l.presentacion_nombre ? ` (${l.presentacion_nombre})` : ''}{prod?._stock != null && <span className="ml-1.5 text-[10px] text-muted-foreground font-medium">(Stock: {prod.es_combo || prod.se_puede_inventariar === false ? "—" : prod._stock})</span>}</span> : (
           <ProductSearchInput
             products={(productosList ?? []).filter((p: any) => !lineas.filter((_, j) => j !== idx).map(ll => ll.producto_id).filter(Boolean).includes(p.id)).map((p: any) => ({ id: p.id, codigo: p.codigo, nombre: p.nombre, precio_principal: p.precio_principal, _stock: p._stock, es_combo: p.es_combo, se_puede_inventariar: p.se_puede_inventariar }))}
             value={l.producto_id ?? ''} displayText={prodDisplay ? `${prodDisplay.codigo ?? ''} · ${prodDisplay.nombre}${prod?._stock != null ? ` (Stock: ${prod.es_combo || prod.se_puede_inventariar === false ? "—" : prod._stock})` : ''}`.replace(/^ · /, '') : (l.descripcion || undefined)}
             onSelect={pid => onProductSelect(idx, pid)} onNavigate={dir => navigateCell(idx, 0, dir)} readOnly={readOnly}
             registerRef={el => setCellRef(idx, 0, el)}
           />
+        )}
+        {l.presentacion_nombre && !readOnly && (
+          <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
+            <span>📦 Empaque: {l.presentacion_nombre}</span>
+            {onEditPresentacion && (
+              <button onClick={() => onEditPresentacion(idx)} className="text-primary hover:underline ml-1">(Cambiar)</button>
+            )}
+          </div>
         )}
         {!isEmpty && (
           <div className="flex flex-wrap gap-1 md:hidden mt-0.5">
@@ -90,17 +99,45 @@ export function VentaLineaDesktop({ idx, line: l, isLast, lineas, productosList,
         )}
       </td>
       <td className="py-1 px-2">
-        {readOnly ? <span className="text-[12px] block text-right">{l.cantidad}{(prod ?? prodDisplay)?.es_granel && <span className="text-muted-foreground ml-0.5 text-[10px]">{(prod ?? prodDisplay).unidad_granel}</span>}<span className="md:hidden text-muted-foreground ml-1">{unidadLabel}</span></span> : (
-          <div className="flex items-center gap-1 justify-end">
-            <input ref={el => setCellRef(idx, 1, el)} type="number" inputMode={prod?.es_granel ? "decimal" : "numeric"} className="inline-edit-input text-[12px] text-right !py-1 w-full" value={l.cantidad ?? ''} onChange={e => onUpdateLine(idx, 'cantidad', e.target.value)} onKeyDown={e => onCellKeyDown(e, idx, 1)} onFocus={e => e.target.select()} min="0" step={prod?.es_granel ? "0.001" : "1"} />
-            {prod?.es_granel && <span className="text-[10px] text-muted-foreground shrink-0">{prod.unidad_granel}</span>}
-            {unidadLabel && !prod?.es_granel && <span className="text-[10px] text-muted-foreground shrink-0 md:hidden">{unidadLabel}</span>}
-          </div>
+        {readOnly ? <span className="text-[12px] block text-right">{l.cantidad}{(prod ?? prodDisplay)?.es_granel && <span className="text-muted-foreground ml-0.5 text-[10px]">{(prod ?? prodDisplay).unidad_granel}</span>}{l.paquetes ? <span className="text-muted-foreground ml-1 text-[10px]">({l.paquetes} paq)</span> : null}<span className="md:hidden text-muted-foreground ml-1">{unidadLabel}</span></span> : (
+          l.presentacion_id ? (
+            <div className="flex items-center justify-end gap-1">
+              <input
+                ref={el => setCellRef(idx, 1, el)}
+                type="number"
+                min="0"
+                step="1"
+                className="inline-edit-input text-[12px] text-right !py-1 w-16"
+                value={l.paquetes ?? ''}
+                onChange={e => {
+                  const val = e.target.value;
+                  setLineas(prev => {
+                    const next = [...prev];
+                    const line = { ...next[idx] };
+                    line.paquetes = val ? Number(val) : null;
+                    line.cantidad = line.paquetes != null ? line.paquetes * Number(line.presentacion_factor || 1) : 0;
+                    next[idx] = line as any;
+                    return next;
+                  });
+                }}
+                onKeyDown={e => onCellKeyDown(e, idx, 1)}
+                onFocus={e => e.target.select()}
+              />
+              <span className="text-[10px] text-muted-foreground shrink-0">paq</span>
+              <span className="text-[10px] text-muted-foreground ml-1">({l.cantidad} pz)</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 justify-end">
+              <input ref={el => setCellRef(idx, 1, el)} type="number" inputMode={prod?.es_granel ? "decimal" : "numeric"} className="inline-edit-input text-[12px] text-right !py-1 w-full" value={l.cantidad ?? ''} onChange={e => onUpdateLine(idx, 'cantidad', e.target.value)} onKeyDown={e => onCellKeyDown(e, idx, 1)} onFocus={e => e.target.select()} min="0" step={prod?.es_granel ? "0.001" : "1"} />
+              {prod?.es_granel && <span className="text-[10px] text-muted-foreground shrink-0">{prod.unidad_granel}</span>}
+              {unidadLabel && !prod?.es_granel && <span className="text-[10px] text-muted-foreground shrink-0 md:hidden">{unidadLabel}</span>}
+            </div>
+          )
         )}
       </td>
       <td className="py-1.5 px-2 text-center text-muted-foreground text-[12px] hidden md:table-cell">{isEmpty ? '' : (unidadLabel || '—')}</td>
       <td className="py-1 px-2">
-        {readOnly ? <span className="text-[12px] block text-right">{fmt(price)}</span>
+        {readOnly ? <span className="text-[12px] block text-right">{fmt(l.presentacion_id ? price * Number(l.presentacion_factor || 1) : price)}</span>
         : isEmpty ? <span></span>
         : (
           <div className="flex items-center gap-1 justify-end">
@@ -108,6 +145,7 @@ export function VentaLineaDesktop({ idx, line: l, isLast, lineas, productosList,
               producto={prod ?? prodDisplay}
               currentListaPrecioId={(l as any).lista_precio_id ?? null}
               isManual={!!(l as any).precio_manual}
+              presentacionFactor={l.presentacion_id ? Number(l.presentacion_factor || 1) : undefined}
               compact
               onSelectLista={(listaPrecioId, _tarifaId, unitPrice, displayPrice, _nombre) => {
                 setLineas(prev => {
@@ -121,18 +159,19 @@ export function VentaLineaDesktop({ idx, line: l, isLast, lineas, productosList,
               ref={el => setCellRef(idx, 2, el)}
               type="number" inputMode="decimal"
               className="inline-edit-input text-[12px] text-right !py-1 w-20"
-              value={l.precio_unitario ?? ''}
+              value={l.presentacion_id ? (l.precio_unitario ? Number(l.precio_unitario) * Number(l.presentacion_factor || 1) : '') : (l.precio_unitario ?? '')}
               onChange={e => {
-                onUpdateLine(idx, 'precio_unitario', e.target.value);
+                const val = e.target.value;
+                const newPrice = val ? Number(val) : 0;
+                const finalPrice = l.presentacion_id ? newPrice / Number(l.presentacion_factor || 1) : newPrice;
+                onUpdateLine(idx, 'precio_unitario', finalPrice);
                 setLineas(prev => {
                   const next = [...prev];
                   (next[idx] as any).precio_manual = true;
                   return next;
                 });
               }}
-              onKeyDown={e => onCellKeyDown(e, idx, 2)}
-              onFocus={e => e.target.select()}
-              min="0" step="0.01"
+              min="0" step="0.01" onKeyDown={e => onCellKeyDown(e, idx, 2)} onFocus={e => e.target.select()}
             />
           </div>
         )}

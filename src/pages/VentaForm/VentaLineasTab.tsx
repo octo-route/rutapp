@@ -25,6 +25,7 @@ interface Props {
   setLineas: React.Dispatch<React.SetStateAction<Partial<VentaLinea>[]>>;
   readOnlyForm?: boolean;
   saldoPendiente?: number;
+  onEditPresentacion?: (idx: number) => void;
 }
 
 export function VentaLineasTab(props: Props) {

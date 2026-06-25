@@ -415,8 +415,8 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
                 precioConImp = precioSinImp * taxMult;
               }
 
-              const ganancia = precioSinImp - costo;
-              const ganPct = costo > 0 ? (ganancia / costo) * 100 : 0;
+              const ganancia = precioSinImp - costoEfectivo;
+              const ganPct = costoEfectivo > 0 ? (ganancia / costoEfectivo) * 100 : 0;
               const listaName = linea.lista_precios?.nombre;
               const esPrincipal = linea.lista_precios?.es_principal;
 

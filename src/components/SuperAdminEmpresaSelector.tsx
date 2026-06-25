@@ -16,39 +16,19 @@ export default function SuperAdminEmpresaSelector() {
   const qc = useQueryClient();
   const [empresas, setEmpresas] = useState<EmpresaOption[]>([]);
 
-  // Only for diego.leon@uniline.mx
-  const isAllowed = isSuperAdmin && user?.email === 'diego.leon@uniline.mx';
+  // Only for administracion@octoapp.mx
+  const isAllowed = isSuperAdmin && user?.email === 'administracion@octoapp.mx';
 
   useEffect(() => {
     if (!isAllowed) return;
     (async () => {
-      const nowIso = new Date().toISOString();
       const { data: empresasData } = await supabase
         .from('empresas')
         .select('id, nombre')
         .order('nombre');
-      const { data: subs } = await supabase
-        .from('subscriptions')
-        .select('empresa_id, status, current_period_end, trial_ends_at');
-
-      const subsByEmpresa = new Map<string, any>();
-      (subs || []).forEach(s => subsByEmpresa.set(s.empresa_id, s));
-
-      const isVigente = (s: any) => {
-        if (!s) return false;
-        if (s.status === 'gracia') return true;
-        if (s.status === 'active' && s.current_period_end && s.current_period_end >= nowIso) return true;
-        if (s.status === 'trial' && s.trial_ends_at && s.trial_ends_at >= nowIso) return true;
-        return false;
-      };
-
-      const filtered = (empresasData || []).filter(e => {
-        if (e.id === empresa?.id) return true; // siempre incluir la propia
-        return isVigente(subsByEmpresa.get(e.id));
-      });
-      setEmpresas(filtered);
+      setEmpresas(empresasData || []);
     })();
-  }, [isAllowed, empresa?.id]);
+  }, [isAllowed]);
 
   if (!isAllowed || empresas.length === 0) return null;
 

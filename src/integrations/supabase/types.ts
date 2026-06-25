@@ -17,6 +17,7 @@ export type Database = {
       cajas: {
         Row: {
           activo: boolean
+          almacen_id: string | null
           created_at: string
           empresa_id: string
           id: string
@@ -24,6 +25,7 @@ export type Database = {
         }
         Insert: {
           activo?: boolean
+          almacen_id?: string | null
           created_at?: string
           empresa_id: string
           id?: string
@@ -31,12 +33,20 @@ export type Database = {
         }
         Update: {
           activo?: boolean
+          almacen_id?: string | null
           created_at?: string
           empresa_id?: string
           id?: string
           nombre?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "cajas_almacen_id_fkey"
+            columns: ["almacen_id"]
+            isOneToOne: false
+            referencedRelation: "almacenes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "cajas_empresa_id_fkey"
             columns: ["empresa_id"]

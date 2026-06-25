@@ -170,7 +170,7 @@ export default function SignupPage() {
     } catch (err: any) {
       const msg = err.message || 'Error al enviar el código';
       // Also catch rate limit from catch block
-      if (msg.includes('non-2xx') || msg.includes('429')) {
+      if (msg.includes('429')) {
         startCooldown(10 * 60);
         return;
       }

@@ -278,6 +278,10 @@ export interface VentaLinea {
   notas?: string;
   facturado?: boolean;
   factura_cfdi_id?: string;
+  presentacion_id?: string | null;
+  presentacion_nombre?: string | null;
+  presentacion_factor?: number | null;
+  paquetes?: number | null;
   created_at: string;
   // joined
   productos?: { id: string; codigo: string; nombre: string; precio_principal: number; tiene_iva: boolean; tiene_ieps: boolean; tasa_iva_id: string | null; tasa_ieps_id: string | null; unidad_venta_id: string | null; codigo_sat?: string; udem_sat_id?: string };
@@ -327,6 +331,10 @@ export interface CotizacionLinea {
   ieps_monto: number;
   total: number;
   notas?: string;
+  presentacion_id?: string | null;
+  presentacion_nombre?: string | null;
+  presentacion_factor?: number | null;
+  paquetes?: number | null;
   created_at: string;
   // joined
   productos?: { id: string; codigo: string; nombre: string; precio_principal: number; tiene_iva: boolean; tiene_ieps: boolean; tasa_iva_id: string | null; tasa_ieps_id: string | null; unidad_venta_id: string | null; codigo_sat?: string; udem_sat_id?: string };

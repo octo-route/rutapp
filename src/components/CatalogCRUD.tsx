@@ -11,7 +11,8 @@ import { cn } from '@/lib/utils';
 export interface CatalogColumn {
   key: string;
   label: string;
-  type?: 'text' | 'number';
+  type?: 'text' | 'number' | 'select';
+  relationTable?: string;
 }
 
 interface CatalogCRUDProps {
@@ -24,8 +25,22 @@ interface CatalogCRUDProps {
 export default function CatalogCRUD({ title, tableName, columns, queryKey }: CatalogCRUDProps) {
   const qc = useQueryClient();
   const { empresa } = useAuth();
-  const [newRow, setNewRow] = useState<Record<string, string | number>>({});
+  const [newRow, setNewRow] = useState<Record<string, string | number | null>>({});
   const [showInactive, setShowInactive] = useState(false);
+
+  const { data: almacenes } = useQuery({
+    queryKey: ['almacenes-lookup', empresa?.id],
+    enabled: !!empresa?.id && columns.some(c => c.relationTable === 'almacenes'),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('almacenes')
+        .select('id, nombre')
+        .eq('empresa_id', empresa!.id)
+        .order('nombre');
+      if (error) throw error;
+      return (data ?? []).map(d => ({ value: d.id, label: d.nombre }));
+    }
+  });
 
   const { data: items, isLoading } = useQuery({
     queryKey: [queryKey, empresa?.id, showInactive],
@@ -51,7 +66,13 @@ export default function CatalogCRUD({ title, tableName, columns, queryKey }: Cat
     }
     try {
       if (!empresa?.id) { toast.error('Sin perfil de empresa'); return; }
-      const { error } = await (supabase.from as any)(tableName).insert({ ...newRow, empresa_id: empresa.id });
+      const rowToInsert = { ...newRow };
+      columns.forEach(c => {
+        if (c.type === 'select' && rowToInsert[c.key] === '') {
+          rowToInsert[c.key] = null as any;
+        }
+      });
+      const { error } = await (supabase.from as any)(tableName).insert({ ...rowToInsert, empresa_id: empresa.id });
       if (error) throw error;
       setNewRow({});
       qc.invalidateQueries({ queryKey: [queryKey] });
@@ -80,7 +101,10 @@ export default function CatalogCRUD({ title, tableName, columns, queryKey }: Cat
 
   const handleInlineSave = async (id: string, field: string, val: string, type?: string) => {
     try {
-      const updateVal = type === 'number' ? Number(val) : val;
+      let updateVal: any = type === 'number' ? Number(val) : val;
+      if (type === 'select' && val === '') {
+        updateVal = null;
+      }
       const { error } = await (supabase.from as any)(tableName).update({ [field]: updateVal }).eq('id', id);
       if (error) throw error;
       qc.setQueryData([queryKey, showInactive], (old: any[] | undefined) =>
@@ -127,16 +151,20 @@ export default function CatalogCRUD({ title, tableName, columns, queryKey }: Cat
             <tbody>
               {displayItems.map(item => (
                 <tr key={item.id} className={cn("border-b border-table-border last:border-0 hover:bg-table-hover transition-colors group", item.activo === false && "opacity-60")}>
-                  {columns.map(c => (
-                    <td key={c.key} className="py-0.5 px-3">
-                      <InlineEditCell
-                        value={item[c.key]}
-                        type={c.type || 'text'}
-                        onSave={val => handleInlineSave(item.id, c.key, val, c.type)}
-                        required={c.key === 'nombre'}
-                      />
-                    </td>
-                  ))}
+                  {columns.map(c => {
+                    const columnOptions = c.relationTable === 'almacenes' ? almacenes : undefined;
+                    return (
+                      <td key={c.key} className="py-0.5 px-3">
+                        <InlineEditCell
+                          value={item[c.key]}
+                          type={c.type || 'text'}
+                          options={columnOptions}
+                          onSave={val => handleInlineSave(item.id, c.key, val, c.type)}
+                          required={c.key === 'nombre'}
+                        />
+                      </td>
+                    );
+                  })}
                   <td className="py-1.5 px-3 text-right">
                     <button
                       className={cn(
@@ -163,14 +191,27 @@ export default function CatalogCRUD({ title, tableName, columns, queryKey }: Cat
                 <tr className="bg-table-hover">
                   {columns.map(c => (
                     <td key={c.key} className="py-1.5 px-3">
-                      <input
-                        type={c.type === 'number' ? 'number' : 'text'}
-                        placeholder={c.label}
-                        value={newRow[c.key] ?? ''}
-                        onChange={e => setNewRow(prev => ({ ...prev, [c.key]: c.type === 'number' ? +e.target.value : e.target.value }))}
-                        onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }}
-                        className="inline-edit-input text-xs"
-                      />
+                      {c.type === 'select' ? (
+                        <select
+                          value={(newRow[c.key] as string | number) ?? ''}
+                          onChange={e => setNewRow(prev => ({ ...prev, [c.key]: e.target.value }))}
+                          className="inline-edit-input text-xs"
+                        >
+                          <option value="">{`Seleccionar ${c.label}...`}</option>
+                          {(c.relationTable === 'almacenes' ? almacenes : []).map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={c.type === 'number' ? 'number' : 'text'}
+                          placeholder={c.label}
+                          value={(newRow[c.key] as string | number) ?? ''}
+                          onChange={e => setNewRow(prev => ({ ...prev, [c.key]: c.type === 'number' ? +e.target.value : e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }}
+                          className="inline-edit-input text-xs"
+                        />
+                      )}
                     </td>
                   ))}
                   <td className="py-1.5 px-3 text-right">

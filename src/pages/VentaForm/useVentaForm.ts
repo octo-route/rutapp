@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useVenta, useSaveVenta, useSaveVentaLinea, useDeleteVentaLinea, useDeleteVenta } from '@/hooks/useVentas';
 import { useProductosForSelect, useAlmacenes, useTarifasForSelect } from '@/hooks/useData';
 import { useClientes, useVendedores } from '@/hooks/useClientes';
+import { useAllPresentaciones } from '@/hooks/usePresentaciones';
 import { useEntregasByPedido, useCrearEntrega, calcRemainingQty } from '@/hooks/useEntregas';
 import { supabase } from '@/lib/supabase';
 import { resolveProductPricing, type TarifaLineaRule, type ProductForPricing } from '@/lib/priceResolver';
@@ -61,6 +62,7 @@ export function useVentaForm() {
   const { data: tarifasList } = useTarifasForSelect();
   const { data: almacenesList } = useAlmacenes();
   const { data: vendedoresList } = useVendedores();
+  const { data: presentacionesList } = useAllPresentaciones();
   const crearEntrega = useCrearEntrega();
   const [form, setForm] = useState<Partial<Venta>>(emptyVenta());
   const [lineas, setLineas] = useState<Partial<VentaLinea>[]>([emptyLine()]);
@@ -77,6 +79,14 @@ export function useVentaForm() {
   const canCreateVenta = hasPermiso('ventas', 'crear');
   const readOnly = isNew ? !canCreateVenta : (form.status !== 'borrador' || !canEditVenta);
   const cellRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const isCotizacion = form.tipo === 'cotizacion';
+
+  const [productBeingConfigured, setProductBeingConfigured] = useState<{
+    idx: number;
+    producto: any;
+    precioBase: number;
+    presentaciones: any[];
+  } | null>(null);
 
   // Fetch stock per almacen for filtering products on venta_directa
   const { data: stockAlmacenData } = useQuery({
@@ -340,8 +350,87 @@ export function useVentaForm() {
     const snap = pricing ? buildSalePricingSnapshot(prodForPricing, pricing) : null;
     const finalUnitPrice = snap ? snap.unitPrice : Number(producto.precio_principal) || 0;
     const finalDisplayPrice = snap ? snap.displayPrice : finalUnitPrice;
-    setLineas(prev => { const next = [...prev]; next[idx] = { ...next[idx], producto_id: productoId, descripcion: producto.nombre, precio_unitario: finalUnitPrice, display_unit_price: finalDisplayPrice, unidad_id: unidadId, iva_pct: ivaPct, ieps_pct: iepsPct, unidad_label: unidadLabel, impuestos_label: taxes.join(', '), lista_precio_id: (form as any).lista_precio_id ?? null, precio_manual: false } as any; return next; });
+
+    // Si tiene presentaciones, abrir el modal
+    const prodPresentaciones = presentacionesList?.filter((p: any) => p.producto_id === productoId && p.activo) || [];
+    if (prodPresentaciones.length > 0) {
+      setProductBeingConfigured({
+        idx,
+        producto,
+        precioBase: finalUnitPrice,
+        presentaciones: prodPresentaciones
+      });
+      return;
+    }
+    
+    setLineas(prev => { const next = [...prev]; next[idx] = { ...next[idx], producto_id: productoId, descripcion: producto.nombre, precio_unitario: finalUnitPrice, display_unit_price: finalDisplayPrice, unidad_id: unidadId, iva_pct: ivaPct, ieps_pct: iepsPct, unidad_label: unidadLabel, impuestos_label: taxes.join(', '), lista_precio_id: (form as any).lista_precio_id ?? null, precio_manual: false, presentacion_id: null, presentacion_nombre: null, presentacion_factor: null, paquetes: null } as any; return next; });
     setDirty(true);
+  };
+
+  const handleConfirmPresentacion = (data: { cantidadBase: number; paquetes: number | null; presentacion: any | null; pricing: any }) => {
+    if (!productBeingConfigured) return;
+    const { idx, producto } = productBeingConfigured;
+    
+    const ivaPct = producto.tiene_iva ? Number(producto.iva_pct ?? 16) : 0;
+    const hasIeps = producto.tiene_ieps || (Number(producto.ieps_pct) > 0);
+    const iepsPct = hasIeps ? Number(producto.ieps_pct ?? 0) : 0;
+    const unidadId = producto.unidad_venta_id || producto.unidad_compra_id || null;
+    const taxes: string[] = [];
+    if (producto.tiene_iva) taxes.push(`IVA ${ivaPct}%`);
+    if (hasIeps) taxes.push(producto.ieps_tipo === 'cuota' ? 'IEPS cuota' : `IEPS ${iepsPct}%`);
+    
+    setLineas(prev => {
+      const next = [...prev];
+      next[idx] = {
+        ...next[idx],
+        producto_id: producto.id,
+        descripcion: producto.nombre,
+        precio_unitario: data.pricing.unitPrice,
+        display_unit_price: data.pricing.displayPrice,
+        cantidad: data.cantidadBase,
+        unidad_id: unidadId,
+        iva_pct: ivaPct,
+        ieps_pct: iepsPct,
+        impuestos_label: taxes.join(', '),
+        lista_precio_id: (form as any).lista_precio_id ?? null,
+        precio_manual: false,
+        presentacion_id: data.presentacion?.id ?? null,
+        presentacion_nombre: data.presentacion?.nombre ?? null,
+        presentacion_factor: data.presentacion?.factor_base ?? null,
+        paquetes: data.paquetes ?? null,
+      } as any;
+      return next;
+    });
+    setDirty(true);
+    setProductBeingConfigured(null);
+    setTimeout(() => focusCell(idx, 1), 50); // focus quantity
+  };
+
+  const handleEditPresentacion = (idx: number) => {
+    if (readOnly) return;
+    const l = lineas[idx];
+    if (!l.producto_id) return;
+    const producto = productosList?.find((p: any) => p.id === l.producto_id);
+    const prodPresentaciones = presentacionesList?.filter((p: any) => p.producto_id === l.producto_id && p.activo) || [];
+    if (!producto || prodPresentaciones.length === 0) return;
+    
+    const hasIeps = producto.tiene_ieps || (Number(producto.ieps_pct) > 0);
+    const prodForPricing: ProductForPricing = {
+      id: producto.id, precio_principal: Number(producto.precio_principal) || 0, costo: Number(producto.costo) || 0,
+      clasificacion_id: producto.clasificacion_id, tiene_iva: producto.tiene_iva, iva_pct: Number(producto.iva_pct ?? 16),
+      tiene_ieps: hasIeps, ieps_pct: Number(producto.ieps_pct ?? 0), ieps_tipo: producto.ieps_tipo,
+      usa_listas_precio: producto.usa_listas_precio,
+    };
+    const pricing = tarifaRules?.length ? resolveProductPricing(tarifaRules, prodForPricing, (form as any).lista_precio_id) : null;
+    const snap = pricing ? buildSalePricingSnapshot(prodForPricing, pricing) : null;
+    const finalUnitPrice = snap ? snap.unitPrice : Number(producto.precio_principal) || 0;
+
+    setProductBeingConfigured({
+      idx,
+      producto,
+      precioBase: finalUnitPrice,
+      presentaciones: prodPresentaciones
+    });
   };
 
   const navigateCell = useCallback((rowIdx: number, colIdx: number, dir: 'next' | 'prev') => {
@@ -569,7 +658,8 @@ export function useVentaForm() {
   };
 
   return {
-    id, isNew, form, lineas, setLineas, dirty, readOnly, isLoading,
+    id, isNew, form, lineas, setLineas, dirty, readOnly, isCotizacion, isLoading,
+    productBeingConfigured, setProductBeingConfigured, handleConfirmPresentacion, handleEditPresentacion,
     profile, user, empresa, navigate, queryClient,
     clientesList, productosList, tarifasList, almacenesList, vendedoresList,
     entregasExistentes, entregasActivas, hayEntregas, remaining, fullyDelivered, canCreateEntrega, lineDeliverySummary,

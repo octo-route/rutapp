@@ -440,30 +440,126 @@ function TurnoDetalleModal({ turnoId, onClose }: { turnoId: string | null; onClo
 
         {q.isLoading || !t ? (
           <div className="p-6 text-center text-sm text-muted-foreground">Cargando...</div>
-        ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <Kpi icon={<Wallet className="h-3.5 w-3.5" />} label="Fondo inicial" value={Number(t.fondo_inicial) || 0} tone="primary" />
-              <Kpi icon={<Banknote className="h-3.5 w-3.5" />} label="Efectivo esperado" value={Number(t.total_efectivo_esperado) || 0} tone="primary" />
-              <Kpi icon={<Banknote className="h-3.5 w-3.5" />} label="Efectivo contado" value={Number(t.total_efectivo_contado) || 0} tone="success" />
-              <Kpi
-                icon={<Banknote className="h-3.5 w-3.5" />}
-                label="Diferencia"
-                value={Number(t.diferencia) || 0}
-                tone={Number(t.diferencia ?? 0) === 0 ? 'success' : Number(t.diferencia) < 0 ? 'destructive' : 'warning'}
-              />
-              <Kpi icon={<CreditCard className="h-3.5 w-3.5" />} label="Tarjeta" value={Number(t.total_tarjeta_contado) || 0} tone="primary" />
-              <Kpi icon={<Smartphone className="h-3.5 w-3.5" />} label="Transferencia" value={Number(t.total_transferencia_contado) || 0} tone="primary" />
-              <Kpi icon={<MoreHorizontal className="h-3.5 w-3.5" />} label="Otros" value={Number(t.total_otros_contado) || 0} tone="primary" />
-              <Kpi icon={<Clock className="h-3.5 w-3.5" />} label={t.status === 'abierto' ? 'Abierto desde' : 'Cerrado'} value={0} tone="primary" raw />
-            </div>
+        ) : (() => {
+          const totalEfectivoEsperado = Number(t.total_efectivo_esperado) || 0;
+          const totalEfectivoContado = Number(t.total_efectivo_contado) || 0;
+          const difEfectivo = totalEfectivoContado - totalEfectivoEsperado;
 
-            <div className="text-xs text-muted-foreground grid grid-cols-2 gap-2">
-              <div><b>Apertura:</b> {fmtDate(t.abierto_at)}</div>
-              <div><b>Cierre:</b> {t.cerrado_at ? fmtDate(t.cerrado_at) : '—'}</div>
-              {t.notas_apertura && <div className="col-span-2"><b>Notas apertura:</b> {t.notas_apertura}</div>}
-              {t.notas_cierre && <div className="col-span-2"><b>Notas cierre:</b> {t.notas_cierre}</div>}
-            </div>
+          const totalTarjetaEsperado = Number(t.total_tarjeta_esperado) || 0;
+          const totalTarjetaContado = Number(t.total_tarjeta_contado) || 0;
+          const difTarjeta = totalTarjetaContado - totalTarjetaEsperado;
+
+          const totalTransferenciaEsperado = Number(t.total_transferencia_esperado) || 0;
+          const totalTransferenciaContado = Number(t.total_transferencia_contado) || 0;
+          const difTransferencia = totalTransferenciaContado - totalTransferenciaEsperado;
+
+          const totalOtrosEsperado = Number(t.total_otros_esperado) || 0;
+          const totalOtrosContado = Number(t.total_otros_contado) || 0;
+          const difOtros = totalOtrosContado - totalOtrosEsperado;
+
+          const totalEsperado = totalEfectivoEsperado + totalTarjetaEsperado + totalTransferenciaEsperado + totalOtrosEsperado;
+          const totalContado = totalEfectivoContado + totalTarjetaContado + totalTransferenciaContado + totalOtrosContado;
+          const totalDiferencia = t.diferencia != null ? Number(t.diferencia) : (totalContado - totalEsperado);
+
+          return (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <Kpi icon={<Wallet className="h-3.5 w-3.5" />} label="Fondo inicial" value={Number(t.fondo_inicial) || 0} tone="primary" />
+                <Kpi icon={<Banknote className="h-3.5 w-3.5" />} label="Total esperado" value={totalEsperado} tone="primary" />
+                {t.status === 'abierto' ? (
+                  <div className="rounded-lg border p-2.5 bg-muted/10 text-muted-foreground border-muted/30">
+                    <div className="flex items-center gap-1 text-[11px] font-semibold opacity-90"><Banknote className="h-3.5 w-3.5" />Total contado</div>
+                    <div className="text-base font-bold mt-0.5">—</div>
+                  </div>
+                ) : (
+                  <Kpi icon={<Banknote className="h-3.5 w-3.5" />} label="Total contado" value={totalContado} tone="success" />
+                )}
+                {t.status === 'abierto' ? (
+                  <div className="rounded-lg border p-2.5 bg-muted/10 text-muted-foreground border-muted/30">
+                    <div className="flex items-center gap-1 text-[11px] font-semibold opacity-90"><Banknote className="h-3.5 w-3.5" />Diferencia total</div>
+                    <div className="text-base font-bold mt-0.5">—</div>
+                  </div>
+                ) : (
+                  <Kpi
+                    icon={<Banknote className="h-3.5 w-3.5" />}
+                    label="Diferencia total"
+                    value={totalDiferencia}
+                    tone={totalDiferencia === 0 ? 'success' : totalDiferencia < 0 ? 'destructive' : 'warning'}
+                  />
+                )}
+              </div>
+
+              <div className="border rounded-lg overflow-hidden bg-card text-card-foreground">
+                <div className="bg-muted/50 px-3 py-2 border-b">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Calculator className="h-3.5 w-3.5 text-primary" />
+                    Desglose por método de pago
+                  </h4>
+                </div>
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-muted/30 border-b text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Método de pago</th>
+                      <th className="px-3 py-2 font-semibold text-right">Esperado</th>
+                      <th className="px-3 py-2 font-semibold text-right">Contado</th>
+                      <th className="px-3 py-2 font-semibold text-right">Diferencia</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr>
+                      <td className="px-3 py-2 flex items-center gap-1.5 font-medium">
+                        <Banknote className="h-3.5 w-3.5 text-muted-foreground" />
+                        Efectivo (Fondo + Cobros)
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(totalEfectivoEsperado)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{t.status === 'abierto' ? '—' : fmtMoney(totalEfectivoContado)}</td>
+                      <td className={`px-3 py-2 text-right tabular-nums font-semibold ${t.status === 'abierto' ? 'text-muted-foreground' : difEfectivo === 0 ? 'text-success' : difEfectivo < 0 ? 'text-destructive' : 'text-warning'}`}>
+                        {t.status === 'abierto' ? '—' : (difEfectivo > 0 ? '+' : '') + fmtMoney(difEfectivo)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 flex items-center gap-1.5 font-medium">
+                        <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />
+                        Tarjeta
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(totalTarjetaEsperado)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{t.status === 'abierto' ? '—' : fmtMoney(totalTarjetaContado)}</td>
+                      <td className={`px-3 py-2 text-right tabular-nums font-semibold ${t.status === 'abierto' ? 'text-muted-foreground' : difTarjeta === 0 ? 'text-success' : difTarjeta < 0 ? 'text-destructive' : 'text-warning'}`}>
+                        {t.status === 'abierto' ? '—' : (difTarjeta > 0 ? '+' : '') + fmtMoney(difTarjeta)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 flex items-center gap-1.5 font-medium">
+                        <Smartphone className="h-3.5 w-3.5 text-muted-foreground" />
+                        Transferencia
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(totalTransferenciaEsperado)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{t.status === 'abierto' ? '—' : fmtMoney(totalTransferenciaContado)}</td>
+                      <td className={`px-3 py-2 text-right tabular-nums font-semibold ${t.status === 'abierto' ? 'text-muted-foreground' : difTransferencia === 0 ? 'text-success' : difTransferencia < 0 ? 'text-destructive' : 'text-warning'}`}>
+                        {t.status === 'abierto' ? '—' : (difTransferencia > 0 ? '+' : '') + fmtMoney(difTransferencia)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 flex items-center gap-1.5 font-medium">
+                        <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                        Otros
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(totalOtrosEsperado)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{t.status === 'abierto' ? '—' : fmtMoney(totalOtrosContado)}</td>
+                      <td className={`px-3 py-2 text-right tabular-nums font-semibold ${t.status === 'abierto' ? 'text-muted-foreground' : difOtros === 0 ? 'text-success' : difOtros < 0 ? 'text-destructive' : 'text-warning'}`}>
+                        {t.status === 'abierto' ? '—' : (difOtros > 0 ? '+' : '') + fmtMoney(difOtros)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="text-xs text-muted-foreground grid grid-cols-2 gap-2">
+                <div><b>Apertura:</b> {fmtDate(t.abierto_at)}</div>
+                <div><b>Cierre:</b> {t.cerrado_at ? fmtDate(t.cerrado_at) : '—'}</div>
+                {t.notas_apertura && <div className="col-span-2"><b>Notas apertura:</b> {t.notas_apertura}</div>}
+                {t.notas_cierre && <div className="col-span-2"><b>Notas cierre:</b> {t.notas_cierre}</div>}
+              </div>
 
             <div>
               <h4 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Banknote className="h-4 w-4" /> Movimientos de caja ({q.data?.movs.length ?? 0})</h4>
@@ -527,7 +623,7 @@ function TurnoDetalleModal({ turnoId, onClose }: { turnoId: string | null; onClo
               </Card>
             </div>
           </div>
-        )}
+        )})()}
       </DialogContent>
     </Dialog>
   );

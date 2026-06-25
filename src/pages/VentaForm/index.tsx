@@ -24,6 +24,7 @@ import { VentaLineasTab } from './VentaLineasTab';
 import { generarVentaPdf } from './VentaPdfHandler';
 import { printTicket, buildTicketDataFromVenta } from '@/lib/printTicketUtil';
 import { fmtDate, todayInTimezone } from '@/lib/utils';
+import { PresentacionSelectorModal } from '@/components/ruta/PresentacionSelectorModal';
 
 export default function VentaFormPage() {
   const isMobile = useIsMobile();
@@ -35,6 +36,7 @@ export default function VentaFormPage() {
   const h = useVentaForm();
   const {
     id, isNew, form, lineas, setLineas, readOnly, isLoading,
+    productBeingConfigured, setProductBeingConfigured, handleConfirmPresentacion, handleEditPresentacion,
     profile, user, empresa, navigate, queryClient,
     clientesList, productosList, tarifasList, almacenesList, vendedoresList,
     entregasExistentes, entregasActivas, hayEntregas, remaining, fullyDelivered, canCreateEntrega, lineDeliverySummary,
@@ -259,7 +261,7 @@ export default function VentaFormPage() {
         </div>
         <div className="bg-card border border-border rounded-md">
           <OdooTabs tabs={[
-            { key: 'lineas', label: 'Líneas de venta', content: <VentaLineasTab lineas={lineas} productosList={productosList ?? []} readOnly={readOnly} totals={totals} promoResults={promoResults} onProductSelect={handleProductSelect} onUpdateLine={updateLine} onRemoveLine={removeLine} onAddLine={addLine} setCellRef={setCellRef} onCellKeyDown={handleCellKeyDown} navigateCell={navigateCell} setLineas={setLineas} readOnlyForm={readOnly} saldoPendiente={saldoPendiente} /> },
+            { key: 'lineas', label: 'Líneas de venta', content: <VentaLineasTab lineas={lineas} productosList={productosList ?? []} readOnly={readOnly} totals={totals} promoResults={promoResults} onProductSelect={handleProductSelect} onUpdateLine={updateLine} onRemoveLine={removeLine} onAddLine={addLine} setCellRef={setCellRef} onCellKeyDown={handleCellKeyDown} navigateCell={navigateCell} setLineas={setLineas} onEditPresentacion={handleEditPresentacion} readOnlyForm={readOnly} saldoPendiente={saldoPendiente} /> },
             ...(!isNew ? [{ key: 'pagos', label: `Pagos (${(pagosData ?? []).length})`, content: <VentaPagosTab pagos={(pagosData ?? []) as any} totalPagado={totalPagado} saldoPendiente={saldoPendiente} isMobile={isMobile} onAddPago={handleAddPago} /> }] : []),
             ...(!isNew && form.tipo === 'pedido' ? [{ key: 'entregas', label: `Entregas (${entregasActivas.length})`, content: <VentaEntregasTab lineas={lineas} productosList={(productosList ?? []).map((p: any) => ({ id: p.id, codigo: p.codigo, nombre: p.nombre }))} entregasExistentes={(entregasExistentes ?? []) as any} entregasActivas={entregasActivas as any} lineDeliverySummary={lineDeliverySummary} canCreateEntrega={canCreateEntrega} fullyDelivered={fullyDelivered} remaining={remaining} isCreatingEntrega={crearEntrega.isPending} isMobile={isMobile} onCreateEntrega={async (items) => { try { const entrega = await crearEntrega.mutateAsync({ pedidoId: form.id, vendedorId: form.vendedor_id ?? undefined, clienteId: form.cliente_id ?? undefined, almacenId: form.almacen_id ?? undefined, lineas: items }); toast.success(`Entrega ${entrega.folio} creada`); } catch (e: any) { toast.error(e.message); } }} /> }] : []),
             ...(!isNew ? [{ key: 'devoluciones', label: 'Devoluciones', content: <VentaDevolucionesTab ventaId={form.id!} /> }] : []),
@@ -304,6 +306,19 @@ export default function VentaFormPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {productBeingConfigured && (
+        <PresentacionSelectorModal
+          open={true}
+          onClose={() => setProductBeingConfigured(null)}
+          producto={productBeingConfigured.producto}
+          presentaciones={productBeingConfigured.presentaciones}
+          precioPorUnidadBase={productBeingConfigured.precioBase}
+          tarifaRules={[]} // VentaForm ya calcula rules en handleProductSelect
+          clienteListaPrecioId={(form as any).lista_precio_id ?? null}
+          onConfirm={handleConfirmPresentacion}
+        />
+      )}
     </div>
   );
 }

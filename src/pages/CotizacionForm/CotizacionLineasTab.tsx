@@ -25,6 +25,7 @@ interface Props {
   setLineas: React.Dispatch<React.SetStateAction<Partial<CotizacionLinea>[]>>;
   readOnlyForm?: boolean;
   saldoPendiente?: number;
+  onEditPresentacion?: (idx: number) => void;
 }
 
 export function CotizacionLineasTab(props: Props) {

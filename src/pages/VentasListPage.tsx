@@ -52,6 +52,8 @@ import {
   GROUP_BY_OPTIONS,
   VENTAS_TABLE_COLUMNS,
   VENTAS_DEFAULT_COLUMN_VISIBILITY,
+  VENTAS_PRODUCTOS_TABLE_COLUMNS,
+  VENTAS_PRODUCTOS_DEFAULT_COLUMN_VISIBILITY,
 } from "./ventas/ventasConstants";
 import { useColumnPreferences } from "@/hooks/useColumnPreferences";
 import { ColumnVisibilityMenu } from "@/components/ColumnVisibilityMenu";
@@ -115,6 +117,13 @@ export default function VentasListPage() {
     setAll,
     reset,
   } = useColumnPreferences("ventas", VENTAS_DEFAULT_COLUMN_VISIBILITY);
+
+  const {
+    visible: productColumnVisibility,
+    toggleColumn: toggleProductColumn,
+    setAll: setAllProductColumns,
+    reset: resetProductColumns,
+  } = useColumnPreferences("ventas_productos", VENTAS_PRODUCTOS_DEFAULT_COLUMN_VISIBILITY);
 
   const numericPageSize = getNumericPageSize(pageSize);
   const statusFilter = filters.status?.length
@@ -361,11 +370,11 @@ export default function VentasListPage() {
           )}
           {!isMobile && (
             <ColumnVisibilityMenu
-              columns={VENTAS_TABLE_COLUMNS}
-              visible={columnVisibility}
-              onToggle={toggleColumn}
-              onShowAll={() => setAll(true)}
-              onReset={reset}
+              columns={isProductView ? VENTAS_PRODUCTOS_TABLE_COLUMNS : VENTAS_TABLE_COLUMNS}
+              visible={isProductView ? productColumnVisibility : columnVisibility}
+              onToggle={isProductView ? toggleProductColumn : toggleColumn}
+              onShowAll={isProductView ? () => setAllProductColumns(true) : () => setAll(true)}
+              onReset={isProductView ? resetProductColumns : reset}
             />
           )}
           {!isMobile && (
@@ -503,7 +512,11 @@ export default function VentasListPage() {
                     "bg-card border border-border rounded overflow-x-auto",
                 )}
               >
-                <VentasProductosTable items={items} fmt={fmt} />
+                <VentasProductosTable
+                  items={items}
+                  fmt={fmt}
+                  columnVisibility={productColumnVisibility}
+                />
               </div>
             )}
             renderSummary={(items) => (
