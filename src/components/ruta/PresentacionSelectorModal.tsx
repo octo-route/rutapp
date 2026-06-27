@@ -79,6 +79,7 @@ export function PresentacionSelectorModal({
     id: producto.id,
     precio_principal: producto.precio_principal ?? 0,
     costo: producto.costo ?? 0,
+    costos_adicionales: producto.costos_adicionales,
     clasificacion_id: producto.clasificacion_id,
     tiene_iva: producto.tiene_iva,
     iva_pct: producto.iva_pct ?? 16,
