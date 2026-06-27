@@ -53,6 +53,7 @@ export default function RutaNuevoCliente() {
   const [capturingGps, setCapturingGps] = useState(false);
   const [showExtra, setShowExtra] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [noRequiereVisita, setNoRequiereVisita] = useState(false);
   const isPublicoGeneral = form.nombre?.toLowerCase().trim() === 'público general' || form.nombre?.toLowerCase().trim() === 'público en general' || form.nombre?.toLowerCase().trim() === 'publico general' || form.nombre?.toLowerCase().trim() === 'publico en general';
 
   const set = (key: keyof Cliente, value: any) => setForm(prev => ({ ...prev, [key]: value }));
@@ -91,8 +92,10 @@ export default function RutaNuevoCliente() {
   const handleSave = async () => {
     if (!form.nombre?.trim()) { toast.error('Nombre es obligatorio'); return; }
     if (!(form as any).lista_precio_id) { toast.error('Lista de precios es obligatoria'); return; }
-    if (!form.frecuencia) { toast.error('Frecuencia de visita es obligatoria'); return; }
-    if (!isPublicoGeneral && (!form.dia_visita || form.dia_visita.length === 0)) { toast.error('Selecciona al menos un día de visita'); return; }
+    if (!noRequiereVisita) {
+      if (!form.frecuencia) { toast.error('Frecuencia de visita es obligatoria'); return; }
+      if (!isPublicoGeneral && (!form.dia_visita || form.dia_visita.length === 0)) { toast.error('Selecciona al menos un día de visita'); return; }
+    }
 
     setSaving(true);
     try {
@@ -101,6 +104,10 @@ export default function RutaNuevoCliente() {
         finalForm.credito = false;
         finalForm.limite_credito = 0;
         finalForm.dias_credito = 0;
+      }
+      if (noRequiereVisita) {
+        finalForm.frecuencia = null as any;
+        finalForm.dia_visita = [];
       }
       await saveMutation.mutateAsync(finalForm);
       toast.success('Cliente creado');
@@ -214,31 +221,54 @@ export default function RutaNuevoCliente() {
         <section className="space-y-3">
           <h2 className="text-sm font-bold text-foreground border-b border-border pb-1">Visitas</h2>
 
-          <MField label="Frecuencia" required>
-            <select className={selectCls} value={form.frecuencia ?? 'semanal'} onChange={e => set('frecuencia', e.target.value as FrecuenciaVisita)}>
-              {FRECUENCIAS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-            </select>
-          </MField>
+          <div className="flex items-center justify-between py-1">
+            <span className="text-sm text-foreground">¿No requiere visita?</span>
+            <input
+              type="checkbox"
+              checked={noRequiereVisita}
+              onChange={e => {
+                const checked = e.target.checked;
+                setNoRequiereVisita(checked);
+                if (checked) {
+                  set('frecuencia', null as any);
+                  set('dia_visita', []);
+                } else {
+                  set('frecuencia', 'semanal');
+                }
+              }}
+              className="rounded border-border text-primary focus:ring-primary h-5 w-5"
+            />
+          </div>
 
-          <MField label="Días de visita" required={!isPublicoGeneral}>
-            <div className="flex flex-wrap gap-2">
-              {DIAS.map(d => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => toggleDia(d)}
-                  className={cn(
-                    "px-3 py-2 rounded-lg text-xs font-semibold border transition-colors",
-                    (form.dia_visita ?? []).includes(d)
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-muted text-muted-foreground border-border"
-                  )}
-                >
-                  {d.slice(0, 3)}
-                </button>
-              ))}
-            </div>
-          </MField>
+          {!noRequiereVisita && (
+            <>
+              <MField label="Frecuencia" required>
+                <select className={selectCls} value={form.frecuencia ?? 'semanal'} onChange={e => set('frecuencia', e.target.value as FrecuenciaVisita)}>
+                  {FRECUENCIAS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </select>
+              </MField>
+
+              <MField label="Días de visita" required={!isPublicoGeneral}>
+                <div className="flex flex-wrap gap-2">
+                  {DIAS.map(d => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => toggleDia(d)}
+                      className={cn(
+                        "px-3 py-2 rounded-lg text-xs font-semibold border transition-colors",
+                        (form.dia_visita ?? []).includes(d)
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted text-muted-foreground border-border"
+                      )}
+                    >
+                      {d.slice(0, 3)}
+                    </button>
+                  ))}
+                </div>
+              </MField>
+            </>
+          )}
         </section>
 
         {/* ── Comercial ── */}

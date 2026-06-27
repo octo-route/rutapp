@@ -365,7 +365,7 @@ export default function PuntoVentaPage() {
       const { data, error } = await supabase
         .from("productos")
         .select(
-          "id, codigo, nombre, precio_principal, precio_sugerido_publico, costo, cantidad, imagen_url, tiene_iva, iva_pct, tiene_ieps, ieps_pct, ieps_tipo, clave_alterna, unidad_venta_id, se_puede_vender, status, clasificacion_id, marca_id, vender_sin_stock, es_granel, unidad_granel, usa_listas_precio, es_combo, se_puede_inventariar",
+          "id, codigo, nombre, precio_principal, precio_sugerido_publico, costo, costos_adicionales, cantidad, imagen_url, tiene_iva, iva_pct, tiene_ieps, ieps_pct, ieps_tipo, clave_alterna, unidad_venta_id, se_puede_vender, status, clasificacion_id, marca_id, vender_sin_stock, es_granel, unidad_granel, usa_listas_precio, es_combo, se_puede_inventariar",
         )
         .eq("empresa_id", empresa!.id)
         .eq("se_puede_vender", true)
@@ -574,12 +574,35 @@ export default function PuntoVentaPage() {
     staleTime: CATALOG_STALE,
     enabled: !!empresa?.id,
     queryFn: async () => {
-      const { data } = await supabase
+      let { data } = await supabase
         .from("lista_precios")
         .select("id, tarifa_id, nombre")
         .eq("empresa_id", empresa!.id)
         .eq("es_principal", true)
         .limit(1);
+
+      if (!data || data.length === 0) {
+        // Fallback to any list with "general" in the name
+        const { data: fallbackData } = await supabase
+          .from("lista_precios")
+          .select("id, tarifa_id, nombre")
+          .eq("empresa_id", empresa!.id)
+          .ilike("nombre", "%general%")
+          .limit(1);
+          
+        if (fallbackData && fallbackData.length > 0) {
+          data = fallbackData;
+        } else {
+          // Last resort: just get the first list available
+          const { data: lastResort } = await supabase
+            .from("lista_precios")
+            .select("id, tarifa_id, nombre")
+            .eq("empresa_id", empresa!.id)
+            .limit(1);
+          data = lastResort;
+        }
+      }
+
       return data?.[0] ?? null;
     },
   });
@@ -1939,9 +1962,7 @@ export default function PuntoVentaPage() {
                                 {p.codigo}
                               </span>
                             </div>
-                            <p className="text-[9px] text-red-500 font-mono mt-0.5">
-                              [DB] rLen: {effectiveTarifaLineas?.length} | uLP: {String(p.usa_listas_precio)} | tId: {effectiveTarifaId} | lId: {effectiveListaId} | costo: {p.costo} | pP: {p.precio_principal}
-                            </p>
+
                           </td>
                           <td className="px-2 py-2 hidden sm:table-cell">
                             <span className="inline-flex items-center rounded-md bg-accent/60 text-foreground/70 px-1.5 py-0.5 text-[10px] font-medium truncate max-w-[140px]">
@@ -2045,6 +2066,7 @@ export default function PuntoVentaPage() {
                           </span>
                         )}
                       </div>
+
                       <p className="text-[8px] text-muted-foreground font-mono">
                         {p.codigo}
                       </p>

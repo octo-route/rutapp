@@ -24,7 +24,13 @@ import { useFavorites } from '@/hooks/useFavorites';
 import { Search } from 'lucide-react';
 import { APP_VERSION, APP_BUILD_DATE } from '@/version';
 
-interface NavChild { label: string; path: string }
+interface NavChild {
+  label: string;
+  path: string;
+  icon?: React.ElementType;
+  highlight?: 'amber' | 'green' | 'cyan' | 'violet' | 'teal' | 'pink';
+  children?: Omit<NavChild, 'children'>[];
+}
 interface NavItem {
   label: string;
   icon: React.ElementType;
@@ -37,12 +43,29 @@ interface NavItem {
 const navItems: NavItem[] = [
   // ── Operación diaria ──
   { label: 'Dashboard', icon: BarChart3, path: '/dashboard', accent: true },
-  { label: 'Supervisor', icon: ShieldAlert, path: '/supervisor', highlight: 'amber' },
+  {
+    label: 'Supervisor',
+    icon: ShieldAlert,
+    path: '/supervisor',
+    highlight: 'amber',
+    children: [
+      { label: 'Supervisor', path: '/supervisor' },
+      { label: 'Control', path: '/control' },
+      {
+        label: 'Almacén',
+        path: '/almacen',
+        children: [
+          { label: 'Inventario', path: '/almacen/inventario' },
+          { label: 'Traspasos', path: '/almacen/traspasos' },
+          { label: 'Ajustes', path: '/almacen/ajustes' },
+          { label: 'Auditorías', path: '/almacen/auditorias' },
+          { label: 'Conteos físicos', path: '/almacen/conteos' },
+          { label: 'Compras', path: '/almacen/compras' },
+        ],
+      },
+    ],
+  },
   { label: 'App Móvil', icon: Smartphone, path: '/ruta', highlight: 'cyan' },
-  // ── Datos clave ──
-  { label: 'Clientes', icon: Users, path: '/clientes', highlight: 'violet' },
-  { label: 'Productos', icon: Package, path: '/productos', highlight: 'teal' },
-  { label: 'Listas de Precios', icon: Tag, path: '/listas-precio' },
   // ── Ventas ──
   {
     label: 'Ventas',
@@ -55,19 +78,27 @@ const navItems: NavItem[] = [
       { label: 'Promociones', path: '/ventas/promociones' },
       { label: 'Reporte diario', path: '/ventas/reporte-diario' },
       { label: 'Devoluciones', path: '/ventas/devoluciones' },
-      { label: 'Liquidar Ruta', path: '/almacen/descargas' },
-    ],
-  },
-  {
-    label: 'Punto de venta', icon: ShoppingCart, path: '/pos', highlight: 'green',
-    children: [
-      { label: 'Abrir caja (POS)', path: '/pos' },
-      { label: 'Turnos', path: '/pos/admin?tab=turnos' },
-      { label: 'Cortes / Arqueos', path: '/pos/admin?tab=cortes' },
-      { label: 'Depósitos', path: '/pos/admin?tab=depositos' },
-      { label: 'Retiros', path: '/pos/admin?tab=retiros' },
-      { label: 'Gastos', path: '/pos/admin?tab=gastos' },
-      { label: 'Ventas POS', path: '/pos/admin?tab=ventas' },
+      {
+        label: 'Facturación',
+        path: '/facturacion-cfdi',
+        children: [
+          { label: 'Facturas CFDI', path: '/facturacion-cfdi' },
+          { label: 'Catálogos SAT', path: '/facturacion-cfdi/catalogos' },
+        ],
+      },
+      {
+        label: 'Punto de venta',
+        path: '/pos',
+        children: [
+          { label: 'Abrir caja (POS)', path: '/pos' },
+          { label: 'Turnos', path: '/pos/admin?tab=turnos' },
+          { label: 'Cortes / Arqueos', path: '/pos/admin?tab=cortes' },
+          { label: 'Depósitos', path: '/pos/admin?tab=depositos' },
+          { label: 'Retiros', path: '/pos/admin?tab=retiros' },
+          { label: 'Gastos', path: '/pos/admin?tab=gastos' },
+          { label: 'Ventas POS', path: '/pos/admin?tab=ventas' },
+        ],
+      },
     ],
   },
   // ── Logística ──
@@ -80,32 +111,22 @@ const navItems: NavItem[] = [
       { label: 'Pedidos pendientes', path: '/logistica/pedidos' },
       { label: 'Entregas', path: '/logistica/entregas' },
       { label: 'Jornadas de ruta', path: '/logistica/jornadas' },
+      { label: 'Liquidar Ruta', path: '/almacen/descargas' },
       { label: 'Reportes', path: '/logistica/reportes' },
       { label: 'Mapa de clientes', path: '/ventas/mapa-clientes' },
       { label: 'Mapa de entregas', path: '/ventas/mapa-ventas' },
     ],
   },
-  // ── Almacén ──
-  {
-    label: 'Almacén',
-    icon: Warehouse,
-    path: '/almacen',
-    children: [
-      { label: 'Inventario', path: '/almacen/inventario' },
-      { label: 'Traspasos', path: '/almacen/traspasos' },
-      { label: 'Ajustes', path: '/almacen/ajustes' },
-      { label: 'Auditorías', path: '/almacen/auditorias' },
-      { label: 'Conteos físicos', path: '/almacen/conteos' },
-      { label: 'Compras', path: '/almacen/compras' },
-      { label: 'Almacenes', path: '/almacen/almacenes' },
-    ],
-  },
-  // ── Catálogo ──
+  // ── Catálogo (incluye datos maestros) ──
   {
     label: 'Catálogo',
     icon: ClipboardList,
     path: '/catalogos',
     children: [
+      { label: 'Clientes', path: '/clientes' },
+      { label: 'Productos', path: '/productos' },
+      { label: 'Listas de Precios', path: '/listas-precio' },
+      { label: 'Almacenes', path: '/almacen/almacenes' },
       { label: 'Categorías', path: '/catalogos/clasificaciones' },
       { label: 'Marcas', path: '/catalogos/marcas' },
       { label: 'Cajas', path: '/catalogos/cajas' },
@@ -130,7 +151,7 @@ const navItems: NavItem[] = [
       { label: 'Comisiones', path: '/finanzas/comisiones' },
     ],
   },
-  // ── Reportes & Facturación ──
+  // ── Reportes ──
   {
     label: 'Reportes',
     icon: BarChart3,
@@ -140,18 +161,7 @@ const navItems: NavItem[] = [
       { label: 'Reporte entregas', path: '/reportes/entregas' },
     ],
   },
-  {
-    label: 'Facturación',
-    icon: FileText,
-    path: '/facturacion-cfdi',
-    children: [
-      { label: 'Facturas CFDI', path: '/facturacion-cfdi' },
-      { label: 'Catálogos SAT', path: '/facturacion-cfdi/catalogos' },
-    ],
-  },
   // ── Admin & Config ──
-  { label: 'Control', icon: ShieldAlert, path: '/control' },
-  { label: 'Usuarios y permisos', icon: Users, path: '/configuracion/usuarios' },
   { label: 'Tutoriales', icon: PlayCircle, path: '/tutoriales' },
   {
     label: 'Configuración',
@@ -176,7 +186,7 @@ const mobileBottomTabs = [
   { label: 'Ajustes', icon: Settings, path: '/configuracion' },
 ];
 
-/** Filter nav items based on granular sub-module permissions */
+/** Filter nav items based on granular sub-module permissions (supports 3 levels) */
 function useFilteredNav(isSuperAdmin: boolean, hasModulo: (m: string) => boolean) {
   if (isSuperAdmin) return navItems;
 
@@ -185,10 +195,21 @@ function useFilteredNav(isSuperAdmin: boolean, hasModulo: (m: string) => boolean
       const modulo = PATH_MODULE_MAP[item.path] ?? '';
       if (hasModulo(modulo)) acc.push(item);
     } else {
-      const visibleChildren = item.children.filter(child => {
-        const modulo = PATH_MODULE_MAP[child.path] ?? '';
-        return hasModulo(modulo);
-      });
+      const visibleChildren = item.children.reduce<NavChild[]>((childAcc, child) => {
+        if (!child.children) {
+          const modulo = PATH_MODULE_MAP[child.path] ?? '';
+          if (hasModulo(modulo)) childAcc.push(child);
+        } else {
+          const visibleSubChildren = child.children.filter(sub => {
+            const modulo = PATH_MODULE_MAP[sub.path] ?? '';
+            return hasModulo(modulo);
+          });
+          if (visibleSubChildren.length > 0) {
+            childAcc.push({ ...child, children: visibleSubChildren });
+          }
+        }
+        return childAcc;
+      }, []);
       if (visibleChildren.length > 0) {
         acc.push({ ...item, children: visibleChildren });
       }
@@ -217,6 +238,98 @@ function FavStar({ path, label }: { path: string; label: string }) {
     >
       <Star className="h-3 w-3" fill={fav ? 'currentColor' : 'none'} />
     </button>
+  );
+}
+
+/** Renders a second-level child item. If the child has its own children, shows a collapsible third level. */
+function SidebarSubItem({ child, parentBasePath, onNavigate }: {
+  child: NavChild;
+  parentBasePath: string;
+  onNavigate?: () => void;
+}) {
+  const location = useLocation();
+  const childBasePath = child.path.split('?')[0];
+  const isActive = location.pathname === childBasePath || location.pathname.startsWith(childBasePath + '/');
+  const [subOpen, setSubOpen] = useState(isActive);
+
+  if (!child.children) {
+    const childActive = location.pathname === childBasePath ||
+      (location.pathname + location.search === child.path) ||
+      (child.path.includes('?tab=') && location.pathname === parentBasePath);
+    const isPlaceholder = child.label === 'Sin favoritos aún';
+    return (
+      <div className="group relative flex items-center">
+        {isPlaceholder ? (
+          <div className="block px-2 py-1 text-[12px] flex-1 min-w-0 truncate text-sidebar-foreground/40 italic">
+            {child.label}
+          </div>
+        ) : (
+          <>
+            <Link
+              to={child.path}
+              onClick={onNavigate}
+              className={cn(
+                "block px-2 py-1 text-[12px] transition-colors flex-1 min-w-0 truncate pr-7 rounded",
+                childActive
+                  ? "text-primary font-semibold"
+                  : "text-sidebar-foreground/70 hover:text-sidebar-foreground"
+              )}
+            >
+              {child.label}
+            </Link>
+            <div className="absolute right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <FavStar path={child.path} label={child.label} />
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // Has nested children – render a collapsible third level
+  return (
+    <div>
+      <button
+        onClick={() => setSubOpen(prev => !prev)}
+        className={cn(
+          "w-full flex items-center gap-1.5 px-2 py-1 rounded text-[12px] font-medium transition-all",
+          isActive
+            ? "text-primary font-semibold"
+            : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-hover/50"
+        )}
+      >
+        <span className="flex-1 text-left">{child.label}</span>
+        <ChevronDown className={cn("h-2.5 w-2.5 transition-transform opacity-50", subOpen ? "" : "-rotate-90")} />
+      </button>
+      {subOpen && (
+        <div className="ml-3 pl-2 border-l border-sidebar-border/40 mt-0.5">
+          {child.children!.map(sub => {
+            const subPath = sub.path.split('?')[0];
+            const subActive = location.pathname === subPath ||
+              location.pathname + location.search === sub.path;
+            return (
+              <div key={sub.path} className="group relative flex items-center">
+                <Link
+                  to={sub.path}
+                  onClick={onNavigate}
+                  className={cn(
+                    "block px-2 py-0.5 text-[11px] transition-colors flex-1 min-w-0 truncate pr-6 rounded",
+                    subActive
+                      ? "text-primary font-semibold"
+                      : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
+                  )}
+                >
+                  {sub.label}
+                </Link>
+                <div className="absolute right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <FavStar path={sub.path} label={sub.label} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -295,40 +408,9 @@ function SidebarItem({ item, collapsed, onNavigate }: { item: NavItem; collapsed
       </button>
       {open && !collapsed && (
         <div className="ml-[22px] pl-3 border-l border-sidebar-border/60 mt-0.5">
-          {item.children!.map(child => {
-            const childPath = child.path.split('?')[0];
-            const childActive = location.pathname === childPath ||
-              (location.pathname + location.search === child.path) ||
-              (child.path.includes('?tab=') && location.pathname === basePath && child.path.includes('tab=productos') && !location.search);
-            const isPlaceholder = child.label === 'Sin favoritos aún';
-            return (
-              <div key={child.path} className="group relative flex items-center">
-                {isPlaceholder ? (
-                  <div className="block px-2 py-1 text-[12px] flex-1 min-w-0 truncate text-sidebar-foreground/40 italic">
-                    {child.label}
-                  </div>
-                ) : (
-                  <>
-                    <Link
-                      to={child.path}
-                      onClick={onNavigate}
-                      className={cn(
-                        "block px-2 py-1 text-[12px] transition-colors flex-1 min-w-0 truncate pr-7 rounded",
-                        childActive
-                          ? "text-primary font-semibold"
-                          : "text-sidebar-foreground/70 hover:text-sidebar-foreground"
-                      )}
-                    >
-                      {child.label}
-                    </Link>
-                    <div className="absolute right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <FavStar path={child.path} label={child.label} />
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
+          {item.children!.map(child => (
+            <SidebarSubItem key={child.path} child={child} parentBasePath={basePath} onNavigate={onNavigate} />
+          ))}
         </div>
       )}
     </div>

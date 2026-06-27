@@ -1,7 +1,7 @@
 import { todayLocal } from '@/lib/utils';
 import { generarPedidoPdf } from '@/lib/pedidoPdf';
 import { loadLogoBase64 } from '@/lib/pdfBase';
-import { getNombreCotizacion } from '@/lib/productoNombres';
+import { getNombreVenta } from '@/lib/productoNombres';
 import type { Empresa, CotizacionLinea } from '@/types';
 
 interface PdfParams {
@@ -50,7 +50,7 @@ export async function generarCotizacionPdf(params: PdfParams): Promise<Blob> {
       const prod = productosList?.find((p: any) => p.id === l.producto_id);
       return {
         codigo: prod?.codigo ?? (l as any).codigo ?? '',
-        nombre: getNombreCotizacion(prod, (l as any).descripcion ?? (l as any).nombre ?? ''),
+        nombre: getNombreVenta(prod, (l as any).descripcion ?? (l as any).nombre ?? ''),
         cantidad: Number(l.cantidad) || 0,
         unidad: (l as any).unidad_label || (prod as any)?.unidades_cotizacion?.abreviatura || '',
         precio_unitario: Number(l.precio_unitario) || 0, descuento_pct: Number(l.descuento_pct) || 0,
@@ -64,7 +64,7 @@ export async function generarCotizacionPdf(params: PdfParams): Promise<Blob> {
         const embed = el.productos;
         return {
           codigo: prod?.codigo ?? embed?.codigo ?? el.codigo ?? '',
-          nombre: getNombreCotizacion(prod, getNombreCotizacion(embed, el.descripcion ?? el.nombre ?? '')),
+          nombre: getNombreVenta(prod, getNombreVenta(embed, el.descripcion ?? el.nombre ?? '')),
           cantidad_pedida: Number(el.cantidad_entregada) || 0,
           cantidad_entregada: Number(el.cantidad_entregada) || 0,
         };

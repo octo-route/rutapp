@@ -240,6 +240,7 @@ export default function ClienteFormPage() {
 
   const [form, setForm] = useState<Partial<Cliente>>(defaultCliente);
   const [originalForm, setOriginalForm] = useState<Partial<Cliente>>(defaultCliente);
+  const [noRequiereVisita, setNoRequiereVisita] = useState(false);
   const isPublicoGeneral = useMemo(() => {
     const n = form.nombre?.toLowerCase().trim() ?? '';
     return n === 'público general' || n === 'público en general' || n === 'publico general' || n === 'publico en general';
@@ -298,7 +299,11 @@ export default function ClienteFormPage() {
   }, [isNew, vendedorIdParam]);
 
   useEffect(() => {
-    if (existing) { setForm(existing); setOriginalForm(existing); }
+    if (existing) {
+      setForm(existing);
+      setOriginalForm(existing);
+      setNoRequiereVisita(!existing.frecuencia);
+    }
   }, [existing]);
 
   useEffect(() => {
@@ -338,14 +343,20 @@ export default function ClienteFormPage() {
   const handleSave = async () => {
     if (!form.nombre) { toast.error('Nombre es obligatorio'); return; }
     if (!(form as any).lista_precio_id) { toast.error('Lista de precios es obligatoria'); return; }
-    if (!form.frecuencia) { toast.error('Frecuencia de visita es obligatoria'); return; }
-    if (!isPublicoGeneral && (!form.dia_visita || form.dia_visita.length === 0)) { toast.error('Selecciona al menos un día de visita'); return; }
+    if (!noRequiereVisita) {
+      if (!form.frecuencia) { toast.error('Frecuencia de visita es obligatoria'); return; }
+      if (!isPublicoGeneral && (!form.dia_visita || form.dia_visita.length === 0)) { toast.error('Selecciona al menos un día de visita'); return; }
+    }
     try {
       const finalForm = { ...form };
       if (isPublicoGeneral) {
         finalForm.credito = false;
         finalForm.limite_credito = 0;
         finalForm.dias_credito = 0;
+      }
+      if (noRequiereVisita) {
+        finalForm.frecuencia = null as any;
+        finalForm.dia_visita = [];
       }
       const result = await saveMutation.mutateAsync(isNew ? finalForm : { ...finalForm, id });
       // Save pedido sugerido
@@ -712,23 +723,45 @@ export default function ClienteFormPage() {
                     placeholder="Seleccionar lista de precios..." />
                 </OdooSection>
                 <OdooSection title="Visitas">
-                  <OdooField label="Frecuencia" value={form.frecuencia} onChange={v => set('frecuencia', v as FrecuenciaVisita)} type="select" required
-                    options={frecuenciaOpts} />
                   <div className="odoo-field-row">
-                    <span className="odoo-field-label">Días de visita {!isPublicoGeneral && '*'}</span>
-                    <div className="flex flex-wrap gap-1">
-                      {DIAS.map(d => (
-                        <button key={d} onClick={() => toggleDia(d)}
-                          className={`px-2 py-0.5 text-[11px] rounded border transition-colors ${
-                            (form.dia_visita ?? []).includes(d)
-                              ? 'bg-primary text-primary-foreground border-primary'
-                              : 'border-input text-muted-foreground hover:bg-accent'
-                          }`}>
-                          {d.substring(0, 3)}
-                        </button>
-                      ))}
-                    </div>
+                    <span className="odoo-field-label">¿No requiere visita?</span>
+                    <input
+                      type="checkbox"
+                      checked={noRequiereVisita}
+                      onChange={e => {
+                        const checked = e.target.checked;
+                        setNoRequiereVisita(checked);
+                        if (checked) {
+                          set('frecuencia', null as any);
+                          set('dia_visita', []);
+                        } else {
+                          set('frecuencia', 'semanal');
+                        }
+                      }}
+                      className="rounded border-input text-primary focus:ring-primary h-4 w-4"
+                    />
                   </div>
+                  {!noRequiereVisita && (
+                    <>
+                      <OdooField label="Frecuencia" value={form.frecuencia} onChange={v => set('frecuencia', v as FrecuenciaVisita)} type="select" required
+                        options={frecuenciaOpts} />
+                      <div className="odoo-field-row">
+                        <span className="odoo-field-label">Días de visita {!isPublicoGeneral && '*'}</span>
+                        <div className="flex flex-wrap gap-1">
+                          {DIAS.map(d => (
+                            <button key={d} onClick={() => toggleDia(d)}
+                              className={`px-2 py-0.5 text-[11px] rounded border transition-colors ${
+                                (form.dia_visita ?? []).includes(d)
+                                  ? 'bg-primary text-primary-foreground border-primary'
+                                  : 'border-input text-muted-foreground hover:bg-accent'
+                              }`}>
+                              {d.substring(0, 3)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </OdooSection>
               </div>
               <div className="space-y-1">
