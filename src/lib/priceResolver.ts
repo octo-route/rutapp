@@ -113,13 +113,23 @@ export function calculateRawPrice(rule: TarifaLineaRule, producto: ProductForPri
     precio = rule.precio ?? 0;
     if (precio <= 0 && (rule.precio_minimo ?? 0) <= 0) return null;
   } else if (rule.tipo_calculo === 'margen_costo') {
-    const costoTotal = calcularCostoTotal(producto.costo ?? 0, producto.costos_adicionales);
-    precio = costoTotal * (1 + (rule.margen_pct ?? 0) / 100);
+    let baseAmount = calcularCostoTotal(producto.costo ?? 0, producto.costos_adicionales);
+    if (rule.base_precio !== 'con_impuestos') {
+      const divisor = getTaxMultiplier(producto);
+      baseAmount = divisor > 0 ? baseAmount / divisor : baseAmount;
+    }
+    precio = baseAmount * (1 + (rule.margen_pct ?? 0) / 100);
   } else if (rule.tipo_calculo === 'descuento_precio') {
-    precio = producto.precio_principal * (1 - (rule.descuento_pct ?? 0) / 100);
+    let basePrice = producto.precio_principal;
+    if (rule.base_precio === 'con_impuestos') {
+      basePrice *= getTaxMultiplier(producto);
+    }
+    precio = basePrice * (1 - (rule.descuento_pct ?? 0) / 100);
   }
 
-  return Math.max(precio, rule.precio_minimo ?? 0);
+  let min = rule.precio_minimo ?? 0;
+
+  return Math.max(precio, min);
 }
 
 /**
@@ -140,9 +150,19 @@ export function calculatePrice(rule: TarifaLineaRule, producto: ProductForPricin
   return round2(neto);
 }
 
+export function calculateDisplayPrice(rule: TarifaLineaRule, producto: ProductForPricing): number | null {
+  const raw = calculateRawPrice(rule, producto);
+  if (raw == null) return null;
+  let gross = raw;
+  if (rule.base_precio !== 'con_impuestos') {
+    gross *= getTaxMultiplier(producto);
+  }
+  return applyRedondeo(gross, rule.redondeo);
+}
+
 /**
  * Calculate the customer-facing display price (gross = net + taxes + redondeo).
- * This is the "Precio Final" the customer pays.
+ * Note: If you have the rule, prefer calculateDisplayPrice to avoid intermediate rounding.
  */
 export function toDisplayPrice(
   unitPrice: number,
@@ -150,7 +170,7 @@ export function toDisplayPrice(
   redondeo?: string,
 ): number {
   const gross = round2(unitPrice * getTaxMultiplier(producto));
-  return round2(applyRedondeo(gross, redondeo ?? 'ninguno'));
+  return applyRedondeo(gross, redondeo ?? 'ninguno');
 }
 
 /**
@@ -218,7 +238,7 @@ export function resolveProductPricing(
 
   return {
     unitPrice,
-    displayPrice: toDisplayPrice(unitPrice, producto, rule.redondeo),
+    displayPrice: calculateDisplayPrice(rule, producto) ?? applyRedondeo(unitPrice * getTaxMultiplier(producto), rule.redondeo),
     rawUnitPrice,
     rawDisplayPrice,
     basePrecio: rule.base_precio ?? 'sin_impuestos',

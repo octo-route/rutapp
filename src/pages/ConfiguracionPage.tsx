@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Settings, Upload, Save, Building2, Receipt, FileText, Eye, KeyRound, Eye as EyeIcon, EyeOff, Loader2, Globe, Users, MapPin, Smartphone, AlertTriangle } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { CURRENCIES } from '@/lib/currency';
 import SubscriptionCard from '@/components/SubscriptionCard';
 import { Button } from '@/components/ui/button';
@@ -215,21 +216,41 @@ function NotaVentaPreview({ form, logoPreview, campos }: PreviewProps) {
 
 function ChangePasswordCard() {
   const [open, setOpen] = useState(false);
+  const [oldPass, setOldPass] = useState('');
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showOld, setShowOld] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const { user } = useAuth();
 
   const handleSave = async () => {
+    if (!oldPass) { toast.error('Debes ingresar tu contraseña actual'); return; }
     if (newPass.length < 6) { toast.error('La contraseña debe tener al menos 6 caracteres'); return; }
     if (newPass !== confirmPass) { toast.error('Las contraseñas no coinciden'); return; }
+    if (!user?.email) return;
+
     setSaving(true);
+    
+    // Validate old password first
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: oldPass,
+    });
+
+    if (verifyError) {
+      setSaving(false);
+      toast.error('La contraseña actual es incorrecta');
+      return;
+    }
+
     const { error } = await supabase.auth.updateUser({ password: newPass });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('Contraseña actualizada');
     setOpen(false);
+    setOldPass('');
     setNewPass('');
     setConfirmPass('');
   };
@@ -245,6 +266,21 @@ function ChangePasswordCard() {
         </Button>
       ) : (
         <div className="space-y-3 max-w-sm">
+          <div>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">Contraseña actual</label>
+            <div className="relative">
+              <Input
+                type={showOld ? 'text' : 'password'}
+                value={oldPass}
+                onChange={e => setOldPass(e.target.value)}
+                placeholder="Tu contraseña actual"
+                className="text-[13px] pr-9"
+              />
+              <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShowOld(v => !v)}>
+                {showOld ? <EyeOff className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
           <div>
             <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">Nueva contraseña</label>
             <div className="relative">
@@ -276,17 +312,154 @@ function ChangePasswordCard() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" onClick={handleSave} disabled={saving}>
+            <Button size="sm" onClick={handleSave} disabled={saving || !oldPass || newPass.length < 6 || newPass !== confirmPass}>
               {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
               Guardar
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => { setOpen(false); setNewPass(''); setConfirmPass(''); }}>
+            <Button size="sm" variant="ghost" onClick={() => { setOpen(false); setOldPass(''); setNewPass(''); setConfirmPass(''); }}>
               Cancelar
             </Button>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+/* ─── Danger Zone Card ─── */
+
+function DangerZoneCard() {
+  const { user, empresa } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState(1);
+  const [confirmText, setConfirmText] = useState('');
+  const [password, setPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  
+  if (user?.id !== empresa?.owner_user_id) return null;
+
+  const handleBorrarTodo = async () => {
+    if (confirmText !== 'ACEPTAR') {
+      toast.error('Debes escribir ACEPTAR');
+      return;
+    }
+    if (!password) {
+      toast.error('Debes ingresar tu contraseña');
+      return;
+    }
+    setSaving(true);
+    
+    // 1. Verify password
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: user!.email!,
+      password: password,
+    });
+
+    if (verifyError) {
+      setSaving(false);
+      toast.error('La contraseña es incorrecta');
+      return;
+    }
+
+    // 2. Call RPC
+    const { error } = await supabase.rpc('borrar_todo_empresa', { p_empresa_id: empresa.id });
+    setSaving(false);
+    
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    toast.success('Borrando datos, por favor espera...');
+    
+    // Set flag for success toast after reload
+    sessionStorage.setItem('showBorradoExitoso', 'true');
+
+    // Clear offline db & reload
+    import('@/lib/offlineDb').then(({ clearAllOfflineData }) => {
+      clearAllOfflineData().finally(() => {
+        window.location.reload();
+      });
+    });
+  };
+
+  const closeModal = () => {
+    setOpen(false);
+    setStep(1);
+    setConfirmText('');
+    setPassword('');
+  };
+
+  return (
+    <>
+      <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-lg p-5">
+        <h3 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-3 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" /> Zona de peligro
+        </h3>
+        <p className="text-[11px] text-red-600/80 dark:text-red-400/80 mb-3">
+          Borrar toda la información de la empresa (ventas, clientes, productos). Esta acción conservará tu cuenta y plan actual.
+        </p>
+        <Button variant="destructive" size="sm" onClick={() => setOpen(true)}>
+          Borrar todo
+        </Button>
+      </div>
+
+      <Dialog open={open} onOpenChange={open => !open && closeModal()}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" /> Confirmar borrado
+            </DialogTitle>
+            <DialogDescription>
+              Proceso de eliminación permanente.
+            </DialogDescription>
+          </DialogHeader>
+
+          {step === 1 && (
+            <div className="space-y-4 pt-2">
+              <p className="text-[13px] font-medium text-foreground">1. Esta acción no se puede deshacer.</p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={closeModal}>Cancelar</Button>
+                <Button variant="destructive" size="sm" onClick={() => setStep(2)}>Continuar</Button>
+              </div>
+            </div>
+          )}
+          
+          {step === 2 && (
+            <div className="space-y-4 pt-2">
+              <p className="text-[13px] font-medium text-foreground">2. ¿Está seguro de borrar toda la info? Se perderá toda la información previamente capturada.</p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={closeModal}>Cancelar</Button>
+                <Button variant="destructive" size="sm" onClick={() => setStep(3)}>Continuar</Button>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-4 pt-2">
+              <p className="text-[13px] font-medium text-foreground">3. Último paso de seguridad</p>
+              <div>
+                <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">Para proceder escribe ACEPTAR</label>
+                <Input value={confirmText} onChange={e => setConfirmText(e.target.value)} placeholder="ACEPTAR" className="text-[13px]" />
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide block mb-1">Tu contraseña actual</label>
+                <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Contraseña" className="text-[13px]" />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={closeModal} disabled={saving}>
+                  Cancelar
+                </Button>
+                <Button variant="destructive" size="sm" onClick={handleBorrarTodo} disabled={saving || confirmText !== 'ACEPTAR' || !password}>
+                  {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <AlertTriangle className="h-3.5 w-3.5 mr-1" />}
+                  Eliminar permanentemente
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -299,6 +472,13 @@ export default function ConfiguracionPage() {
   const { data: config, isLoading } = useEmpresaConfig();
   const fileRef = useRef<HTMLInputElement>(null);
   const [previewTab, setPreviewTab] = useState<'ticket' | 'nota'>('ticket');
+
+  useEffect(() => {
+    if (sessionStorage.getItem('showBorradoExitoso')) {
+      toast.success('Empresa borrada correctamente');
+      sessionStorage.removeItem('showBorradoExitoso');
+    }
+  }, []);
 
   const [form, setForm] = useState<Record<string, string>>({});
   const [campos, setCampos] = useState<Record<string, boolean>>(DEFAULT_CAMPOS);
@@ -784,6 +964,11 @@ export default function ConfiguracionPage() {
       {/* Cambiar contraseña */}
       <div className="max-w-xl">
         <ChangePasswordCard />
+      </div>
+
+      {/* Danger Zone */}
+      <div className="max-w-xl">
+        <DangerZoneCard />
       </div>
     </div>
   );

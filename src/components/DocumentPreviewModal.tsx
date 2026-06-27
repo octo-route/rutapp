@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Download, Loader2, MessageCircle, Send, Edit2 } from 'lucide-react';
+import { Download, Loader2, MessageCircle, Send, Edit2, Share2, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -42,6 +42,65 @@ export default function DocumentPreviewModal({
   }, [defaultPhone, initialCaption, open]);
 
   const pdfUrl = pdfBlob ? URL.createObjectURL(pdfBlob) : null;
+
+  const [sharing, setSharing] = useState(false);
+
+  const getPublicUrl = async () => {
+    if (!pdfBlob) return null;
+    try {
+      const path = `temp/${Date.now()}-${fileName}`;
+      const { error } = await supabase.storage.from('empresa-assets').upload(path, pdfBlob, { contentType: 'application/pdf', upsert: true });
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from('empresa-assets').getPublicUrl(path);
+      return urlData.publicUrl;
+    } catch (e: any) {
+      toast.error('Error generando link público');
+      return null;
+    }
+  };
+
+  const handleShare = async () => {
+    if (!pdfBlob) return;
+    try {
+      const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: fileName,
+          text: caption || `Aquí tienes el documento: ${fileName}`,
+          files: [file]
+        });
+      } else if (navigator.share) {
+        setSharing(true);
+        const url = await getPublicUrl();
+        if (url) {
+          await navigator.share({
+            title: fileName,
+            text: caption || `Aquí tienes el documento: ${fileName}`,
+            url
+          });
+        }
+        setSharing(false);
+      } else {
+        toast.error('Tu navegador no soporta la función de compartir');
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        toast.error('Error al compartir');
+      }
+      setSharing(false);
+    }
+  };
+
+  const handleEmail = async () => {
+    setSharing(true);
+    const url = await getPublicUrl();
+    if (url) {
+      const subject = encodeURIComponent(`Documento: ${fileName}`);
+      const body = encodeURIComponent(`${caption || 'Adjunto el documento solicitado.'}\n\nPuedes descargarlo aquí: ${url}`);
+      window.open(`mailto:?subject=${subject}&body=${body}`);
+    }
+    setSharing(false);
+  };
 
   const handleDownload = () => {
     if (!pdfBlob) return;
@@ -126,7 +185,14 @@ export default function DocumentPreviewModal({
           </div>
         )}
 
-        <div className="flex gap-2 justify-end pt-2">
+        <div className="flex flex-wrap gap-2 justify-end pt-2">
+          <Button variant="outline" onClick={handleShare} disabled={!pdfBlob || sharing}>
+            {sharing ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Share2 className="h-4 w-4 mr-1.5" />}
+            Compartir
+          </Button>
+          <Button variant="outline" onClick={handleEmail} disabled={!pdfBlob || sharing}>
+            <Mail className="h-4 w-4 mr-1.5" /> Email
+          </Button>
           <Button variant="outline" onClick={handleDownload} disabled={!pdfBlob}>
             <Download className="h-4 w-4 mr-1.5" /> Descargar
           </Button>
@@ -142,7 +208,7 @@ export default function DocumentPreviewModal({
             ) : (
               <MessageCircle className="h-4 w-4 mr-1.5" />
             )}
-            {showSendForm ? 'Enviar' : 'Enviar por WhatsApp'}
+            {showSendForm ? 'Enviar' : 'WhatsApp'}
           </Button>
         </div>
       </DialogContent>

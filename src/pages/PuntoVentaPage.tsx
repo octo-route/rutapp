@@ -570,25 +570,27 @@ export default function PuntoVentaPage() {
 
   // Default lista de precios
   const { data: defaultListaPrecioData } = useQuery({
-    queryKey: ["pos-default-lista-precio-full", empresa?.id],
+    queryKey: ["pos-default-lista-precio-v3", empresa?.id],
     staleTime: CATALOG_STALE,
     enabled: !!empresa?.id,
     queryFn: async () => {
       const { data } = await supabase
         .from("lista_precios")
-        .select("tarifa_id, nombre")
+        .select("id, tarifa_id, nombre")
         .eq("empresa_id", empresa!.id)
         .eq("es_principal", true)
-        .maybeSingle();
-      return data;
+        .limit(1);
+      return data?.[0] ?? null;
     },
   });
   const defaultTarifaId = defaultListaPrecioData?.tarifa_id ?? null;
   const defaultListaNombre = defaultListaPrecioData?.nombre ?? null;
+  const defaultListaId = defaultListaPrecioData?.id ?? null;
   const effectiveListaNombre = clienteListaNombre || defaultListaNombre;
 
   // Use client tarifa if available, otherwise fall back to empresa's default
   const effectiveTarifaId = clienteTarifaId || defaultTarifaId;
+  const effectiveListaId = clienteListaPrecioId || defaultListaId;
   const { data: effectiveTarifaLineas } = useQuery({
     queryKey: ["pos-tarifa-lineas", effectiveTarifaId],
     enabled: !!effectiveTarifaId,
@@ -626,8 +628,9 @@ export default function PuntoVentaPage() {
                 ieps_pct: p.ieps_pct ?? 0,
                 ieps_tipo: p.ieps_tipo,
                 usa_listas_precio: p.usa_listas_precio,
+                costos_adicionales: p.costos_adicionales,
               },
-              clienteListaPrecioId,
+              effectiveListaId,
             )
           : {
               unitPrice: fallbackPrice,
@@ -716,11 +719,11 @@ export default function PuntoVentaPage() {
         const pricing = getProductPricing(prod);
         return {
           ...item,
-          precio_unitario: pricing.unitPrice,
-          precio_unitario_sin_redondeo: pricing.rawUnitPrice,
-          precio_display_sin_redondeo: pricing.rawDisplayPrice,
-          base_precio: pricing.basePrecio as BasePrecioMode,
-          redondeo: pricing.appliedRule?.redondeo ?? "ninguno",
+          precio_unitario: item.presentacion_id ? item.precio_unitario : pricing.unitPrice,
+          precio_unitario_sin_redondeo: item.presentacion_id ? item.precio_unitario_sin_redondeo : pricing.rawUnitPrice,
+          precio_display_sin_redondeo: item.presentacion_id ? item.precio_display_sin_redondeo : pricing.rawDisplayPrice,
+          base_precio: item.presentacion_id ? item.base_precio : (pricing.basePrecio as BasePrecioMode),
+          redondeo: item.presentacion_id ? item.redondeo : (pricing.appliedRule?.redondeo ?? "ninguno"),
         };
       }),
     );
@@ -1772,6 +1775,8 @@ export default function PuntoVentaPage() {
                         <p className="text-[9px] sm:text-[10px] text-primary font-medium truncate">
                           {isGratis &&
                             `${p.cantidad_minima}×${(p.cantidad_minima || 1) - (p.cantidad_gratis || 1)} · Lleva ${p.cantidad_minima}, paga ${(p.cantidad_minima || 1) - (p.cantidad_gratis || 1)}`}
+                        </p>
+                        <p className="text-[10px] text-primary font-medium mt-0.5">
                           {isPct && `${p.valor}% de descuento`}
                           {isMonto && `$${p.valor} desc. por unidad`}
                           {isPrecio && `Precio especial $${p.valor}`}
@@ -1934,6 +1939,9 @@ export default function PuntoVentaPage() {
                                 {p.codigo}
                               </span>
                             </div>
+                            <p className="text-[9px] text-red-500 font-mono mt-0.5">
+                              [DB] rLen: {effectiveTarifaLineas?.length} | uLP: {String(p.usa_listas_precio)} | tId: {effectiveTarifaId} | lId: {effectiveListaId} | costo: {p.costo} | pP: {p.precio_principal}
+                            </p>
                           </td>
                           <td className="px-2 py-2 hidden sm:table-cell">
                             <span className="inline-flex items-center rounded-md bg-accent/60 text-foreground/70 px-1.5 py-0.5 text-[10px] font-medium truncate max-w-[140px]">
@@ -3202,7 +3210,7 @@ export default function PuntoVentaPage() {
               : Number(selectedProductoPresentacion?.cantidad ?? 0)
           }
           tarifaRules={effectiveTarifaLineas ?? []}
-          clienteListaPrecioId={clienteListaPrecioId}
+          clienteListaPrecioId={effectiveListaId}
           onConfirm={(payload: any) => {
             setCart((prev) => [
               ...prev,

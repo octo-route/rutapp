@@ -8,6 +8,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCurrency } from '@/hooks/useCurrency';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePresentaciones } from '@/hooks/usePresentaciones';
+import { calcTax } from '@/lib/taxUtils';
+import { calcularCostoTotal } from '@/lib/priceResolver';
 
 interface PreciosTabProps {
   form: Partial<Producto>;
@@ -33,6 +35,17 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCol, setEditingCol] = useState<string | null>(null);
   const [editVal, setEditVal] = useState<Record<string, unknown>>({});
+  const baseNetCost = useMemo(() => {
+    const costoTotal = calcularCostoTotal(form.costo ?? 0, form.costos_adicionales);
+    return calcTax({
+      precio: costoTotal,
+      iva_pct: form.tiene_iva ? (form.iva_pct ?? 16) : 0,
+      ieps_pct: form.tiene_ieps ? (form.ieps_pct ?? 0) : 0,
+      ieps_tipo: form.ieps_tipo || 'porcentaje',
+      incluye_impuestos: true
+    }).precio_neto;
+  }, [form.costo, form.costos_adicionales, form.tiene_iva, form.iva_pct, form.tiene_ieps, form.ieps_pct, form.ieps_tipo, form.costo_incluye_impuestos]);
+
   const [newRule, setNewRule] = useState({
     aplica_a: 'producto' as 'producto' | 'categoria' | 'todos' | 'presentacion',
     clasificacion_ids: [] as string[],
@@ -207,7 +220,7 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
                       aplica_a: val,
                       clasificacion_ids: val === 'categoria' && form.clasificacion_id ? [form.clasificacion_id] : [],
                       presentacion_ids: [],
-                      precio_minimo: isPres ? 0 : (form.costo ?? 0)
+                      precio_minimo: isPres ? 0 : baseNetCost
                     }));
                   }}>
                   <option value="producto">Este producto</option>
@@ -215,11 +228,6 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
                   <option value="categoria">Categoría</option>
                   <option value="todos">Todos los productos</option>
                 </select>
-              </div>
-              <div className="odoo-field-row">
-                <span className="odoo-field-label">Costo</span>
-                <input type="number" className="input-odoo py-1 text-[13px] w-28" value={newRule.precio_minimo}
-                  onChange={e => setNewRule(p => ({ ...p, precio_minimo: +e.target.value }))} />
               </div>
             </div>
             {newRule.aplica_a === 'producto' && (
@@ -239,12 +247,13 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
                           : [...newRule.presentacion_ids, p.id];
                         
                         let nextCost = newRule.precio_minimo;
+                        const baseCosto = baseNetCost;
                         if (!isCurrentlySelected) {
-                          nextCost = (form.costo ?? 0) * Number(p.factor_base);
+                          nextCost = baseCosto * Number(p.factor_base);
                         } else if (nextIds.length > 0) {
                           const firstRemaining = (dbPresentaciones ?? []).find((pr: any) => pr.id === nextIds[0]);
                           if (firstRemaining) {
-                            nextCost = (form.costo ?? 0) * Number(firstRemaining.factor_base);
+                            nextCost = baseCosto * Number(firstRemaining.factor_base);
                           }
                         } else {
                           nextCost = 0;
@@ -340,11 +349,14 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-        <span>Costo: <strong className="text-foreground">{cs}{(form.costo ?? 0).toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></span>
-        {form.tiene_iva && <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">IVA {form.iva_pct ?? 16}%</span>}
-        {form.tiene_ieps && <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">IEPS {form.ieps_pct ?? 0}%</span>}
-        {!form.tiene_iva && !form.tiene_ieps && <span>Sin impuestos</span>}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+          <span>Costo antes de impuesto: <strong className="text-foreground">{cs}{(calcTax({precio: calcularCostoTotal(form.costo ?? 0, form.costos_adicionales), iva_pct: form.tiene_iva ? (form.iva_pct ?? 16) : 0, ieps_pct: form.tiene_ieps ? (form.ieps_pct ?? 0) : 0, ieps_tipo: form.ieps_tipo || 'porcentaje', incluye_impuestos: true}).precio_neto).toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></span>
+          <span>Costo total: <strong className="text-foreground">{cs}{(calcTax({precio: calcularCostoTotal(form.costo ?? 0, form.costos_adicionales), iva_pct: form.tiene_iva ? (form.iva_pct ?? 16) : 0, ieps_pct: form.tiene_ieps ? (form.ieps_pct ?? 0) : 0, ieps_tipo: form.ieps_tipo || 'porcentaje', incluye_impuestos: true}).total).toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></span>
+          {form.tiene_iva && <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">IVA {form.iva_pct ?? 16}%</span>}
+          {form.tiene_ieps && <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">IEPS {form.ieps_pct ?? 0}%</span>}
+          {!form.tiene_iva && !form.tiene_ieps && <span>Sin impuestos</span>}
+        </div>
       </div>
       <div className="overflow-x-auto border border-border rounded">
         <table className="w-full text-sm">
@@ -371,10 +383,20 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
               const tarifaNombre = linea._tarifaNombre;
               const isEditing = editingId === linea.id;
               const currentVals = isEditing ? editVal : linea;
-              const costo = form.costo ?? 0;
+              const costo = calcularCostoTotal(form.costo ?? 0, form.costos_adicionales);
               const ivaPct = form.tiene_iva ? (form.iva_pct ?? 16) : 0;
               const iepsPct = form.tiene_ieps ? (form.ieps_pct ?? 0) : 0;
-              const taxMult = 1 + (ivaPct + iepsPct) / 100;
+              const iepsTipo = form.ieps_tipo || 'porcentaje';
+              
+              const taxRes = calcTax({
+                precio: costo,
+                iva_pct: ivaPct,
+                ieps_pct: iepsPct,
+                ieps_tipo: iepsTipo,
+                incluye_impuestos: true
+              });
+              const costoNeto = taxRes.precio_neto;
+              const costoConImpuestos = taxRes.total;
               const basePrecio = ((isEditing ? (editVal.base_precio ?? linea.base_precio) : linea.base_precio) ?? 'sin_impuestos') as string;
               const redondeoVal = ((isEditing ? (editVal.redondeo ?? linea.redondeo) : linea.redondeo) ?? 'ninguno') as string;
               const redondeoLabel = ({ arriba: '⬆ Arriba', abajo: '⬇ Abajo', cercano: '↕ Cercano', ninguno: '— Ninguno' } as Record<string, string>)[redondeoVal] ?? '— Ninguno';
@@ -388,35 +410,65 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
                 const p = (dbPresentaciones ?? []).find((pr: any) => pr.id === srcLinea.presentacion_ids[0]);
                 if (p) ruleFactor = Number(p.factor_base) || 1;
               }
-              const costoEfectivo = costo * ruleFactor;
+              const costoEfectivoNeto = costoNeto * ruleFactor;
+              const costoEfectivoTotal = costoConImpuestos * ruleFactor;
               const prEfectivo = pr * ruleFactor;
+              const prEfectivoTotal = calcTax({ precio: prEfectivo, iva_pct: ivaPct, ieps_pct: iepsPct, ieps_tipo: iepsTipo, incluye_impuestos: false }).total;
 
               let calcSinImp = 0;
+              let calcConImp = 0;
+              let useConImp = basePrecio === 'con_impuestos';
+
               if (srcLinea.tipo_calculo === 'margen_costo') {
-                calcSinImp = costoEfectivo * (1 + ((srcLinea.margen_pct as number) ?? 0) / 100);
+                if (useConImp) {
+                  calcConImp = costoEfectivoTotal * (1 + ((srcLinea.margen_pct as number) ?? 0) / 100);
+                } else {
+                  calcSinImp = costoEfectivoNeto * (1 + ((srcLinea.margen_pct as number) ?? 0) / 100);
+                }
               } else if (srcLinea.tipo_calculo === 'descuento_precio') {
-                calcSinImp = prEfectivo * (1 - ((srcLinea.descuento_pct as number) ?? 0) / 100);
+                if (useConImp) {
+                  calcConImp = prEfectivoTotal * (1 - ((srcLinea.descuento_pct as number) ?? 0) / 100);
+                } else {
+                  calcSinImp = prEfectivo * (1 - ((srcLinea.descuento_pct as number) ?? 0) / 100);
+                }
               } else {
-                if (basePrecio === 'con_impuestos') {
-                  calcSinImp = ((srcLinea.precio as number) ?? 0) / taxMult;
+                if (useConImp) {
+                  calcConImp = (srcLinea.precio as number) ?? 0;
                 } else {
                   calcSinImp = (srcLinea.precio as number) ?? 0;
                 }
               }
 
-              const rawSinImp = Math.max(calcSinImp, (srcLinea.precio_minimo as number) ?? 0);
+              const minSinImp = costoEfectivoNeto;
+              const minConImp = calcTax({ precio: minSinImp, iva_pct: ivaPct, ieps_pct: iepsPct, ieps_tipo: iepsTipo, incluye_impuestos: false }).total;
 
               let precioSinImp: number, precioConImp: number;
-              if (basePrecio === 'con_impuestos') {
-                precioConImp = applyRedondeo(rawSinImp * taxMult, srcLinea.redondeo as string ?? 'ninguno');
-                precioSinImp = precioConImp / taxMult;
+              if (useConImp) {
+                const rawConImp = Math.max(calcConImp, minConImp);
+                precioConImp = applyRedondeo(rawConImp, srcLinea.redondeo as string ?? 'ninguno');
+                precioSinImp = calcTax({
+                  precio: precioConImp,
+                  iva_pct: ivaPct,
+                  ieps_pct: iepsPct,
+                  ieps_tipo: iepsTipo,
+                  incluye_impuestos: true
+                }).precio_neto;
               } else {
+                const rawSinImp = Math.max(calcSinImp, minSinImp);
                 precioSinImp = applyRedondeo(rawSinImp, srcLinea.redondeo as string ?? 'ninguno');
-                precioConImp = precioSinImp * taxMult;
+                precioConImp = calcTax({
+                  precio: precioSinImp,
+                  iva_pct: ivaPct,
+                  ieps_pct: iepsPct,
+                  ieps_tipo: iepsTipo,
+                  incluye_impuestos: false
+                }).total;
               }
 
-              const ganancia = precioSinImp - costoEfectivo;
-              const ganPct = costoEfectivo > 0 ? (ganancia / costoEfectivo) * 100 : 0;
+              const isBaseConImp = basePrecio === 'con_impuestos';
+              const ganancia = isBaseConImp ? (precioConImp - costoEfectivoTotal) : (precioSinImp - costoEfectivoNeto);
+              const ganBase = isBaseConImp ? costoEfectivoTotal : costoEfectivoNeto;
+              const ganPct = ganBase > 0 ? (ganancia / ganBase) * 100 : 0;
               const listaName = linea.lista_precios?.nombre;
               const esPrincipal = linea.lista_precios?.es_principal;
 
@@ -498,7 +550,40 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
         </table>
       </div>
       {!isNew && (
-        <button className="odoo-link" onClick={() => { setNewRule(p => ({ ...p, precio_minimo: form.costo ?? 0 })); setShowModal(true); }}>Agregar un precio</button>
+        <div className="flex flex-col gap-4">
+          <button className="odoo-link self-start" onClick={() => { setNewRule(p => ({ ...p, precio_minimo: baseNetCost })); setShowModal(true); }}>Agregar un precio</button>
+          <div className="text-xs text-muted-foreground bg-primary/5 border border-primary/15 rounded-lg p-4 space-y-3 mt-2">
+            <p className="font-semibold text-primary text-[13px] border-b border-primary/10 pb-1">Guía rápida sobre Precios y Reglas</p>
+            
+            <div className="space-y-1.5">
+              <p className="font-medium text-foreground">¿Para qué sirve la columna "Base"?</p>
+              <p>Define el costo inicial sobre el cual se aplicará tu porcentaje de ganancia:</p>
+              <ul className="list-disc list-inside ml-2 space-y-1">
+                <li><strong>Sin impuestos:</strong> La ganancia se calcula directamente sobre el <strong>Costo antes de impuesto</strong> (tu costo real neto libre de IVA/IEPS).</li>
+                <li><strong>Con impuestos:</strong> La ganancia se calcula sobre el <strong>Costo total</strong> (que incluye fletes, adicionales e impuestos).</li>
+              </ul>
+            </div>
+
+            <div className="space-y-1.5 pt-2 border-t border-primary/5">
+              <p className="font-medium text-foreground">Protección de Costo Automática</p>
+              <p>
+                Para proteger tu margen, el sistema nunca permitirá vender un producto por debajo de su costo de adquisición. 
+                El <strong>Costo antes de impuesto</strong> actúa automáticamente como el precio mínimo neto permitido.
+              </p>
+            </div>
+
+            <div className="space-y-1.5 pt-2 border-t border-primary/5">
+              <p className="font-medium text-foreground">Ejemplo de Cálculo (s/impuestos vs c/impuestos):</p>
+              <p className="leading-relaxed">
+                Si tu producto tiene un Costo antes de impuesto de {cs}39.31 (Costo total {cs}57.00) y agregas una ganancia del 10%:
+              </p>
+              <ul className="list-disc list-inside ml-2 space-y-1">
+                <li>Con base <strong>Sin impuestos</strong>: El precio neto se calcula como <code className="bg-primary/5 px-1 py-0.5 rounded text-[11px] font-mono">39.31 * 1.10 = {cs}43.24</code>. A este precio neto se le aplican los impuestos (IVA/IEPS) correspondientes.</li>
+                <li>Con base <strong>Con impuestos</strong>: El precio final total se calcula como <code className="bg-primary/5 px-1 py-0.5 rounded text-[11px] font-mono">57.00 * 1.10 = {cs}62.70</code>, y el precio neto se extrae restando proporcionalmente el IVA/IEPS de ese total.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
       )}
       {renderModal()}
     </div>

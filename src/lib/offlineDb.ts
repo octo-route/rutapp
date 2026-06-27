@@ -93,3 +93,9 @@ export function getOfflineTable(tableName: string): Table | null {
     return null;
   }
 }
+
+// Clears all offline data by deleting the database
+export async function clearAllOfflineData() {
+  await offlineDb.delete();
+  await offlineDb.open();
+}

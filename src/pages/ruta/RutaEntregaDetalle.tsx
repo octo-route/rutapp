@@ -472,26 +472,41 @@ export default function RutaEntregaDetalle() {
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-30 px-4 pb-4 pt-2 bg-gradient-to-t from-background via-background to-transparent">
-        <div className="flex gap-2">
-          {totalSaldoPendiente > 0 && !isDelivered && (
-            <button onClick={goToCobrar}
-              className="flex-1 bg-card border border-border text-foreground rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] flex items-center justify-center gap-1.5">
-              <Banknote className="h-4 w-4" /> Cobrar {fmt(totalSaldoPendiente)}
-            </button>
-          )}
-          {isDelivered ? (
-            <button onClick={goToCobrar}
-              className="flex-1 bg-primary text-primary-foreground rounded-xl py-3.5 text-[14px] font-bold active:scale-[0.98] shadow-lg flex items-center justify-center gap-1.5">
-              <FileText className="h-5 w-5" /> Ver pedido
-            </button>
-          ) : (
-            <button onClick={handleMarcarClick} disabled={saving}
-              className="flex-1 bg-success text-success-foreground rounded-xl py-3.5 text-[14px] font-bold active:scale-[0.98] shadow-lg shadow-success/20 flex items-center justify-center gap-1.5 disabled:opacity-40">
-              {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
-              {saving ? 'Entregando...' : 'Marcar como entregado'}
-            </button>
-          )}
-        </div>
+        {(() => {
+          const clienteNoTieneCredito = cliente?.credito === false;
+          const deudasPendientes = (ventaSaldo > 0) || (totalSaldoPendiente > 0);
+          const bloqueadoPorFaltaDeCredito = clienteNoTieneCredito && deudasPendientes;
+
+          return (
+            <div className="flex flex-col gap-2 w-full">
+              {bloqueadoPorFaltaDeCredito && !isDelivered && (
+                <p className="text-[11px] text-destructive font-medium text-center px-2">
+                  El cliente no tiene crédito. Debe liquidar su saldo antes de entregar.
+                </p>
+              )}
+              <div className="flex gap-2">
+                {totalSaldoPendiente > 0 && !isDelivered && (
+                  <button onClick={goToCobrar}
+                    className="flex-1 bg-card border border-border text-foreground rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] flex items-center justify-center gap-1.5">
+                    <Banknote className="h-4 w-4" /> Cobrar {fmt(totalSaldoPendiente)}
+                  </button>
+                )}
+                {isDelivered ? (
+                  <button onClick={goToCobrar}
+                    className="flex-1 bg-primary text-primary-foreground rounded-xl py-3.5 text-[14px] font-bold active:scale-[0.98] shadow-lg flex items-center justify-center gap-1.5">
+                    <FileText className="h-5 w-5" /> Ver pedido
+                  </button>
+                ) : (
+                  <button onClick={handleMarcarClick} disabled={saving || bloqueadoPorFaltaDeCredito}
+                    className="flex-1 bg-success text-success-foreground rounded-xl py-3.5 text-[14px] font-bold active:scale-[0.98] shadow-lg shadow-success/20 flex items-center justify-center gap-1.5 disabled:opacity-40">
+                    {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
+                    {saving ? 'Entregando...' : 'Marcar como entregado'}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {showCobrarPrompt && (

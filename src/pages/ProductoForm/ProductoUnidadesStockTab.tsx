@@ -185,7 +185,6 @@ export function ProductoUnidadesStockTab({ isNew, esGranel, unidadGranel, precio
               <th className="text-left px-4 py-3">Unidad / Nombre</th>
               <th className="text-right px-4 py-3 w-28">Factor</th>
               <th className="text-right px-4 py-3 w-32">P. Especial</th>
-              <th className="text-right px-4 py-3 w-32">Calculado</th>
               <th className="text-center px-4 py-3 w-24">Stock ({unidadBase})</th>
               <th className="text-center px-4 py-3 w-16">Activo</th>
               <th className="px-4 py-3 w-12"></th>
@@ -194,13 +193,12 @@ export function ProductoUnidadesStockTab({ isNew, esGranel, unidadGranel, precio
           <tbody className="divide-y divide-border">
             {presentaciones.length === 0 && (
               <tr>
-                <td colSpan={9} className="text-center py-8 text-muted-foreground">
+                <td colSpan={8} className="text-center py-8 text-muted-foreground">
                   No hay presentaciones configuradas. Usa el formulario de arriba para agregar una.
                 </td>
               </tr>
             )}
             {presentaciones.map(p => {
-              const calculado = p.precio_especial ?? (precioPrincipal * Number(p.factor_base));
               const qtyStock = Math.floor(stock / Number(p.factor_base));
               
               return (
@@ -249,9 +247,6 @@ export function ProductoUnidadesStockTab({ isNew, esGranel, unidadGranel, precio
                         const val = e.target.value ? Number(e.target.value) : null;
                         if (val !== p.precio_especial) onUpdate(p.id, { precio_especial: val });
                       }} />
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground font-medium">
-                    {symbol}{fmt(calculado)}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <div className="inline-flex items-center justify-center bg-accent/50 px-2.5 py-1 rounded-md">

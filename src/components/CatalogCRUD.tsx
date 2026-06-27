@@ -198,7 +198,7 @@ export default function CatalogCRUD({ title, tableName, columns, queryKey }: Cat
                           className="inline-edit-input text-xs"
                         >
                           <option value="">{`Seleccionar ${c.label}...`}</option>
-                          {(c.relationTable === 'almacenes' ? almacenes : []).map(opt => (
+                          {(c.relationTable === 'almacenes' ? (almacenes ?? []) : []).map(opt => (
                             <option key={opt.value} value={opt.value}>{opt.label}</option>
                           ))}
                         </select>

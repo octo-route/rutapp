@@ -58,7 +58,7 @@ export function useProductosPaginated(search?: string, statusFilter?: string, pa
     enabled: !!empresa?.id,
     queryFn: async () => {
       let q = supabase.from('productos')
-        .select('id, codigo, nombre, precio_principal, costo, cantidad, status, imagen_url, tiene_iva, iva_pct, tiene_ieps, ieps_pct, min, marca_id, marcas(nombre), clasificacion_id, clasificaciones(nombre), proveedor_id, proveedores(nombre), unidad_venta_id, unidades_venta:unidad_venta_id(abreviatura), unidad_compra_id, unidades_compra:unidad_compra_id(abreviatura), factor_conversion, calculo_costo, lista_id, listas(nombre)', { count: 'exact' })
+        .select('id, codigo, nombre, precio_principal, costo, costos_adicionales, cantidad, status, imagen_url, tiene_iva, iva_pct, tiene_ieps, ieps_pct, min, marca_id, marcas(nombre), clasificacion_id, clasificaciones(nombre), proveedor_id, proveedores(nombre), unidad_venta_id, unidades_venta:unidad_venta_id(abreviatura), unidad_compra_id, unidades_compra:unidad_compra_id(abreviatura), factor_conversion, calculo_costo, lista_id, listas(nombre)', { count: 'exact' })
         .eq('empresa_id', empresa!.id)
         .eq('es_combo', false)
         .order('nombre', { ascending: true })
@@ -95,7 +95,7 @@ export function useCombosPaginated(search?: string, statusFilter?: string, page 
     enabled: !!empresa?.id,
     queryFn: async () => {
       let q = supabase.from('productos')
-        .select('id, codigo, nombre, precio_principal, precio_sugerido_publico, status, imagen_url', { count: 'exact' })
+        .select('id, codigo, nombre, precio_principal, precio_sugerido_publico, costo, costos_adicionales, status, imagen_url', { count: 'exact' })
         .eq('empresa_id', empresa!.id)
         .eq('es_combo', true)
         .order('nombre', { ascending: true })

@@ -396,10 +396,24 @@ export function StepPago(props: Props) {
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-30 px-3 pb-3 pt-1 bg-gradient-to-t from-background via-background to-transparent safe-area-bottom">
-        <div className="flex gap-2">
-          <button onClick={() => navigate(-1)} className="flex-1 bg-card border border-destructive/30 text-destructive rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5">Cancelar</button>
-          <button onClick={handleSave} disabled={saving || cart.length === 0 || excedeCredito || requiresMotivo || (tipoVenta === 'venta_directa' && condicionPago === 'contado' && totalACobrar > 0 && totalPagos < totalACobrar - 0.01)} className="flex-1 bg-primary text-primary-foreground rounded-xl py-3 text-[14px] font-bold disabled:opacity-40 active:scale-[0.98] transition-transform shadow-lg shadow-primary/20 flex items-center justify-center gap-1.5"><Save className="h-4 w-4" />{saving ? 'Guardando...' : 'Guardar'}</button>
-        </div>
+        {(() => {
+          const clienteNoTieneCredito = clienteCredito?.credito === false;
+          const deudasAnterioresNoPagadas = saldoPendienteTotal - totalAplicarCuentas > 0.01;
+          const bloqueadoPorFaltaDeCredito = clienteNoTieneCredito && deudasAnterioresNoPagadas;
+          return (
+            <div className="flex flex-col gap-2">
+              {bloqueadoPorFaltaDeCredito && (
+                <p className="text-[11px] text-destructive text-center font-medium px-2">
+                  El cliente no tiene crédito. Debe liquidar su saldo anterior ({fmt(saldoPendienteTotal)}) para continuar.
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button onClick={() => navigate(-1)} className="flex-1 bg-card border border-destructive/30 text-destructive rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5">Cancelar</button>
+                <button onClick={handleSave} disabled={saving || cart.length === 0 || excedeCredito || requiresMotivo || (tipoVenta === 'venta_directa' && condicionPago === 'contado' && totalACobrar > 0 && totalPagos < totalACobrar - 0.01) || bloqueadoPorFaltaDeCredito} className="flex-1 bg-primary text-primary-foreground rounded-xl py-3 text-[14px] font-bold disabled:opacity-40 active:scale-[0.98] transition-transform shadow-lg shadow-primary/20 flex items-center justify-center gap-1.5"><Save className="h-4 w-4" />{saving ? 'Guardando...' : 'Guardar'}</button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

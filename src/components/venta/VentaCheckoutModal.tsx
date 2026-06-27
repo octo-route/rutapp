@@ -322,14 +322,29 @@ export function VentaCheckoutModal({
 
         {/* Confirm button */}
         <div className="px-5 pb-5 pt-2">
-          <button
-            onClick={handleConfirm}
-            disabled={saving || (condicion === 'contado' && faltante > 0 && payMode !== 'efectivo')}
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-4 text-[16px] font-bold disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg flex items-center justify-center gap-2"
-          >
-            <Check className="h-5 w-5" />
-            {saving ? 'Guardando...' : condicion === 'credito' ? 'Confirmar venta a crédito' : `Confirmar ${fmt(total)}`}
-          </button>
+          {(() => {
+            const deudasAnteriores = cuentasPendientes.reduce((s, c) => s + c.saldo_pendiente, 0);
+            const deudasAnterioresNoPagadas = deudasAnteriores - totalAplicarCuentas > 0.01;
+            const bloqueadoPorFaltaDeCredito = clienteCredito === false && deudasAnterioresNoPagadas;
+
+            return (
+              <div className="flex flex-col gap-2">
+                {bloqueadoPorFaltaDeCredito && (
+                  <p className="text-[12px] text-destructive text-center font-medium px-2">
+                    El cliente no tiene crédito. Debe liquidar su saldo anterior ({fmt(deudasAnteriores)}) para poder cerrar la venta.
+                  </p>
+                )}
+                <button
+                  onClick={handleConfirm}
+                  disabled={saving || (condicion === 'contado' && faltante > 0 && payMode !== 'efectivo') || bloqueadoPorFaltaDeCredito}
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-4 text-[16px] font-bold disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg flex items-center justify-center gap-2"
+                >
+                  <Check className="h-5 w-5" />
+                  {saving ? 'Guardando...' : condicion === 'credito' ? 'Confirmar venta a crédito' : `Confirmar ${fmt(total)}`}
+                </button>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>

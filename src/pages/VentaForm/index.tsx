@@ -165,7 +165,9 @@ export default function VentaFormPage() {
 
   if (!isNew && isLoading) return <div className="p-4 min-h-full"><TableSkeleton rows={6} cols={4} /></div>;
 
-  const clienteOptions = (clientesList ?? []).map(c => ({ value: c.id, label: `${c.codigo ? c.codigo + ' · ' : ''}${c.nombre}` }));
+  const clienteOptions = (clientesList ?? [])
+    .filter(c => c.status === 'activo' || c.id === form.cliente_id)
+    .map(c => ({ value: c.id, label: `${c.codigo ? c.codigo + ' · ' : ''}${c.nombre}` }));
   const tarifaOptions = (tarifasList ?? []).map(t => ({ value: t.id, label: t.nombre }));
   const almacenOptions = (almacenesList ?? []).map(a => ({ value: a.id, label: a.nombre }));
   const vendedorOptions = (vendedoresList ?? []).map(v => ({ value: v.id, label: v.nombre }));

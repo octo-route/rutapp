@@ -330,7 +330,9 @@ export default function EntregaFormPage() {
   }
 
   const vendedorOptions = (vendedores ?? []).map(v => ({ value: v.id, label: v.nombre }));
-  const clienteOptions = (clientesList ?? []).map(c => ({ value: c.id, label: `${c.codigo ? c.codigo + ' · ' : ''}${c.nombre}` }));
+  const clienteOptions = (clientesList ?? [])
+    .filter(c => c.status === 'activo' || c.id === form.cliente_id)
+    .map(c => ({ value: c.id, label: `${c.codigo ? c.codigo + ' · ' : ''}${c.nombre}` }));
   const almacenOptions = (almacenesList ?? []).map(a => ({ value: a.id, label: a.nombre }));
 
   // Stock summary for surtir dialog

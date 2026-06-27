@@ -7,11 +7,12 @@ import { TableSkeleton } from '@/components/TableSkeleton';
 import { useCotizacionForm, COTIZACION_STEPS } from './useCotizacionForm';
 import { CotizacionFormFields } from './CotizacionFormFields';
 import { CotizacionLineasTab } from './CotizacionLineasTab';
-import { Save, Trash, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Save, Trash, ArrowLeft, RefreshCw, FileText } from 'lucide-react';
 import type { StatusCotizacion } from '@/types';
 import SearchableSelect from '@/components/SearchableSelect';
 import { useAlmacenes } from '@/hooks/useData';
 import { PresentacionSelectorModal } from '@/components/ruta/PresentacionSelectorModal';
+import DocumentPreviewModal from '@/components/DocumentPreviewModal';
 
 export default function CotizacionFormPage() {
   const isMobile = useIsMobile();
@@ -24,20 +25,45 @@ export default function CotizacionFormPage() {
     id, isNew, form, lineas, setLineas, readOnly, canEditCotizacion, isLoading,
     productBeingConfigured, setProductBeingConfigured, handleConfirmPresentacion, handleEditPresentacion,
     navigate, clientesList, productosList, tarifasList, vendedoresList,
-    totals, saveCotizacion,
+    profile, user, empresa, totals, saveCotizacion,
     set, handleProductSelect, handleSave, handleDelete, handleStatusChange, handleConvertToVenta,
     addLine, updateLine, removeLine, setCellRef, handleCellKeyDown, navigateCell,
   } = useCotizacionForm();
 
   if (!isNew && isLoading) return <div className="p-4 min-h-full"><TableSkeleton rows={6} cols={4} /></div>;
 
-  const clienteOptions = (clientesList ?? []).map(c => ({ value: c.id, label: `${c.codigo ? c.codigo + ' · ' : ''}${c.nombre}` }));
+  const clienteOptions = (clientesList ?? [])
+    .filter(c => c.status === 'activo' || c.id === form.cliente_id)
+    .map(c => ({ value: c.id, label: `${c.codigo ? c.codigo + ' · ' : ''}${c.nombre}` }));
   const vendedorOptions = (vendedoresList ?? []).map(v => ({ value: v.id, label: v.nombre }));
   const clienteNombre = clientesList?.find(c => c.id === form.cliente_id)?.nombre;
+
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [showPdfModal, setShowPdfModal] = useState(false);
 
   const handleConvert = () => {
     handleConvertToVenta(selectedAlmacen || undefined);
     setShowConvertConfirm(false);
+  };
+
+  const handleGenerarPdf = async () => {
+    const clienteData = clientesList?.find(c => c.id === form.cliente_id);
+    const vendedorNombre = (form as any).vendedores?.nombre;
+    const { generarCotizacionPdf } = await import('./CotizacionPdfHandler');
+    const blob = await generarCotizacionPdf({
+      form,
+      empresa,
+      profile,
+      userEmail: user?.email,
+      clienteData,
+      lineas,
+      productosList: productosList ?? [],
+      entregasExistentes: [],
+      pagosData: [],
+      vendedorNombre,
+    });
+    setPdfBlob(blob);
+    setShowPdfModal(true);
   };
 
   return (
@@ -55,6 +81,15 @@ export default function CotizacionFormPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {!isNew && (
+            <button
+              onClick={handleGenerarPdf}
+              className="btn-odoo-secondary bg-blue-50 text-blue-600 hover:bg-blue-100 border-blue-200"
+            >
+              <FileText className="h-4 w-4" />
+              <span className="hidden sm:inline">Compartir / PDF</span>
+            </button>
+          )}
           {!readOnly && (
             <button
               onClick={() => handleSave()}
@@ -157,6 +192,18 @@ export default function CotizacionFormPage() {
           onClose={() => setProductBeingConfigured(null)}
         />
       )}
+
+      <DocumentPreviewModal 
+        open={showPdfModal} 
+        onClose={() => { setShowPdfModal(false); setPdfBlob(null); }} 
+        pdfBlob={pdfBlob} 
+        fileName={`${form.folio ?? 'cotizacion'}.pdf`} 
+        empresaId={empresa?.id ?? ''} 
+        defaultPhone={clientesList?.find(c => c.id === form.cliente_id)?.telefono ?? ''} 
+        caption={`Cotización ${form.folio}`} 
+        tipo="cotizacion" 
+        referencia_id={form.id} 
+      />
     </div>
   );
 }
