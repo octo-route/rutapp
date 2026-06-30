@@ -68,7 +68,23 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
       const { data } = await supabase
         .from("ventas")
         .select(
-          "id, folio, fecha, total, status, clientes(nombre, rfc, regimen_fiscal, uso_cfdi, cp)",
+          `id,
+   folio,
+   fecha,
+   total,
+   status,
+   clientes(
+      nombre,
+      rfc,
+      regimen_fiscal,
+      uso_cfdi,
+      cp,
+      facturama_rfc,
+      facturama_razon_social,
+      facturama_regimen_fiscal,
+      facturama_uso_cfdi,
+      facturama_cp
+   )`,
         )
         .eq("empresa_id", empresa!.id)
         .in("status", ["confirmado", "entregado", "facturado"])
@@ -138,11 +154,11 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
     if (venta?.clientes) {
       const c = venta.clientes as any;
       setReceiver({
-        rfc: c.rfc || "",
-        name: c.nombre || "",
-        cfdi_use: c.uso_cfdi || "G01",
-        fiscal_regime: c.regimen_fiscal || "601",
-        tax_zip_code: c.cp || "",
+        rfc: c.facturama_rfc || c.rfc || "",
+        name: c.facturama_razon_social || c.nombre || "",
+        cfdi_use: c.facturama_uso_cfdi || c.uso_cfdi || "G01",
+        fiscal_regime: c.facturama_regimen_fiscal || c.regimen_fiscal || "601",
+        tax_zip_code: c.facturama_cp || c.cp || "",
       });
     }
     setStep("review");
@@ -188,7 +204,9 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
         description: l.descripcion || l.productos?.nombre || "Producto",
         unit: "Pieza",
         unit_code: "H87",
-        unit_price: l.precio_unitario,
+        unit_price: Number(
+          (Number(l.subtotal || 0) / Number(l.cantidad || 1)).toFixed(6),
+        ),
         quantity: l.cantidad,
         iva_rate: (l.iva_pct || 0) / 100,
         ieps_rate: (l.ieps_pct || 0) / 100,
@@ -197,6 +215,20 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
       }));
 
       const venta = ventas?.find((v: any) => v.id === selectedVentaId);
+
+      console.log("VENTA LINEAS", ventaLineas);
+
+      console.log(
+        ventaLineas.map((l) => ({
+          cantidad: l.cantidad,
+          precio_unitario: l.precio_unitario,
+          subtotal: l.subtotal,
+          iva: l.iva_monto,
+          total: l.total,
+        })),
+      );
+
+      console.log(items);
 
       const { data, error } = await supabase.functions.invoke("facturama", {
         body: {
@@ -226,6 +258,9 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
           items,
         },
       });
+
+      console.log(data);
+      console.log(error);
 
       if (error) {
         let message = "Error al timbrar CFDI";
@@ -391,8 +426,10 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {(v.clientes as any)?.nombre || "Sin cliente"} ·{" "}
-                        {fmtDate(v.fecha)}
+                        {(v.clientes as any)?.facturama_razon_social ||
+                          (v.clientes as any)?.nombre ||
+                          "Sin cliente"}{" "}
+                        · {fmtDate(v.fecha)}
                       </p>
                     </button>
                   ))
