@@ -227,8 +227,26 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
         },
       });
 
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (error) {
+        let message = "Error al timbrar CFDI";
+
+        try {
+          if ("context" in error && error.context) {
+            const body = await error.context.json();
+            message = body.error || message;
+          } else {
+            message = error.message;
+          }
+        } catch {
+          message = error.message;
+        }
+
+        throw new Error(message);
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
 
       const cfdiId = data?.cfdi?.id;
       if (!cfdiId)
