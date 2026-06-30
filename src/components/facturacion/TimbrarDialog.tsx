@@ -1,18 +1,24 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { toast } from 'sonner';
-import { Loader2, Search, FileCheck, ShoppingCart } from 'lucide-react';
-import SearchableSelect from '@/components/SearchableSelect';
-import { fmtDate } from '@/lib/utils';
-import { useCurrency } from '@/hooks/useCurrency';
+import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { toast } from "sonner";
+import { Loader2, Search, FileCheck, ShoppingCart } from "lucide-react";
+import SearchableSelect from "@/components/SearchableSelect";
+import { fmtDate } from "@/lib/utils";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface Props {
   open: boolean;
@@ -24,31 +30,31 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
   const { empresa, user } = useAuth();
   const { fmt: fmtC } = useCurrency();
   const queryClient = useQueryClient();
-  const [step, setStep] = useState<'select' | 'review'>('select');
+  const [step, setStep] = useState<"select" | "review">("select");
   const [selectedVentaId, setSelectedVentaId] = useState<string | null>(null);
-  const [ventaSearch, setVentaSearch] = useState('');
+  const [ventaSearch, setVentaSearch] = useState("");
   const [timbrating, setTimbrating] = useState(false);
 
   // Receiver form
   const [receiver, setReceiver] = useState({
-    rfc: '',
-    name: '',
-    cfdi_use: 'G01',
-    fiscal_regime: '601',
-    tax_zip_code: '',
+    rfc: "",
+    name: "",
+    cfdi_use: "G01",
+    fiscal_regime: "601",
+    tax_zip_code: "",
   });
-  const [paymentForm, setPaymentForm] = useState('01');
-  const [paymentMethod, setPaymentMethod] = useState('PUE');
+  const [paymentForm, setPaymentForm] = useState("01");
+  const [paymentMethod, setPaymentMethod] = useState("PUE");
 
   // Check timbre balance
   const { data: timbreSaldo } = useQuery({
-    queryKey: ['timbres-saldo', empresa?.id],
+    queryKey: ["timbres-saldo", empresa?.id],
     enabled: !!empresa?.id && open,
     queryFn: async () => {
       const { data } = await supabase
-        .from('timbres_saldo')
-        .select('saldo')
-        .eq('empresa_id', empresa!.id)
+        .from("timbres_saldo")
+        .select("saldo")
+        .eq("empresa_id", empresa!.id)
         .single();
       return data?.saldo ?? 0;
     },
@@ -56,15 +62,17 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
 
   // Load ventas without CFDI
   const { data: ventas } = useQuery({
-    queryKey: ['ventas-sin-cfdi', empresa?.id],
+    queryKey: ["ventas-sin-cfdi", empresa?.id],
     enabled: !!empresa?.id && open,
     queryFn: async () => {
       const { data } = await supabase
-        .from('ventas')
-        .select('id, folio, fecha, total, status, clientes(nombre, rfc, regimen_fiscal, uso_cfdi, cp)')
-        .eq('empresa_id', empresa!.id)
-        .in('status', ['confirmado', 'entregado', 'facturado'])
-        .order('fecha', { ascending: false })
+        .from("ventas")
+        .select(
+          "id, folio, fecha, total, status, clientes(nombre, rfc, regimen_fiscal, uso_cfdi, cp)",
+        )
+        .eq("empresa_id", empresa!.id)
+        .in("status", ["confirmado", "entregado", "facturado"])
+        .order("fecha", { ascending: false })
         .limit(100);
       return data || [];
     },
@@ -72,41 +80,53 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
 
   // Load selected venta lines
   const { data: ventaLineas } = useQuery({
-    queryKey: ['venta-lineas-cfdi', selectedVentaId],
+    queryKey: ["venta-lineas-cfdi", selectedVentaId],
     enabled: !!selectedVentaId,
     queryFn: async () => {
       const { data } = await supabase
-        .from('venta_lineas')
-        .select('*, productos(nombre, codigo_sat, codigo)')
-        .eq('venta_id', selectedVentaId!);
+        .from("venta_lineas")
+        .select("*, productos(nombre, codigo_sat, codigo)")
+        .eq("venta_id", selectedVentaId!);
       return data || [];
     },
   });
 
   // Catalogs
   const { data: formasPago } = useQuery({
-    queryKey: ['cat_forma_pago_active'],
+    queryKey: ["cat_forma_pago_active"],
     staleTime: 10 * 60 * 1000,
     queryFn: async () => {
-      const { data } = await supabase.from('cat_forma_pago').select('clave, descripcion').eq('activo', true).order('clave');
+      const { data } = await supabase
+        .from("cat_forma_pago")
+        .select("clave, descripcion")
+        .eq("activo", true)
+        .order("clave");
       return data || [];
     },
   });
 
   const { data: usoCfdiList } = useQuery({
-    queryKey: ['cat_uso_cfdi_active'],
+    queryKey: ["cat_uso_cfdi_active"],
     staleTime: 10 * 60 * 1000,
     queryFn: async () => {
-      const { data } = await supabase.from('cat_uso_cfdi').select('clave, descripcion').eq('activo', true).order('clave');
+      const { data } = await supabase
+        .from("cat_uso_cfdi")
+        .select("clave, descripcion")
+        .eq("activo", true)
+        .order("clave");
       return data || [];
     },
   });
 
   const { data: regimenesList } = useQuery({
-    queryKey: ['cat_regimen_fiscal_active'],
+    queryKey: ["cat_regimen_fiscal_active"],
     staleTime: 10 * 60 * 1000,
     queryFn: async () => {
-      const { data } = await supabase.from('cat_regimen_fiscal').select('clave, descripcion').eq('activo', true).order('clave');
+      const { data } = await supabase
+        .from("cat_regimen_fiscal")
+        .select("clave, descripcion")
+        .eq("activo", true)
+        .order("clave");
       return data || [];
     },
   });
@@ -118,47 +138,56 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
     if (venta?.clientes) {
       const c = venta.clientes as any;
       setReceiver({
-        rfc: c.rfc || '',
-        name: c.nombre || '',
-        cfdi_use: c.uso_cfdi || 'G01',
-        fiscal_regime: c.regimen_fiscal || '601',
-        tax_zip_code: c.cp || '',
+        rfc: c.rfc || "",
+        name: c.nombre || "",
+        cfdi_use: c.uso_cfdi || "G01",
+        fiscal_regime: c.regimen_fiscal || "601",
+        tax_zip_code: c.cp || "",
       });
     }
-    setStep('review');
+    setStep("review");
   }, [selectedVentaId]);
 
   // Filter ventas
   const filteredVentas = (ventas || []).filter((v: any) => {
     const q = ventaSearch.toLowerCase();
-    return (v.folio || '').toLowerCase().includes(q) ||
-      ((v.clientes as any)?.nombre || '').toLowerCase().includes(q);
+    return (
+      (v.folio || "").toLowerCase().includes(q) ||
+      ((v.clientes as any)?.nombre || "").toLowerCase().includes(q)
+    );
   });
 
   async function handleTimbrar() {
     if (!empresa || !selectedVentaId || !ventaLineas) return;
 
     if ((timbreSaldo ?? 0) < 1) {
-      toast.error('No tienes timbres disponibles. Contacta al administrador para adquirir más.');
+      toast.error(
+        "No tienes timbres disponibles. Contacta al administrador para adquirir más.",
+      );
       return;
     }
 
-    if (!empresa.rfc || !empresa.razon_social || !empresa.regimen_fiscal || !empresa.cp) {
-      toast.error('Configura los datos fiscales del emisor primero');
+    if (
+      !empresa.rfc ||
+      !empresa.razon_social ||
+      !empresa.regimen_fiscal ||
+      !empresa.cp
+    ) {
+      toast.error("Configura los datos fiscales del emisor primero");
       return;
     }
     if (!receiver.rfc || !receiver.name) {
-      toast.error('RFC y nombre del receptor son obligatorios');
+      toast.error("RFC y nombre del receptor son obligatorios");
       return;
     }
 
     setTimbrating(true);
     try {
       const items = ventaLineas.map((l: any) => ({
-        product_code: l.productos?.codigo_sat || '01010101',
-        description: l.descripcion || l.productos?.nombre || 'Producto',
-        unit: 'Pieza',
-        unit_code: 'H87',
+        product_code: l.productos?.codigo_sat || "01010101",
+        description: l.descripcion || l.productos?.nombre || "Producto",
+        unit: "Pieza",
+        unit_code: "H87",
         unit_price: l.precio_unitario,
         quantity: l.cantidad,
         iva_rate: (l.iva_pct || 0) / 100,
@@ -169,16 +198,16 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
 
       const venta = ventas?.find((v: any) => v.id === selectedVentaId);
 
-      const { data, error } = await supabase.functions.invoke('facturama', {
+      const { data, error } = await supabase.functions.invoke("facturama", {
         body: {
-          action: 'timbrar',
+          action: "timbrar",
           empresa_id: empresa.id,
           venta_id: selectedVentaId,
-          folio: venta?.folio || '',
-          serie: 'A',
-          name_id: '1',
-          cfdi_type: 'I',
-          currency: 'MXN',
+          folio: venta?.folio || "",
+          serie: "A",
+          name_id: "1",
+          cfdi_type: "I",
+          currency: "MXN",
           payment_form: paymentForm,
           payment_method: paymentMethod,
           expedition_place: empresa.cp,
@@ -202,13 +231,16 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
       if (data?.error) throw new Error(data.error);
 
       const cfdiId = data?.cfdi?.id;
-      if (!cfdiId) throw new Error('Se timbró, pero no se pudo guardar el CFDI localmente');
+      if (!cfdiId)
+        throw new Error(
+          "Se timbró, pero no se pudo guardar el CFDI localmente",
+        );
 
       const cfdiLineas = ventaLineas.map((l: any) => ({
         cfdi_id: cfdiId,
         venta_linea_id: l.id,
         producto_id: l.producto_id,
-        descripcion: l.descripcion || l.productos?.nombre || 'Producto',
+        descripcion: l.descripcion || l.productos?.nombre || "Producto",
         cantidad: l.cantidad,
         precio_unitario: l.precio_unitario,
         subtotal: l.subtotal ?? 0,
@@ -217,71 +249,108 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
         iva_monto: l.iva_monto ?? 0,
         ieps_monto: l.ieps_monto ?? 0,
         total: l.total ?? 0,
-        product_code: l.productos?.codigo_sat || '01010101',
-        unit_code: 'H87',
-        unit_name: 'Pieza',
+        product_code: l.productos?.codigo_sat || "01010101",
+        unit_code: "H87",
+        unit_name: "Pieza",
       }));
 
-      const { error: linesError } = await supabase.from('cfdi_lineas').insert(cfdiLineas);
+      const { error: linesError } = await supabase
+        .from("cfdi_lineas")
+        .insert(cfdiLineas);
       if (linesError) throw linesError;
 
       const ventaLineaIds = ventaLineas.map((l: any) => l.id).filter(Boolean);
       if (ventaLineaIds.length > 0) {
         const { error: updateError } = await supabase
-          .from('venta_lineas')
+          .from("venta_lineas")
           .update({ facturado: true, factura_cfdi_id: cfdiId })
-          .in('id', ventaLineaIds);
+          .in("id", ventaLineaIds);
 
         if (updateError) throw updateError;
       }
 
-      toast.success(`Factura timbrada · UUID: ${data.folio_fiscal?.substring(0, 8)}...`);
-      queryClient.invalidateQueries({ queryKey: ['timbres-saldo'] });
+      toast.success(
+        `Factura timbrada · UUID: ${data.folio_fiscal?.substring(0, 8)}...`,
+      );
+      queryClient.invalidateQueries({ queryKey: ["timbres-saldo"] });
       onSuccess();
       resetForm();
     } catch (e: any) {
-      toast.error(e.message || 'Error al timbrar');
+      toast.error(e.message || "Error al timbrar");
     } finally {
       setTimbrating(false);
     }
   }
 
   function resetForm() {
-    setStep('select');
+    setStep("select");
     setSelectedVentaId(null);
-    setVentaSearch('');
-    setReceiver({ rfc: '', name: '', cfdi_use: 'G01', fiscal_regime: '601', tax_zip_code: '' });
+    setVentaSearch("");
+    setReceiver({
+      rfc: "",
+      name: "",
+      cfdi_use: "G01",
+      fiscal_regime: "601",
+      tax_zip_code: "",
+    });
   }
 
-  const formaOptions = (formasPago || []).map((f: any) => ({ value: f.clave, label: `${f.clave} - ${f.descripcion}` }));
-  const usoOptions = (usoCfdiList || []).map((u: any) => ({ value: u.clave, label: `${u.clave} - ${u.descripcion}` }));
-  const regimenOptions = (regimenesList || []).map((r: any) => ({ value: r.clave, label: `${r.clave} - ${r.descripcion}` }));
+  const formaOptions = (formasPago || []).map((f: any) => ({
+    value: f.clave,
+    label: `${f.clave} - ${f.descripcion}`,
+  }));
+  const usoOptions = (usoCfdiList || []).map((u: any) => ({
+    value: u.clave,
+    label: `${u.clave} - ${u.descripcion}`,
+  }));
+  const regimenOptions = (regimenesList || []).map((r: any) => ({
+    value: r.clave,
+    label: `${r.clave} - ${r.descripcion}`,
+  }));
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) resetForm(); onOpenChange(v); }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) resetForm();
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent className="max-w-2xl w-[95vw] max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle>Timbrar CFDI</DialogTitle>
-            <Badge variant={(timbreSaldo ?? 0) > 0 ? 'secondary' : 'destructive'} className="text-xs">
+            <Badge
+              variant={(timbreSaldo ?? 0) > 0 ? "secondary" : "destructive"}
+              className="text-xs"
+            >
               {timbreSaldo ?? 0} timbres disponibles
             </Badge>
           </div>
           <DialogDescription>
-            {step === 'select' ? 'Selecciona la venta a facturar' : 'Verifica los datos y timbra'}
+            {step === "select"
+              ? "Selecciona la venta a facturar"
+              : "Verifica los datos y timbra"}
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 pr-2">
-          {step === 'select' ? (
+        <div className="pr-2">
+          {step === "select" ? (
             <div className="space-y-3">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Buscar por folio o cliente..." value={ventaSearch} onChange={(e) => setVentaSearch(e.target.value)} className="pl-8" />
+                <Input
+                  placeholder="Buscar por folio o cliente..."
+                  value={ventaSearch}
+                  onChange={(e) => setVentaSearch(e.target.value)}
+                  className="pl-8"
+                />
               </div>
               <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
                 {filteredVentas.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">No hay ventas disponibles para facturar</p>
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    No hay ventas disponibles para facturar
+                  </p>
                 ) : (
                   filteredVentas.map((v: any) => (
                     <button
@@ -292,15 +361,20 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-                          <span className="font-mono text-sm font-semibold">{v.folio || '—'}</span>
-                          <Badge variant="secondary" className="text-[10px]">{v.status}</Badge>
+                          <span className="font-mono text-sm font-semibold">
+                            {v.folio || "—"}
+                          </span>
+                          <Badge variant="secondary" className="text-[10px]">
+                            {v.status}
+                          </Badge>
                         </div>
                         <span className="font-medium text-sm">
                           {fmtC(Number(v.total || 0))}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {(v.clientes as any)?.nombre || 'Sin cliente'} · {fmtDate(v.fecha)}
+                        {(v.clientes as any)?.nombre || "Sin cliente"} ·{" "}
+                        {fmtDate(v.fecha)}
                       </p>
                     </button>
                   ))
@@ -311,45 +385,93 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
             <div className="space-y-4">
               {/* Receiver */}
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-foreground">Datos del Receptor</h3>
+                <h3 className="text-sm font-semibold text-foreground">
+                  Datos del Receptor
+                </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">RFC</Label>
-                    <Input value={receiver.rfc} onChange={(e) => setReceiver({ ...receiver, rfc: e.target.value })} className="font-mono uppercase h-9" />
+                    <Input
+                      value={receiver.rfc}
+                      onChange={(e) =>
+                        setReceiver({ ...receiver, rfc: e.target.value })
+                      }
+                      className="font-mono uppercase h-9"
+                    />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Nombre / Razón Social</Label>
-                    <Input value={receiver.name} onChange={(e) => setReceiver({ ...receiver, name: e.target.value })} className="h-9" />
+                    <Input
+                      value={receiver.name}
+                      onChange={(e) =>
+                        setReceiver({ ...receiver, name: e.target.value })
+                      }
+                      className="h-9"
+                    />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Uso CFDI</Label>
-                    <SearchableSelect options={usoOptions} value={receiver.cfdi_use} onChange={(v) => setReceiver({ ...receiver, cfdi_use: v })} placeholder="Uso CFDI" />
+                    <SearchableSelect
+                      options={usoOptions}
+                      value={receiver.cfdi_use}
+                      onChange={(v) =>
+                        setReceiver({ ...receiver, cfdi_use: v })
+                      }
+                      placeholder="Uso CFDI"
+                    />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Régimen Fiscal</Label>
-                    <SearchableSelect options={regimenOptions} value={receiver.fiscal_regime} onChange={(v) => setReceiver({ ...receiver, fiscal_regime: v })} placeholder="Régimen" />
+                    <SearchableSelect
+                      options={regimenOptions}
+                      value={receiver.fiscal_regime}
+                      onChange={(v) =>
+                        setReceiver({ ...receiver, fiscal_regime: v })
+                      }
+                      placeholder="Régimen"
+                    />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">C.P. Domicilio Fiscal</Label>
-                    <Input value={receiver.tax_zip_code} onChange={(e) => setReceiver({ ...receiver, tax_zip_code: e.target.value })} className="h-9" maxLength={5} />
+                    <Input
+                      value={receiver.tax_zip_code}
+                      onChange={(e) =>
+                        setReceiver({
+                          ...receiver,
+                          tax_zip_code: e.target.value,
+                        })
+                      }
+                      className="h-9"
+                      maxLength={5}
+                    />
                   </div>
                 </div>
               </div>
 
               {/* Payment */}
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-foreground">Datos de Pago</h3>
+                <h3 className="text-sm font-semibold text-foreground">
+                  Datos de Pago
+                </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Forma de Pago</Label>
-                    <SearchableSelect options={formaOptions} value={paymentForm} onChange={setPaymentForm} placeholder="Forma pago" />
+                    <SearchableSelect
+                      options={formaOptions}
+                      value={paymentForm}
+                      onChange={setPaymentForm}
+                      placeholder="Forma pago"
+                    />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Método de Pago</Label>
                     <SearchableSelect
                       options={[
-                        { value: 'PUE', label: 'PUE - Pago en una sola exhibición' },
-                        { value: 'PPD', label: 'PPD - Pago en parcialidades' },
+                        {
+                          value: "PUE",
+                          label: "PUE - Pago en una sola exhibición",
+                        },
+                        { value: "PPD", label: "PPD - Pago en parcialidades" },
                       ]}
                       value={paymentMethod}
                       onChange={setPaymentMethod}
@@ -361,7 +483,9 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
 
               {/* Lines preview */}
               <div className="space-y-2">
-                <h3 className="text-sm font-semibold text-foreground">Conceptos ({ventaLineas?.length || 0})</h3>
+                <h3 className="text-sm font-semibold text-foreground">
+                  Conceptos ({ventaLineas?.length || 0})
+                </h3>
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full text-xs">
                     <thead>
@@ -376,11 +500,17 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
                     <tbody>
                       {(ventaLineas || []).map((l: any) => (
                         <tr key={l.id} className="border-t border-border">
-                          <td className="p-2 truncate max-w-[200px]">{l.descripcion || (l.productos as any)?.nombre}</td>
+                          <td className="p-2 truncate max-w-[200px]">
+                            {l.descripcion || (l.productos as any)?.nombre}
+                          </td>
                           <td className="text-right p-2">{l.cantidad}</td>
-                          <td className="text-right p-2">{fmtC(Number(l.precio_unitario))}</td>
+                          <td className="text-right p-2">
+                            {fmtC(Number(l.precio_unitario))}
+                          </td>
                           <td className="text-right p-2">{l.iva_pct || 0}%</td>
-                          <td className="text-right p-2 font-medium">{fmtC(Number(l.total || 0))}</td>
+                          <td className="text-right p-2 font-medium">
+                            {fmtC(Number(l.total || 0))}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -389,21 +519,38 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
               </div>
 
               {/* Actions */}
-              <div className="flex gap-2 pt-2">
-                <Button variant="outline" className="flex-1" onClick={() => { setStep('select'); setSelectedVentaId(null); }}>
+              <div className="sticky bottom-0 bg-background flex gap-2 pt-3 pb-1">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setStep("select");
+                    setSelectedVentaId(null);
+                  }}
+                >
                   Atrás
                 </Button>
-                <Button className="flex-1" disabled={timbrating} onClick={handleTimbrar}>
+                <Button
+                  className="flex-1"
+                  disabled={timbrating}
+                  onClick={handleTimbrar}
+                >
                   {timbrating ? (
-                    <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Timbrando...</>
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                      Timbrando...
+                    </>
                   ) : (
-                    <><FileCheck className="h-4 w-4 mr-1.5" />Timbrar CFDI</>
+                    <>
+                      <FileCheck className="h-4 w-4 mr-1.5" />
+                      Timbrar CFDI
+                    </>
                   )}
                 </Button>
               </div>
             </div>
           )}
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );
