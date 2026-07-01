@@ -240,7 +240,10 @@ export default function PuntoVentaPage() {
           .gt("saldo_pendiente", 0)
           .in("status", ["confirmado", "entregado", "facturado"]);
         if (error) throw error;
-        const total = (data ?? []).reduce((sum, v) => sum + (Number(v.saldo_pendiente) || 0), 0);
+        const total = (data ?? []).reduce(
+          (sum, v) => sum + (Number(v.saldo_pendiente) || 0),
+          0,
+        );
         if (active) {
           setClienteSaldoPendiente(total);
         }
@@ -515,19 +518,19 @@ export default function PuntoVentaPage() {
     if (productosRaw) {
       console.group("POS Product Diagnostic");
       console.log("Raw products count fetched:", productosRaw.length);
-      
+
       const targetRaw = productosRaw.find(
         (p) =>
           p.codigo?.toLowerCase().includes("prod-0001") ||
-          p.nombre?.toLowerCase().includes("cola")
+          p.nombre?.toLowerCase().includes("cola"),
       );
-      
+
       if (!targetRaw) {
         console.warn(
           "Product 'PROd-0001' / 'Refresco Cola' is NOT in the database results loaded by POS query.",
           "Possible reasons:",
           "1. status is not 'activo' (current status in DB might be different).",
-          "2. se_puede_vender is set to false."
+          "2. se_puede_vender is set to false.",
         );
       } else {
         console.log("Product found in raw fetch:", {
@@ -539,27 +542,27 @@ export default function PuntoVentaPage() {
           vender_sin_stock: targetRaw.vender_sin_stock,
           es_combo: targetRaw.es_combo,
           se_puede_inventariar: targetRaw.se_puede_inventariar,
-          cantidad_global: targetRaw.cantidad
+          cantidad_global: targetRaw.cantidad,
         });
-        
+
         if (productos) {
           const targetProcessed = productos.find((p) => p.id === targetRaw.id);
           console.log("Product processed with warehouse stock:", {
             cantidad_en_almacen: targetProcessed?.cantidad,
             vender_sin_stock: targetProcessed?.vender_sin_stock,
             es_combo: targetProcessed?.es_combo,
-            se_puede_inventariar: targetProcessed?.se_puede_inventariar
+            se_puede_inventariar: targetProcessed?.se_puede_inventariar,
           });
-          
+
           const willShow =
             targetProcessed?.es_combo ||
             targetProcessed?.vender_sin_stock ||
             (targetProcessed?.cantidad ?? 0) > 0;
-            
+
           console.log("Will show in POS grid?", willShow ? "YES" : "NO", {
             reason: !willShow
               ? "Stock is 0 or undefined for this warehouse and 'Vender sin stock' is false."
-              : "Should be visible."
+              : "Should be visible.",
           });
         }
       }
@@ -621,7 +624,7 @@ export default function PuntoVentaPage() {
           .eq("empresa_id", empresa!.id)
           .ilike("nombre", "%general%")
           .limit(1);
-          
+
         if (fallbackData && fallbackData.length > 0) {
           data = fallbackData;
         } else {
@@ -775,11 +778,21 @@ export default function PuntoVentaPage() {
         const pricing = getProductPricing(prod);
         return {
           ...item,
-          precio_unitario: item.presentacion_id ? item.precio_unitario : pricing.unitPrice,
-          precio_unitario_sin_redondeo: item.presentacion_id ? item.precio_unitario_sin_redondeo : pricing.rawUnitPrice,
-          precio_display_sin_redondeo: item.presentacion_id ? item.precio_display_sin_redondeo : pricing.rawDisplayPrice,
-          base_precio: item.presentacion_id ? item.base_precio : (pricing.basePrecio as BasePrecioMode),
-          redondeo: item.presentacion_id ? item.redondeo : (pricing.appliedRule?.redondeo ?? "ninguno"),
+          precio_unitario: item.presentacion_id
+            ? item.precio_unitario
+            : pricing.unitPrice,
+          precio_unitario_sin_redondeo: item.presentacion_id
+            ? item.precio_unitario_sin_redondeo
+            : pricing.rawUnitPrice,
+          precio_display_sin_redondeo: item.presentacion_id
+            ? item.precio_display_sin_redondeo
+            : pricing.rawDisplayPrice,
+          base_precio: item.presentacion_id
+            ? item.base_precio
+            : (pricing.basePrecio as BasePrecioMode),
+          redondeo: item.presentacion_id
+            ? item.redondeo
+            : (pricing.appliedRule?.redondeo ?? "ninguno"),
         };
       }),
     );
@@ -920,15 +933,23 @@ export default function PuntoVentaPage() {
         addToCart(found);
         toast.success(`${found.nombre} agregado`);
       } else {
-        const pr = presentaciones.find(p => p.codigo_barras && p.codigo_barras.toLowerCase() === code.toLowerCase());
+        const pr = presentaciones.find(
+          (p) =>
+            p.codigo_barras &&
+            p.codigo_barras.toLowerCase() === code.toLowerCase(),
+        );
         if (pr) {
-          const pBase = productos.find(p => p.id === pr.producto_id);
+          const pBase = productos.find((p) => p.id === pr.producto_id);
           if (pBase) {
             const pricing = getProductPricing(pBase);
             const factor = Number(pr.factor_base);
             const resolvedPres = resolvePresentacionPricing(
               (effectiveTarifaLineas ?? []) as any[],
-              { id: pr.id, factor_base: factor, precio_especial: pr.precio_especial },
+              {
+                id: pr.id,
+                factor_base: factor,
+                precio_especial: pr.precio_especial,
+              },
               {
                 id: pBase.id,
                 precio_principal: pBase.precio_principal ?? 0,
@@ -942,48 +963,63 @@ export default function PuntoVentaPage() {
                 usa_listas_precio: pBase.usa_listas_precio,
               },
               pricing,
-              clienteListaPrecioId
+              clienteListaPrecioId,
             );
-            const unitPrice = factor > 0 ? (resolvedPres.unitPrice / factor) : 0;
-            const rawUnitPrice = factor > 0 ? (resolvedPres.rawUnitPrice / factor) : 0;
-            const rawDisplayPrice = factor > 0 ? (resolvedPres.rawDisplayPrice / factor) : 0;
-            
-              setCart((prev) => {
-                const lineId = `${selectedProductoPresentacion.id}-${pr.id}`;
-                const existing = prev.find(c => (c.line_id || c.producto_id) === lineId);
-                if (existing) {
-                  return prev.map(c => (c.line_id || c.producto_id) === lineId ? { ...c, cantidad: existing.cantidad + factor } : c);
-                }
-                return [
-                  ...prev,
-                  {
-                    line_id: lineId,
-                    producto_id: pBase.id,
-                    codigo: pr.codigo_barras || pBase.codigo,
-                    nombre: `${pBase.nombre} - ${pr.nombre}`,
-                    precio_unitario: unitPrice,
-                    precio_unitario_sin_redondeo: rawUnitPrice,
-                    precio_display_sin_redondeo: rawDisplayPrice,
-                    cantidad: factor,
-                    tiene_iva: pBase.tiene_iva ?? false,
-                    iva_pct: pBase.tiene_iva ? (pBase.iva_pct ?? 16) : 0,
-                    tiene_ieps: pBase.tiene_ieps ?? false,
-                    ieps_pct: pBase.tiene_ieps ? (pBase.ieps_pct ?? 0) : 0,
-                    unidad: pBase.es_granel ? (pBase.unidad_granel ?? "kg") : "pz",
-                    base_precio: resolvedPres.basePrecio as BasePrecioMode,
-                    redondeo: pricing.appliedRule?.redondeo ?? "ninguno",
-                    _max_stock: (pBase.vender_sin_stock || pBase.es_combo || pBase.se_puede_inventariar === false) ? Infinity : (pBase.cantidad ?? 0),
-                    _es_granel: pBase.es_granel ?? false,
-                    paquetes: 1,
-                    presentacion_id: pr.id,
-                    factor_presentacion: factor,
-                  } as PosItem
-                ];
-              });
-              toast.success(`${pBase.nombre} (${pr.nombre}) agregado`);
-              return;
-            }
+            const unitPrice = factor > 0 ? resolvedPres.unitPrice / factor : 0;
+            const rawUnitPrice =
+              factor > 0 ? resolvedPres.rawUnitPrice / factor : 0;
+            const rawDisplayPrice =
+              factor > 0 ? resolvedPres.rawDisplayPrice / factor : 0;
+
+            setCart((prev) => {
+              const lineId = `${selectedProductoPresentacion.id}-${pr.id}`;
+              const existing = prev.find(
+                (c) => (c.line_id || c.producto_id) === lineId,
+              );
+              if (existing) {
+                return prev.map((c) =>
+                  (c.line_id || c.producto_id) === lineId
+                    ? { ...c, cantidad: existing.cantidad + factor }
+                    : c,
+                );
+              }
+              return [
+                ...prev,
+                {
+                  line_id: lineId,
+                  producto_id: pBase.id,
+                  codigo: pr.codigo_barras || pBase.codigo,
+                  nombre: `${pBase.nombre} - ${pr.nombre}`,
+                  precio_unitario: unitPrice,
+                  precio_unitario_sin_redondeo: rawUnitPrice,
+                  precio_display_sin_redondeo: rawDisplayPrice,
+                  cantidad: factor,
+                  tiene_iva: pBase.tiene_iva ?? false,
+                  iva_pct: pBase.tiene_iva ? (pBase.iva_pct ?? 16) : 0,
+                  tiene_ieps: pBase.tiene_ieps ?? false,
+                  ieps_pct: pBase.tiene_ieps ? (pBase.ieps_pct ?? 0) : 0,
+                  unidad: pBase.es_granel
+                    ? (pBase.unidad_granel ?? "kg")
+                    : "pz",
+                  base_precio: resolvedPres.basePrecio as BasePrecioMode,
+                  redondeo: pricing.appliedRule?.redondeo ?? "ninguno",
+                  _max_stock:
+                    pBase.vender_sin_stock ||
+                    pBase.es_combo ||
+                    pBase.se_puede_inventariar === false
+                      ? Infinity
+                      : (pBase.cantidad ?? 0),
+                  _es_granel: pBase.es_granel ?? false,
+                  paquetes: 1,
+                  presentacion_id: pr.id,
+                  factor_presentacion: factor,
+                } as PosItem,
+              ];
+            });
+            toast.success(`${pBase.nombre} (${pr.nombre}) agregado`);
+            return;
           }
+        }
         toast.error(`Producto no encontrado: ${code}`);
       }
     },
@@ -1034,7 +1070,8 @@ export default function PuntoVentaPage() {
       return;
     }
     const stock = p.cantidad ?? 0;
-    const canSellWithout = p.es_combo || p.se_puede_inventariar === false || p.vender_sin_stock;
+    const canSellWithout =
+      p.es_combo || p.se_puede_inventariar === false || p.vender_sin_stock;
     const pricing = getProductPricing(p);
 
     setCart((prev) => {
@@ -1046,7 +1083,9 @@ export default function PuntoVentaPage() {
           return prev;
         }
         return prev.map((c) =>
-          (c.line_id || c.producto_id) === p.id ? { ...c, cantidad: newQty } : c,
+          (c.line_id || c.producto_id) === p.id
+            ? { ...c, cantidad: newQty }
+            : c,
         );
       }
       if (!canSellWithout && stock < 1) {
@@ -1080,19 +1119,26 @@ export default function PuntoVentaPage() {
 
   const updateQty = (id: string, qty: number) => {
     if (qty <= 0) {
-      setCart((prev) => prev.filter((c) => (c.line_id || c.producto_id) !== id));
+      setCart((prev) =>
+        prev.filter((c) => (c.line_id || c.producto_id) !== id),
+      );
     } else {
       const item = cart.find((c) => (c.line_id || c.producto_id) === id);
       const prod = productos?.find((p) => p.id === item?.producto_id);
-      const maxStock = (prod?.vender_sin_stock || prod?.es_combo || prod?.se_puede_inventariar === false)
-        ? Infinity
-        : (prod?.cantidad ?? 0);
+      const maxStock =
+        prod?.vender_sin_stock ||
+        prod?.es_combo ||
+        prod?.se_puede_inventariar === false
+          ? Infinity
+          : (prod?.cantidad ?? 0);
       if (qty > maxStock) {
         toast.error(`Stock máximo: ${maxStock}`);
         return;
       }
       setCart((prev) =>
-        prev.map((c) => ((c.line_id || c.producto_id) === id ? { ...c, cantidad: qty } : c)),
+        prev.map((c) =>
+          (c.line_id || c.producto_id) === id ? { ...c, cantidad: qty } : c,
+        ),
       );
     }
   };
@@ -1596,8 +1642,14 @@ export default function PuntoVentaPage() {
           })),
         total: totals.total,
         condicionPago: condicion,
-        metodoPago: condicion === "credito" ? undefined : (metodosUsados || "efectivo"),
-        montoRecibido: totalPagado > 0 ? totalPagado : undefined,
+        metodoPago:
+          condicion === "credito" ? undefined : metodosUsados || "efectivo",
+        montoRecibido:
+          condicion === "credito"
+            ? undefined
+            : totalPagado > 0
+              ? totalPagado
+              : undefined,
         cambio:
           totalAppliedToAccountsPOS > 0
             ? Math.max(
@@ -1618,16 +1670,17 @@ export default function PuntoVentaPage() {
             : saldoAnteriorCliente > 0
               ? Math.max(0, saldoAnteriorCliente - totalAppliedToAccountsPOS)
               : undefined,
-        pagos: condicion === "credito"
-          ? []
-          : (paySplitsComputed.length > 0
-            ? paySplitsComputed
-            : [{ metodo: "efectivo", monto: totals.total }]
-          ).map((s) => ({
-            metodo: s.metodo,
-            monto: (s as any).monto ?? totals.total,
-            fecha: fmtDate(todayInTimezone()),
-          })),
+        pagos:
+          condicion === "credito"
+            ? []
+            : (paySplitsComputed.length > 0
+                ? paySplitsComputed
+                : [{ metodo: "efectivo", monto: totals.total }]
+              ).map((s) => ({
+                metodo: s.metodo,
+                monto: (s as any).monto ?? totals.total,
+                fecha: fmtDate(todayInTimezone()),
+              })),
       });
 
       toast.success("¡Venta registrada!");
@@ -1748,7 +1801,6 @@ export default function PuntoVentaPage() {
               <Tag className="h-3 w-3" /> {effectiveListaNombre}
             </span>
           )}
-
         </div>
       </header>
 
@@ -1757,7 +1809,9 @@ export default function PuntoVentaPage() {
           <div className="flex items-center gap-2 min-w-0">
             <Zap className="h-4 w-4 animate-pulse text-amber-100 shrink-0" />
             <span className="truncate">
-              Modo Venta Rápida Activo — Venta principal en espera ({mainCartBackup.cart.length} {mainCartBackup.cart.length === 1 ? 'producto' : 'productos'})
+              Modo Venta Rápida Activo — Venta principal en espera (
+              {mainCartBackup.cart.length}{" "}
+              {mainCartBackup.cart.length === 1 ? "producto" : "productos"})
             </span>
           </div>
           <button
@@ -1884,7 +1938,9 @@ export default function PuntoVentaPage() {
                     productos?.filter(
                       (p) =>
                         p.clasificacion_id === c.id &&
-                        (p.es_combo || p.vender_sin_stock || (p.cantidad ?? 0) > 0),
+                        (p.es_combo ||
+                          p.vender_sin_stock ||
+                          (p.cantidad ?? 0) > 0),
                     ).length ?? 0;
                   return (
                     <button
@@ -1955,8 +2011,13 @@ export default function PuntoVentaPage() {
                   </thead>
                   <tbody>
                     {filteredProducts.map((p) => {
-                      const cartItems = cart.filter((c) => c.producto_id === p.id);
-                      const inCartCount = cartItems.reduce((sum, c) => sum + c.cantidad, 0);
+                      const cartItems = cart.filter(
+                        (c) => c.producto_id === p.id,
+                      );
+                      const inCartCount = cartItems.reduce(
+                        (sum, c) => sum + c.cantidad,
+                        0,
+                      );
                       const inCart = inCartCount > 0;
                       const stock = p.cantidad ?? 0;
                       const unidad = (p as any).es_granel
@@ -1965,9 +2026,16 @@ export default function PuntoVentaPage() {
                       const pricing = getProductPricing(p);
                       const listaNombre =
                         clienteListaNombre || defaultListaNombre || "General";
-                      const prodPresentaciones = presentaciones.filter((pr: any) => pr.producto_id === p.id);
+                      const prodPresentaciones = presentaciones.filter(
+                        (pr: any) => pr.producto_id === p.id,
+                      );
                       let equivalentText = null;
-                      if (prodPresentaciones.length > 0 && stock > 0 && !p.es_combo && p.se_puede_inventariar !== false) {
+                      if (
+                        prodPresentaciones.length > 0 &&
+                        stock > 0 &&
+                        !p.es_combo &&
+                        p.se_puede_inventariar !== false
+                      ) {
                         const pres = prodPresentaciones[0];
                         const factor = Number(pres.factor_base) || 1;
                         if (factor > 1) {
@@ -2000,7 +2068,8 @@ export default function PuntoVentaPage() {
                                 )}
                                 {prodPresentaciones.length > 0 && (
                                   <span className="ml-2 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[8px] font-bold text-primary">
-                                    <Package className="w-3 h-3 mr-0.5" /> {prodPresentaciones.length} pres.
+                                    <Package className="w-3 h-3 mr-0.5" />{" "}
+                                    {prodPresentaciones.length} pres.
                                   </span>
                                 )}
                               </span>
@@ -2008,7 +2077,6 @@ export default function PuntoVentaPage() {
                                 {p.codigo}
                               </span>
                             </div>
-
                           </td>
                           <td className="px-2 py-2 hidden sm:table-cell">
                             <span className="inline-flex items-center rounded-md bg-accent/60 text-foreground/70 px-1.5 py-0.5 text-[10px] font-medium truncate max-w-[140px]">
@@ -2022,8 +2090,12 @@ export default function PuntoVentaPage() {
                             </span>
                           </td>
                           <td className="px-2 py-2 text-right whitespace-nowrap">
-                            <div className={`font-semibold ${p.es_combo || p.se_puede_inventariar === false ? "text-muted-foreground" : stock > 0 ? "text-green-600" : "text-destructive"}`}>
-                              {p.es_combo || p.se_puede_inventariar === false ? "—" : fmtNum(stock)}{" "}
+                            <div
+                              className={`font-semibold ${p.es_combo || p.se_puede_inventariar === false ? "text-muted-foreground" : stock > 0 ? "text-green-600" : "text-destructive"}`}
+                            >
+                              {p.es_combo || p.se_puede_inventariar === false
+                                ? "—"
+                                : fmtNum(stock)}{" "}
                               <span className="text-[9px] font-normal text-muted-foreground">
                                 {unidad}
                               </span>
@@ -2057,13 +2129,25 @@ export default function PuntoVentaPage() {
               <div className="grid grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-1.5">
                 {filteredProducts.map((p) => {
                   const cartItems = cart.filter((c) => c.producto_id === p.id);
-                  const inCartCount = cartItems.reduce((sum, c) => sum + c.cantidad, 0);
+                  const inCartCount = cartItems.reduce(
+                    (sum, c) => sum + c.cantidad,
+                    0,
+                  );
                   const inCart = inCartCount > 0;
                   const stock = p.cantidad ?? 0;
-                  const unidad = (p as any).es_granel ? ((p as any).unidad_granel || "kg") : "pz";
-                  const prodPresentaciones = presentaciones.filter((pr: any) => pr.producto_id === p.id);
+                  const unidad = (p as any).es_granel
+                    ? (p as any).unidad_granel || "kg"
+                    : "pz";
+                  const prodPresentaciones = presentaciones.filter(
+                    (pr: any) => pr.producto_id === p.id,
+                  );
                   let equivalentText = null;
-                  if (prodPresentaciones.length > 0 && stock > 0 && !p.es_combo && p.se_puede_inventariar !== false) {
+                  if (
+                    prodPresentaciones.length > 0 &&
+                    stock > 0 &&
+                    !p.es_combo &&
+                    p.se_puede_inventariar !== false
+                  ) {
                     const pres = prodPresentaciones[0];
                     const factor = Number(pres.factor_base) || 1;
                     if (factor > 1) {
@@ -2110,7 +2194,8 @@ export default function PuntoVentaPage() {
                         )}
                         {prodPresentaciones.length > 0 && (
                           <span className="shrink-0 inline-flex items-center rounded bg-primary/10 px-1 py-0.5 text-[7px] font-bold text-primary leading-none">
-                            <Package className="w-2.5 h-2.5 mr-0.5" /> {prodPresentaciones.length}
+                            <Package className="w-2.5 h-2.5 mr-0.5" />{" "}
+                            {prodPresentaciones.length}
                           </span>
                         )}
                       </div>
@@ -2122,15 +2207,16 @@ export default function PuntoVentaPage() {
                         <span className="text-[11px] font-bold text-primary">
                           {fmtM(getProductPricing(p).displayPrice)}
                           <span className="text-[7px] font-normal text-muted-foreground ml-0.5">
-                            /
-                            {unidad}
+                            /{unidad}
                           </span>
                         </span>
                         <div className="flex flex-col items-end">
                           <span
                             className={`text-[8px] font-medium ${p.es_combo || p.se_puede_inventariar === false ? "text-muted-foreground" : stock > 0 ? "text-green-600" : "text-destructive"}`}
                           >
-                            {p.es_combo || p.se_puede_inventariar === false ? "—" : fmtNum(stock)}
+                            {p.es_combo || p.se_puede_inventariar === false
+                              ? "—"
+                              : fmtNum(stock)}
                           </span>
                           {equivalentText && (
                             <span className="text-[7px] font-medium text-primary leading-none mt-0.5">
@@ -2283,7 +2369,10 @@ export default function PuntoVentaPage() {
                     <div className="flex items-center bg-background rounded-md border border-border">
                       <button
                         onClick={() =>
-                          updateQty(item.line_id || item.producto_id, item.cantidad - (item.presentacion_factor || 1))
+                          updateQty(
+                            item.line_id || item.producto_id,
+                            item.cantidad - (item.presentacion_factor || 1),
+                          )
                         }
                         className="px-2 py-1 hover:bg-accent rounded-l-md transition-colors"
                       >
@@ -2311,7 +2400,10 @@ export default function PuntoVentaPage() {
                       )}
                       <button
                         onClick={() =>
-                          updateQty(item.line_id || item.producto_id, item.cantidad + (item.presentacion_factor || 1))
+                          updateQty(
+                            item.line_id || item.producto_id,
+                            item.cantidad + (item.presentacion_factor || 1),
+                          )
                         }
                         className="px-2 py-1 hover:bg-accent rounded-r-md transition-colors"
                       >
@@ -2601,7 +2693,6 @@ export default function PuntoVentaPage() {
             </div>
 
             <div className="px-5 py-4 space-y-4 overflow-auto flex-1">
-
               {/* Condición de pago — solo mostrar Crédito si el cliente tiene crédito */}
               <div>
                 <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -2925,9 +3016,19 @@ export default function PuntoVentaPage() {
                 const bloqueadoPorFaltaDeCredito =
                   condicion === "credito" && !clienteCredito;
 
-                const nuevoAdeudo = condicion === 'credito' ? totals.total : (condicion === 'contado' && faltante > 0 && payMode === 'efectivo' ? faltante : 0);
+                const nuevoAdeudo =
+                  condicion === "credito"
+                    ? totals.total
+                    : condicion === "contado" &&
+                        faltante > 0 &&
+                        payMode === "efectivo"
+                      ? faltante
+                      : 0;
                 const totalDeudaNueva = clienteSaldoPendiente + nuevoAdeudo;
-                const excedeLimiteCredito = clienteCredito === true && clienteLimiteCredito > 0 && totalDeudaNueva > clienteLimiteCredito;
+                const excedeLimiteCredito =
+                  clienteCredito === true &&
+                  clienteLimiteCredito > 0 &&
+                  totalDeudaNueva > clienteLimiteCredito;
 
                 return (
                   <div className="flex flex-col gap-2">
@@ -2938,7 +3039,9 @@ export default function PuntoVentaPage() {
                     )}
                     {excedeLimiteCredito && (
                       <p className="text-[12px] text-destructive text-center font-medium px-2">
-                        El cliente excede su límite de crédito de {fmtM(clienteLimiteCredito)} (Deuda total: {fmtM(totalDeudaNueva)}).
+                        El cliente excede su límite de crédito de{" "}
+                        {fmtM(clienteLimiteCredito)} (Deuda total:{" "}
+                        {fmtM(totalDeudaNueva)}).
                       </p>
                     )}
                     <button
@@ -3300,7 +3403,9 @@ export default function PuntoVentaPage() {
               0,
           )}
           stockMax={
-            (selectedProductoPresentacion?.vender_sin_stock || selectedProductoPresentacion?.es_combo || selectedProductoPresentacion?.se_puede_inventariar === false)
+            selectedProductoPresentacion?.vender_sin_stock ||
+            selectedProductoPresentacion?.es_combo ||
+            selectedProductoPresentacion?.se_puede_inventariar === false
               ? Infinity
               : Number(selectedProductoPresentacion?.cantidad ?? 0)
           }
@@ -3308,25 +3413,32 @@ export default function PuntoVentaPage() {
           clienteListaPrecioId={effectiveListaId}
           onConfirm={(payload: any) => {
             setCart((prev) => {
-              const lineId = payload.presentacion?.id 
-                ? `${selectedProductoPresentacion.id}-${payload.presentacion.id}` 
+              const lineId = payload.presentacion?.id
+                ? `${selectedProductoPresentacion.id}-${payload.presentacion.id}`
                 : selectedProductoPresentacion.id;
-                
-              const existing = prev.find(c => (c.line_id || c.producto_id) === lineId);
+
+              const existing = prev.find(
+                (c) => (c.line_id || c.producto_id) === lineId,
+              );
               if (existing) {
-                return prev.map(c => (c.line_id || c.producto_id) === lineId 
-                  ? { ...c, cantidad: c.cantidad + payload.cantidadBase } 
-                  : c
+                return prev.map((c) =>
+                  (c.line_id || c.producto_id) === lineId
+                    ? { ...c, cantidad: c.cantidad + payload.cantidadBase }
+                    : c,
                 );
               }
-              
+
               return [
                 ...prev,
                 {
                   line_id: lineId,
                   producto_id: selectedProductoPresentacion.id,
-                  codigo: payload.presentacion?.codigo_barras || selectedProductoPresentacion.codigo,
-                  nombre: payload.presentacion ? `${selectedProductoPresentacion.nombre} - ${payload.presentacion.nombre}` : selectedProductoPresentacion.nombre,
+                  codigo:
+                    payload.presentacion?.codigo_barras ||
+                    selectedProductoPresentacion.codigo,
+                  nombre: payload.presentacion
+                    ? `${selectedProductoPresentacion.nombre} - ${payload.presentacion.nombre}`
+                    : selectedProductoPresentacion.nombre,
                   precio_unitario: payload.pricing.unitPrice,
                   precio_unitario_sin_redondeo: payload.pricing.rawUnitPrice,
                   precio_display_sin_redondeo: payload.pricing.rawDisplayPrice,
@@ -3339,7 +3451,9 @@ export default function PuntoVentaPage() {
                   ieps_pct: selectedProductoPresentacion.tiene_ieps
                     ? (selectedProductoPresentacion.ieps_pct ?? 0)
                     : 0,
-                  unidad: selectedProductoPresentacion.es_granel ? (selectedProductoPresentacion.unidad_granel ?? "kg") : "pz",
+                  unidad: selectedProductoPresentacion.es_granel
+                    ? (selectedProductoPresentacion.unidad_granel ?? "kg")
+                    : "pz",
                   base_precio: payload.pricing.basePrecio as BasePrecioMode,
                   redondeo: payload.pricing.appliedRule?.redondeo ?? "ninguno",
                   _max_stock: selectedProductoPresentacion.vender_sin_stock
@@ -3352,7 +3466,7 @@ export default function PuntoVentaPage() {
                     ? Number(payload.presentacion.factor_base)
                     : null,
                   paquetes: payload.paquetes ?? null,
-                }
+                },
               ];
             });
 
