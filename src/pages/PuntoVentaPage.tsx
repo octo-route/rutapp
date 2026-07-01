@@ -217,11 +217,42 @@ export default function PuntoVentaPage() {
   const [clienteCredito, setClienteCredito] = useState(false);
   const [clienteDiasCredito, setClienteDiasCredito] = useState(0);
   const [clienteLimiteCredito, setClienteLimiteCredito] = useState(0);
+  const [clienteSaldoPendiente, setClienteSaldoPendiente] = useState(0);
   const [fechaVencimiento, setFechaVencimiento] = useState("");
   const [showPresentacionModal, setShowPresentacionModal] = useState(false);
   const [selectedProductoPresentacion, setSelectedProductoPresentacion] =
     useState<any>(null);
   const isMobile = useIsMobile();
+
+  useEffect(() => {
+    if (!clienteId || !empresa?.id) {
+      setClienteSaldoPendiente(0);
+      return;
+    }
+    let active = true;
+    async function loadSaldo() {
+      try {
+        const { data, error } = await supabase
+          .from("ventas")
+          .select("saldo_pendiente")
+          .eq("empresa_id", empresa.id)
+          .eq("cliente_id", clienteId)
+          .gt("saldo_pendiente", 0)
+          .in("status", ["confirmado", "entregado", "facturado"]);
+        if (error) throw error;
+        const total = (data ?? []).reduce((sum, v) => sum + (Number(v.saldo_pendiente) || 0), 0);
+        if (active) {
+          setClienteSaldoPendiente(total);
+        }
+      } catch (err) {
+        console.error("Error loading client balance:", err);
+      }
+    }
+    loadSaldo();
+    return () => {
+      active = false;
+    };
+  }, [clienteId, empresa?.id]);
 
   // Estado de respaldo para el modo Venta Rápida
   const [mainCartBackup, setMainCartBackup] = useState<{
@@ -1565,7 +1596,7 @@ export default function PuntoVentaPage() {
           })),
         total: totals.total,
         condicionPago: condicion,
-        metodoPago: metodosUsados || "efectivo",
+        metodoPago: condicion === "credito" ? undefined : (metodosUsados || "efectivo"),
         montoRecibido: totalPagado > 0 ? totalPagado : undefined,
         cambio:
           totalAppliedToAccountsPOS > 0
@@ -1587,14 +1618,16 @@ export default function PuntoVentaPage() {
             : saldoAnteriorCliente > 0
               ? Math.max(0, saldoAnteriorCliente - totalAppliedToAccountsPOS)
               : undefined,
-        pagos: (paySplitsComputed.length > 0
-          ? paySplitsComputed
-          : [{ metodo: "efectivo", monto: totals.total }]
-        ).map((s) => ({
-          metodo: s.metodo,
-          monto: (s as any).monto ?? totals.total,
-          fecha: fmtDate(todayInTimezone()),
-        })),
+        pagos: condicion === "credito"
+          ? []
+          : (paySplitsComputed.length > 0
+            ? paySplitsComputed
+            : [{ metodo: "efectivo", monto: totals.total }]
+          ).map((s) => ({
+            metodo: s.metodo,
+            monto: (s as any).monto ?? totals.total,
+            fecha: fmtDate(todayInTimezone()),
+          })),
       });
 
       toast.success("¡Venta registrada!");
@@ -2893,7 +2926,7 @@ export default function PuntoVentaPage() {
                   condicion === "credito" && !clienteCredito;
 
                 const nuevoAdeudo = condicion === 'credito' ? totals.total : (condicion === 'contado' && faltante > 0 && payMode === 'efectivo' ? faltante : 0);
-                const totalDeudaNueva = saldoAnterior + nuevoAdeudo;
+                const totalDeudaNueva = clienteSaldoPendiente + nuevoAdeudo;
                 const excedeLimiteCredito = clienteCredito === true && clienteLimiteCredito > 0 && totalDeudaNueva > clienteLimiteCredito;
 
                 return (

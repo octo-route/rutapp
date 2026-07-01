@@ -262,7 +262,7 @@ export function ProductoDetalleModal({
                     <div className="text-right shrink-0">
                       <div className="text-[13px] font-bold text-foreground">{fmt(opt.displayPrice)}</div>
                       {opt.displayPrice !== opt.unitPrice && (
-                        <div className="text-[9px] text-muted-foreground">neto: {fmt(opt.unitPrice)}</div>
+                        <div className="text-[9px] text-muted-foreground">sin imp: {fmt(opt.unitPrice)}</div>
                       )}
                     </div>
                   </>

@@ -187,7 +187,7 @@ export function ListaPrecioPicker({
                     <>
                       <div className="font-semibold">{fmt(defaultPricing.displayPrice)}</div>
                       {defaultPricing.displayPrice !== defaultPricing.unitPrice && (
-                        <div className="text-[9px] text-muted-foreground">neto: {fmt(defaultPricing.unitPrice)}</div>
+                        <div className="text-[9px] text-muted-foreground">sin imp: {fmt(defaultPricing.unitPrice)}</div>
                       )}
                     </>
                   );
@@ -223,7 +223,7 @@ export function ListaPrecioPicker({
                 <div className="text-right shrink-0">
                   <div className="font-semibold">{fmt(opt.displayPrice)}</div>
                   {opt.displayPrice !== opt.unitPrice && (
-                    <div className="text-[9px] text-muted-foreground">neto: {fmt(opt.unitPrice)}</div>
+                    <div className="text-[9px] text-muted-foreground">sin imp: {fmt(opt.unitPrice)}</div>
                   )}
                 </div>
               </button>

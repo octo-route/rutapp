@@ -339,7 +339,7 @@ async function timbrar(supabase: any, userId: string, body: any) {
     // IVA Trasladado
     if (item.iva_rate && item.iva_rate > 0) {
       const rate = r6(item.iva_rate);
-      const amount = r2(subtotal * rate);
+      const amount = item.iva_amount !== undefined ? r2(item.iva_amount) : r2(subtotal * rate);
       facItem.Taxes.push({
         Total: amount,
         Name: "IVA",
@@ -353,7 +353,7 @@ async function timbrar(supabase: any, userId: string, body: any) {
     // IVA Retenido
     if (item.iva_ret_rate && item.iva_ret_rate > 0) {
       const rate = r6(item.iva_ret_rate);
-      const amount = r2(subtotal * rate);
+      const amount = item.iva_ret_amount !== undefined ? r2(item.iva_ret_amount) : r2(subtotal * rate);
       facItem.Taxes.push({
         Total: amount,
         Name: "IVA",
@@ -367,7 +367,7 @@ async function timbrar(supabase: any, userId: string, body: any) {
     // ISR Retenido
     if (item.isr_ret_rate && item.isr_ret_rate > 0) {
       const rate = r6(item.isr_ret_rate);
-      const amount = r2(subtotal * rate);
+      const amount = item.isr_ret_amount !== undefined ? r2(item.isr_ret_amount) : r2(subtotal * rate);
       facItem.Taxes.push({
         Total: amount,
         Name: "ISR",
@@ -381,7 +381,7 @@ async function timbrar(supabase: any, userId: string, body: any) {
     // IEPS
     if (item.ieps_rate && item.ieps_rate > 0) {
       const rate = r6(item.ieps_rate);
-      const amount = r2(subtotal * rate);
+      const amount = item.ieps_amount !== undefined ? r2(item.ieps_amount) : r2(subtotal * rate);
       facItem.Taxes.push({
         Total: amount,
         Name: "IEPS",

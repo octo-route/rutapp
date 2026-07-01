@@ -85,6 +85,12 @@ export function StepPago(props: Props) {
   // Además, si solo hay un pago de Efectivo, mantenerlo sincronizado con el total a cobrar
   // (para que cambios en descuento/cuentas pendientes se reflejen automáticamente).
   React.useEffect(() => {
+    if (condicionPago === 'credito' || condicionPago === 'por_definir') {
+      if (pagos.length > 0) {
+        setPagos([]);
+      }
+      return;
+    }
     if (totalACobrar > 0 && pagos.length === 0) {
       setPagos([{ id: crypto.randomUUID(), metodo_pago: 'efectivo', monto: totalACobrar, referencia: '' }]);
       return;
@@ -93,7 +99,7 @@ export function StepPago(props: Props) {
       setPagos([{ ...pagos[0], monto: totalACobrar }]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalACobrar]);
+  }, [totalACobrar, condicionPago]);
 
   const addPagoLinea = (metodo: PagoLinea['metodo_pago']) => {
     setPagos(prev => [...prev, { id: crypto.randomUUID(), metodo_pago: metodo, monto: restante, referencia: '' }]);
@@ -252,96 +258,98 @@ export function StepPago(props: Props) {
         )}
 
         {/* Payment lines section */}
-        <section className="bg-card rounded-lg p-3">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Pagos recibidos</p>
+        {totalACobrar > 0 && (
+          <section className="bg-card rounded-lg p-3">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Pagos recibidos</p>
 
-          {/* Existing payment lines */}
-          <div className="space-y-2 mb-2.5">
-            {pagos.map((pago) => {
-              const meta = METODOS.find(m => m.value === pago.metodo_pago)!;
-              const Icon = meta.Icon;
-              return (
-                <div key={pago.id} className="rounded-md border border-border/60 p-2.5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center">
-                        <Icon className="h-4 w-4 text-primary" />
+            {/* Existing payment lines */}
+            <div className="space-y-2 mb-2.5">
+              {pagos.map((pago) => {
+                const meta = METODOS.find(m => m.value === pago.metodo_pago)!;
+                const Icon = meta.Icon;
+                return (
+                  <div key={pago.id} className="rounded-md border border-border/60 p-2.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center">
+                          <Icon className="h-4 w-4 text-primary" />
+                        </div>
+                        <span className="text-[12.5px] font-semibold text-foreground">{meta.label}</span>
                       </div>
-                      <span className="text-[12.5px] font-semibold text-foreground">{meta.label}</span>
-                    </div>
-                    {pagos.length > 1 && (
-                      <button onClick={() => removePago(pago.id)} className="text-destructive hover:text-destructive/80 active:scale-95">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Amount */}
-                  <div>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-muted-foreground font-medium">{s}</span>
-                      <input
-                        type="number" inputMode="decimal"
-                        className="w-full bg-accent/40 rounded-lg pl-7 pr-3 py-2.5 text-[16px] font-bold text-foreground focus:outline-none focus:ring-1.5 focus:ring-primary/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        value={pago.monto || ''}
-                        placeholder="0.00"
-                        onChange={e => updatePago(pago.id, 'monto', parseFloat(e.target.value) || 0)}
-                      />
+                      {pagos.length > 1 && (
+                        <button onClick={() => removePago(pago.id)} className="text-destructive hover:text-destructive/80 active:scale-95">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
 
-                    {/* Quick bill buttons for efectivo - dynamic based on remaining */}
-                    {pago.metodo_pago === 'efectivo' && (
-                      <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        {getDynamicBills(restante + pago.monto).map(b => (
-                          <button key={b.label} onClick={() => updatePago(pago.id, 'monto', b.amount)}
-                            className={`flex-1 min-w-[60px] py-1.5 rounded-lg text-[12px] font-semibold transition-all active:scale-95 ${pago.monto === b.amount ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-accent/60 text-foreground'}`}>
-                            {b.label === 'Exacto' ? b.label : `${s}${b.amount}`}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Reference for non-cash */}
-                  {pago.metodo_pago !== 'efectivo' && (
+                    {/* Amount */}
                     <div>
-                      <label className="text-[10px] text-muted-foreground font-medium">Referencia (opcional)</label>
-                      <input type="text" className="w-full mt-0.5 bg-accent/40 rounded-lg px-3 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1.5 focus:ring-primary/40" value={pago.referencia} placeholder="No. de referencia" onChange={e => updatePago(pago.id, 'referencia', e.target.value)} />
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-muted-foreground font-medium">{s}</span>
+                        <input
+                          type="number" inputMode="decimal"
+                          className="w-full bg-accent/40 rounded-lg pl-7 pr-3 py-2.5 text-[16px] font-bold text-foreground focus:outline-none focus:ring-1.5 focus:ring-primary/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          value={pago.monto || ''}
+                          placeholder="0.00"
+                          onChange={e => updatePago(pago.id, 'monto', parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+
+                      {/* Quick bill buttons for efectivo - dynamic based on remaining */}
+                      {pago.metodo_pago === 'efectivo' && (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {getDynamicBills(restante + pago.monto).map(b => (
+                            <button key={b.label} onClick={() => updatePago(pago.id, 'monto', b.amount)}
+                              className={`flex-1 min-w-[60px] py-1.5 rounded-lg text-[12px] font-semibold transition-all active:scale-95 ${pago.monto === b.amount ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-accent/60 text-foreground'}`}>
+                              {b.label === 'Exacto' ? b.label : `${s}${b.amount}`}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
 
-          {/* Add other methods - only those not yet used */}
-          {totalACobrar > 0 && metodosDisponibles.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {metodosDisponibles.map(({ value, label, Icon }) => (
-                <button key={value} onClick={() => addPagoLinea(value)}
-                  className="flex-1 min-w-[80px] py-2 px-3 rounded-full text-[11px] font-semibold transition-all active:scale-95 flex items-center justify-center gap-1 bg-accent/40 text-foreground border border-dashed border-border hover:bg-accent/70 hover:border-primary/40">
-                  <Plus className="h-3 w-3" /><Icon className="h-3.5 w-3.5" /> {label}
-                </button>
-              ))}
+                    {/* Reference for non-cash */}
+                    {pago.metodo_pago !== 'efectivo' && (
+                      <div>
+                        <label className="text-[10px] text-muted-foreground font-medium">Referencia (opcional)</label>
+                        <input type="text" className="w-full mt-0.5 bg-accent/40 rounded-lg px-3 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1.5 focus:ring-primary/40" value={pago.referencia} placeholder="No. de referencia" onChange={e => updatePago(pago.id, 'referencia', e.target.value)} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          )}
 
-          {/* Change display */}
-          {cambio > 0 && (
-            <div className="flex justify-between bg-green-50 dark:bg-green-950/30 rounded-md px-2.5 py-2 mt-2">
-              <span className="text-[12px] text-green-700 dark:text-green-400 font-medium">Cambio</span>
-              <span className="text-[14px] text-green-700 dark:text-green-400 font-bold">{fmt(cambio)}</span>
-            </div>
-          )}
+            {/* Add other methods - only those not yet used */}
+            {totalACobrar > 0 && metodosDisponibles.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {metodosDisponibles.map(({ value, label, Icon }) => (
+                  <button key={value} onClick={() => addPagoLinea(value)}
+                    className="flex-1 min-w-[80px] py-2 px-3 rounded-full text-[11px] font-semibold transition-all active:scale-95 flex items-center justify-center gap-1 bg-accent/40 text-foreground border border-dashed border-border hover:bg-accent/70 hover:border-primary/40">
+                    <Plus className="h-3 w-3" /><Icon className="h-3.5 w-3.5" /> {label}
+                  </button>
+                ))}
+              </div>
+            )}
 
-          {/* Remaining to pay indicator */}
-          {restante > 0.01 && pagos.length > 0 && (
-            <div className="flex justify-between bg-amber-50 dark:bg-amber-950/30 rounded-md px-2.5 py-2 mt-2">
-              <span className="text-[12px] text-amber-700 dark:text-amber-400 font-medium">Falta por cubrir</span>
-              <span className="text-[14px] text-amber-700 dark:text-amber-400 font-bold">{fmt(restante)}</span>
-            </div>
-          )}
-        </section>
+            {/* Change display */}
+            {cambio > 0 && (
+              <div className="flex justify-between bg-green-50 dark:bg-green-950/30 rounded-md px-2.5 py-2 mt-2">
+                <span className="text-[12px] text-green-700 dark:text-green-400 font-medium">Cambio</span>
+                <span className="text-[14px] text-green-700 dark:text-green-400 font-bold">{fmt(cambio)}</span>
+              </div>
+            )}
+
+            {/* Remaining to pay indicator */}
+            {restante > 0.01 && pagos.length > 0 && (
+              <div className="flex justify-between bg-amber-50 dark:bg-amber-950/30 rounded-md px-2.5 py-2 mt-2">
+                <span className="text-[12px] text-amber-700 dark:text-amber-400 font-medium">Falta por cubrir</span>
+                <span className="text-[14px] text-amber-700 dark:text-amber-400 font-bold">{fmt(restante)}</span>
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="bg-card rounded-lg p-3"><p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Notas</p><textarea className="w-full bg-accent/40 rounded-md px-2.5 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1.5 focus:ring-primary/40 resize-none" rows={2} placeholder="Instrucciones o comentarios..." value={notas} onChange={e => setNotas(e.target.value)} /></section>
 

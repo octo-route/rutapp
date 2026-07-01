@@ -229,10 +229,12 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
         ),
           quantity: l.cantidad,
           subtotal: l.subtotal,
-        iva_rate: (l.iva_pct || 0) / 100,
-        ieps_rate: (l.ieps_pct || 0) / 100,
-        iva_ret_rate: 0,
-        isr_ret_rate: 0,
+          iva_rate: (l.iva_pct || 0) / 100,
+          ieps_rate: (l.ieps_pct || 0) / 100,
+          iva_amount: l.iva_monto || 0,
+          ieps_amount: l.ieps_monto || 0,
+          iva_ret_rate: 0,
+          isr_ret_rate: 0,
         };
       });
 

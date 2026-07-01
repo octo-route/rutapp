@@ -285,6 +285,8 @@ export default function CfdiFormPage() {
         quantity: l.cantidad,
         iva_rate: (l.iva_pct || 0) / 100,
         ieps_rate: (l.ieps_pct || 0) / 100,
+        iva_amount: l.iva_monto || 0,
+        ieps_amount: l.ieps_monto || 0,
         iva_ret_rate: 0,
         isr_ret_rate: 0,
       }));
@@ -741,13 +743,13 @@ export default function CfdiFormPage() {
                   </a>
                 </Button>
               )}
-              {cfdi.pdf_url && (
+              {/* {cfdi.pdf_url && (
                 <Button variant="ghost" size="sm" asChild>
                   <a href={cfdi.pdf_url} target="_blank" rel="noopener noreferrer">
                     PDF Facturama (original)
                   </a>
                 </Button>
-               )}
+               )} */}
                <Button
                  variant="destructive"
                  size="sm"
