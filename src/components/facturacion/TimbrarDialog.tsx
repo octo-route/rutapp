@@ -337,7 +337,6 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
         .insert(cfdiLineas);
       if (linesError) throw linesError;
 
-      const ventaLineaIds = ventaLineas.map((l: any) => l.id).filter(Boolean);
       if (ventaLineaIds.length > 0) {
         const { error: updateError } = await supabase
           .from("venta_lineas")
