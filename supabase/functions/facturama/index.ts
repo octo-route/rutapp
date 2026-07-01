@@ -13,7 +13,8 @@ const FACTURAMA_API = Deno.env.get("FACTURAMA_API_URL") || "https://api.facturam
 function getAuth() {
   const user = Deno.env.get("FACTURAMA_USERNAME");
   const pass = Deno.env.get("FACTURAMA_PASSWORD");
-  if (!user || !pass) throw new Error("Credenciales de Facturama no configuradas");
+  if (!user || !pass)
+    throw new Error("Credenciales de Facturama no configuradas");
   return "Basic " + btoa(`${user}:${pass}`);
 }
 
@@ -21,20 +22,24 @@ function getSupabase(authHeader: string) {
   return createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: authHeader } } }
+    { global: { headers: { Authorization: authHeader } } },
   );
 }
 
 function getServiceSupabase() {
   return createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 }
 
 // Round to 2 decimals
-function r2(n: number) { return Math.round(n * 100) / 100; }
-function r6(n: number) { return Math.round(n * 1000000) / 1000000; }
+function r2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+function r6(n: number) {
+  return Math.round(n * 1000000) / 1000000;
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -61,7 +66,9 @@ serve(async (req) => {
     // Actions that require user auth
     const authHeader = req.headers.get("Authorization") || "";
     const supabase = getSupabase(authHeader);
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) throw new Error("No autenticado");
 
     if (action === "timbrar") {
@@ -75,10 +82,10 @@ serve(async (req) => {
     }
   } catch (error: any) {
     console.error("Error:", error.message);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
 
@@ -91,10 +98,9 @@ async function verificarConexion() {
     headers: { Authorization: auth },
   });
   const ok = res.status === 200;
-  return new Response(
-    JSON.stringify({ ok, status: res.status }),
-    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-  );
+  return new Response(JSON.stringify({ ok, status: res.status }), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }
 
 // ========================================
@@ -105,7 +111,9 @@ async function uploadCsd(body: any) {
   const { rfc, certificate_base64, private_key_base64, password } = body;
 
   if (!rfc || !certificate_base64 || !private_key_base64 || !password) {
-    throw new Error("Faltan campos: rfc, certificate_base64, private_key_base64, password");
+    throw new Error(
+      "Faltan campos: rfc, certificate_base64, private_key_base64, password",
+    );
   }
 
   const payload = {
@@ -127,23 +135,33 @@ async function uploadCsd(body: any) {
   if (response.status === 409 || response.status === 400) {
     // CSD already exists, try update
     console.log("CSD ya existe, intentando actualizar...");
-    response = await fetch(`${FACTURAMA_API}/api-lite/csds/${encodeURIComponent(payload.Rfc)}`, {
-      method: "PUT",
-      headers: { Authorization: auth, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    response = await fetch(
+      `${FACTURAMA_API}/api-lite/csds/${encodeURIComponent(payload.Rfc)}`,
+      {
+        method: "PUT",
+        headers: { Authorization: auth, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
   }
 
   const content = await response.text();
   console.log(`📥 CSD response [${response.status}]:`, content);
 
-  if (response.status !== 200 && response.status !== 201 && response.status !== 204) {
+  if (
+    response.status !== 200 &&
+    response.status !== 201 &&
+    response.status !== 204
+  ) {
     throw new Error(`Error al subir CSD: ${content}`);
   }
 
   return new Response(
-    JSON.stringify({ success: true, message: "CSD subido correctamente a Facturama" }),
-    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    JSON.stringify({
+      success: true,
+      message: "CSD subido correctamente a Facturama",
+    }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
 }
 
@@ -162,10 +180,9 @@ async function listCsds() {
   }
 
   const data = await res.json();
-  return new Response(
-    JSON.stringify({ csds: data }),
-    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-  );
+  return new Response(JSON.stringify({ csds: data }), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }
 
 // ========================================
@@ -258,18 +275,38 @@ async function timbrarPago(supabase: any, userId: string, body: any) {
 async function timbrar(supabase: any, userId: string, body: any) {
   const auth = getAuth();
   const serviceDb = getServiceSupabase();
-  const { cfdi_id, venta_id, empresa_id, issuer, receiver, items, cfdi_type, currency, payment_form, payment_method, expedition_place, serie, name_id } = body;
+  const {
+    cfdi_id,
+    venta_id,
+    empresa_id,
+    issuer,
+    receiver,
+    items,
+    cfdi_type,
+    currency,
+    payment_form,
+    payment_method,
+    expedition_place,
+    serie,
+    name_id,
+  } = body;
 
   // Check timbre balance before proceeding
-  const { data: saldoRow } = await serviceDb.from("timbres_saldo").select("saldo").eq("empresa_id", empresa_id).single();
+  const { data: saldoRow } = await serviceDb
+    .from("timbres_saldo")
+    .select("saldo")
+    .eq("empresa_id", empresa_id)
+    .single();
   const saldoActual = saldoRow?.saldo ?? 0;
   if (saldoActual < 1) {
-    throw new Error("No tienes timbres disponibles. Contacta al administrador para adquirir más timbres.");
+    throw new Error(
+      "No tienes timbres disponibles. Contacta al administrador para adquirir más timbres.",
+    );
   }
 
   // Auto-generate folio if not provided
   let folio = body.folio;
-  if (!folio || folio.trim() === '') {
+  if (!folio || folio.trim() === "") {
     folio = String(Date.now()).slice(-8);
   }
 
@@ -303,7 +340,13 @@ async function timbrar(supabase: any, userId: string, body: any) {
     if (item.iva_rate && item.iva_rate > 0) {
       const rate = r6(item.iva_rate);
       const amount = r2(subtotal * rate);
-      facItem.Taxes.push({ Total: amount, Name: "IVA", Base: subtotal, Rate: rate, IsRetention: false });
+      facItem.Taxes.push({
+        Total: amount,
+        Name: "IVA",
+        Base: subtotal,
+        Rate: rate,
+        IsRetention: false,
+      });
       facItem.Total += amount;
     }
 
@@ -311,7 +354,13 @@ async function timbrar(supabase: any, userId: string, body: any) {
     if (item.iva_ret_rate && item.iva_ret_rate > 0) {
       const rate = r6(item.iva_ret_rate);
       const amount = r2(subtotal * rate);
-      facItem.Taxes.push({ Total: amount, Name: "IVA", Base: subtotal, Rate: rate, IsRetention: true });
+      facItem.Taxes.push({
+        Total: amount,
+        Name: "IVA",
+        Base: subtotal,
+        Rate: rate,
+        IsRetention: true,
+      });
       facItem.Total -= amount;
     }
 
@@ -319,7 +368,13 @@ async function timbrar(supabase: any, userId: string, body: any) {
     if (item.isr_ret_rate && item.isr_ret_rate > 0) {
       const rate = r6(item.isr_ret_rate);
       const amount = r2(subtotal * rate);
-      facItem.Taxes.push({ Total: amount, Name: "ISR", Base: subtotal, Rate: rate, IsRetention: true });
+      facItem.Taxes.push({
+        Total: amount,
+        Name: "ISR",
+        Base: subtotal,
+        Rate: rate,
+        IsRetention: true,
+      });
       facItem.Total -= amount;
     }
 
@@ -327,13 +382,19 @@ async function timbrar(supabase: any, userId: string, body: any) {
     if (item.ieps_rate && item.ieps_rate > 0) {
       const rate = r6(item.ieps_rate);
       const amount = r2(subtotal * rate);
-      facItem.Taxes.push({ Total: amount, Name: "IEPS", Base: subtotal, Rate: rate, IsRetention: false });
+      facItem.Taxes.push({
+        Total: amount,
+        Name: "IEPS",
+        Base: subtotal,
+        Rate: rate,
+        IsRetention: false,
+      });
       facItem.Total += amount;
     }
 
     facItem.TaxObject = facItem.Taxes.length > 0 ? "02" : "01";
     facItem.Total = r2(facItem.Total);
-    totalFactura += facItem.Total;
+    totalFactura = r2(totalFactura + facItem.Total);
     facItems.push(facItem);
   }
 
@@ -410,24 +471,34 @@ async function timbrar(supabase: any, userId: string, body: any) {
   let pdfBase64 = null;
   let xmlBase64 = null;
   try {
-    const pdfRes = await fetch(`${FACTURAMA_API}/cfdi/pdf/issuedLite/${facturamaId}`, {
-      headers: { Authorization: auth },
-    });
+    const pdfRes = await fetch(
+      `${FACTURAMA_API}/cfdi/pdf/issuedLite/${facturamaId}`,
+      {
+        headers: { Authorization: auth },
+      },
+    );
     if (pdfRes.ok) {
       const pdfData = await pdfRes.json();
       if (pdfData.Content) pdfBase64 = pdfData.Content;
     }
-  } catch (e) { console.error("Error PDF:", e); }
+  } catch (e) {
+    console.error("Error PDF:", e);
+  }
 
   try {
-    const xmlRes = await fetch(`${FACTURAMA_API}/cfdi/xml/issuedLite/${facturamaId}`, {
-      headers: { Authorization: auth },
-    });
+    const xmlRes = await fetch(
+      `${FACTURAMA_API}/cfdi/xml/issuedLite/${facturamaId}`,
+      {
+        headers: { Authorization: auth },
+      },
+    );
     if (xmlRes.ok) {
       const xmlData = await xmlRes.json();
       if (xmlData.Content) xmlBase64 = xmlData.Content;
     }
-  } catch (e) { console.error("Error XML:", e); }
+  } catch (e) {
+    console.error("Error XML:", e);
+  }
 
   // Upload files to storage
   let pdfUrl = null;
@@ -435,13 +506,18 @@ async function timbrar(supabase: any, userId: string, body: any) {
   const timestamp = Date.now();
 
   if (pdfBase64) {
-    const pdfBytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
+    const pdfBytes = Uint8Array.from(atob(pdfBase64), (c) => c.charCodeAt(0));
     const pdfPath = `cfdis/${empresa_id}/${facturamaId}_${timestamp}.pdf`;
     const { error: pdfErr } = await supabase.storage
       .from("empresa-assets")
-      .upload(pdfPath, pdfBytes, { contentType: "application/pdf", upsert: true });
+      .upload(pdfPath, pdfBytes, {
+        contentType: "application/pdf",
+        upsert: true,
+      });
     if (!pdfErr) {
-      const { data: urlData } = supabase.storage.from("empresa-assets").getPublicUrl(pdfPath);
+      const { data: urlData } = supabase.storage
+        .from("empresa-assets")
+        .getPublicUrl(pdfPath);
       pdfUrl = urlData?.publicUrl;
     }
   }
@@ -451,15 +527,23 @@ async function timbrar(supabase: any, userId: string, body: any) {
     const xmlPath = `cfdis/${empresa_id}/${facturamaId}_${timestamp}.xml`;
     const { error: xmlErr } = await supabase.storage
       .from("empresa-assets")
-      .upload(xmlPath, xmlBytes, { contentType: "application/xml", upsert: true });
+      .upload(xmlPath, xmlBytes, {
+        contentType: "application/xml",
+        upsert: true,
+      });
     if (!xmlErr) {
-      const { data: urlData } = supabase.storage.from("empresa-assets").getPublicUrl(xmlPath);
+      const { data: urlData } = supabase.storage
+        .from("empresa-assets")
+        .getPublicUrl(xmlPath);
       xmlUrl = urlData?.publicUrl;
     }
   }
 
   // Calculate tax totals
-  let ivaTotal = 0, iepsTotal = 0, retencionesTotal = 0, subtotalTotal = 0;
+  let ivaTotal = 0,
+    iepsTotal = 0,
+    retencionesTotal = 0,
+    subtotalTotal = 0;
   for (const fi of facItems) {
     subtotalTotal += fi.Subtotal;
     for (const tax of fi.Taxes) {
@@ -507,16 +591,20 @@ async function timbrar(supabase: any, userId: string, body: any) {
   };
 
   if (cfdi_id) {
-    const { data, error: updateErr } = await supabase.from("cfdis")
+    const { data, error: updateErr } = await supabase
+      .from("cfdis")
       .update(cfdiPayload)
       .eq("id", cfdi_id)
-      .select().single();
+      .select()
+      .single();
     if (updateErr) console.error("Error updating CFDI:", updateErr);
     cfdiRecord = data;
   } else {
-    const { data, error: insertErr } = await supabase.from("cfdis")
+    const { data, error: insertErr } = await supabase
+      .from("cfdis")
       .insert(cfdiPayload)
-      .select().single();
+      .select()
+      .single();
     if (insertErr) console.error("Error inserting CFDI:", insertErr);
     cfdiRecord = data;
   }
@@ -530,7 +618,9 @@ async function timbrar(supabase: any, userId: string, body: any) {
       p_user_id: userId,
     });
     if (!deducted) {
-      console.error("Warning: Could not deduct timbre after successful timbrado");
+      console.error(
+        "Warning: Could not deduct timbre after successful timbrado",
+      );
     }
   }
 
@@ -544,7 +634,7 @@ async function timbrar(supabase: any, userId: string, body: any) {
       xml_url: xmlUrl,
       total: r2(totalFactura),
     }),
-    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
 }
 
@@ -611,7 +701,7 @@ async function cancelar(supabase: any, userId: string, body: any) {
       facturama_status: result.Status,
       message: result.Message || "Cancelación procesada",
     }),
-    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
 }
 
@@ -622,9 +712,10 @@ async function descargar(body: any) {
   const auth = getAuth();
   const { facturama_id, type } = body;
 
-  const endpoint = type === "xml"
-    ? `${FACTURAMA_API}/cfdi/xml/issuedLite/${facturama_id}`
-    : `${FACTURAMA_API}/cfdi/pdf/issuedLite/${facturama_id}`;
+  const endpoint =
+    type === "xml"
+      ? `${FACTURAMA_API}/cfdi/xml/issuedLite/${facturama_id}`
+      : `${FACTURAMA_API}/cfdi/pdf/issuedLite/${facturama_id}`;
 
   const res = await fetch(endpoint, { headers: { Authorization: auth } });
   if (!res.ok) throw new Error(`Error al descargar ${type}`);
@@ -633,7 +724,7 @@ async function descargar(body: any) {
 
   return new Response(
     JSON.stringify({ content: data.Content, encoding: data.ContentEncoding }),
-    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
 }
 
@@ -643,11 +734,12 @@ async function getSuscriptionPlan() {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Error al consultar plan Facturama: ${res.status} - ${text}`);
+    throw new Error(
+      `Error al consultar plan Facturama: ${res.status} - ${text}`,
+    );
   }
   const data = await res.json();
-  return new Response(
-    JSON.stringify(data),
-    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-  );
+  return new Response(JSON.stringify(data), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }
