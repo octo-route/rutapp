@@ -86,3 +86,19 @@ export function setGlobalTimezone(tz: string | null | undefined) {
 export function todayLocal(): string {
   return todayInTimezone(_empresaTimezone);
 }
+
+/** Extract actual error message from Supabase Edge Function invoke error */
+export async function extractEdgeFunctionError(error: any): Promise<string> {
+  if (!error) return 'Error desconocido';
+  let errMsg = error.message || 'Error desconocido';
+  if (error.context && typeof error.context.json === 'function') {
+    try {
+      const body = await error.context.json();
+      if (body && body.error) {
+        errMsg = body.error;
+      }
+    } catch (_) {}
+  }
+  return errMsg;
+}
+

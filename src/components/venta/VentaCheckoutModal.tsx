@@ -327,6 +327,10 @@ export function VentaCheckoutModal({
             const deudasAnterioresNoPagadas = deudasAnteriores - totalAplicarCuentas > 0.01;
             const bloqueadoPorFaltaDeCredito = clienteCredito === false && deudasAnterioresNoPagadas;
 
+            const nuevoAdeudo = condicion === 'credito' ? total : (condicion === 'contado' && faltante > 0 && payMode === 'efectivo' ? faltante : 0);
+            const totalDeudaNueva = deudasAnteriores + nuevoAdeudo - totalAplicarCuentas;
+            const excedeLimiteCredito = clienteCredito === true && clienteLimiteCredito > 0 && totalDeudaNueva > clienteLimiteCredito;
+
             return (
               <div className="flex flex-col gap-2">
                 {bloqueadoPorFaltaDeCredito && (
@@ -334,9 +338,14 @@ export function VentaCheckoutModal({
                     El cliente no tiene crédito. Debe liquidar su saldo anterior ({fmt(deudasAnteriores)}) para poder cerrar la venta.
                   </p>
                 )}
+                {excedeLimiteCredito && (
+                  <p className="text-[12px] text-destructive text-center font-medium px-2">
+                    El cliente excede su límite de crédito de {fmt(clienteLimiteCredito)} (Deuda total: {fmt(totalDeudaNueva)}).
+                  </p>
+                )}
                 <button
                   onClick={handleConfirm}
-                  disabled={saving || (condicion === 'contado' && faltante > 0 && payMode !== 'efectivo') || bloqueadoPorFaltaDeCredito}
+                  disabled={saving || (condicion === 'contado' && faltante > 0 && payMode !== 'efectivo') || bloqueadoPorFaltaDeCredito || excedeLimiteCredito}
                   className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-4 text-[16px] font-bold disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg flex items-center justify-center gap-2"
                 >
                   <Check className="h-5 w-5" />

@@ -101,20 +101,72 @@ export function useVentaForm() {
     },
   });
 
+  // Default lista de precios (same 3-level fallback as POS, but distinct cache key to avoid POS collision)
+  const { data: defaultListaPrecioData } = useQuery({
+    queryKey: ["venta-default-lista-precio", empresa?.id],
+    staleTime: 5 * 60 * 1000,
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      let { data } = await supabase.from('lista_precios').select('id, nombre, tarifa_id').eq('empresa_id', empresa!.id).eq('es_principal', true).limit(1);
+      if (!data || data.length === 0) {
+        const { data: fallbackData } = await supabase.from('lista_precios').select('id, nombre, tarifa_id').eq('empresa_id', empresa!.id).ilike('nombre', '%general%').limit(1);
+        if (fallbackData && fallbackData.length > 0) { data = fallbackData; }
+        else {
+          const { data: lastResort } = await supabase.from('lista_precios').select('id, nombre, tarifa_id').eq('empresa_id', empresa!.id).limit(1);
+          data = lastResort;
+        }
+      }
+      return data?.[0] ?? null;
+    },
+  });
+  const effectiveListaId = (form as any).lista_precio_id || defaultListaPrecioData?.id || null;
+  // Use tarifa from form, or fall back to the tarifa linked to the default lista
+  const effectiveTarifaId = form.tarifa_id || defaultListaPrecioData?.tarifa_id || null;
+
+  // Tarifa rules
+  const { data: tarifaRules } = useQuery({
+    queryKey: ['tarifa-rules-venta', effectiveTarifaId], enabled: !!effectiveTarifaId,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('tarifa_lineas')
+        .select('aplica_a, producto_ids, clasificacion_ids, presentacion_ids, tipo_calculo, precio, precio_minimo, margen_pct, descuento_pct, redondeo, base_precio, lista_precio_id')
+        .eq('tarifa_id', effectiveTarifaId!);
+      if (error) throw error;
+      return (data ?? []) as TarifaLineaRule[];
+    },
+  });
+
   // For venta_directa, hide products with 0 stock (unless vender_sin_stock) and enrich with stock qty
+  // Also calculate _precio_dropdown for the search component
   const productosList = useMemo(() => {
     if (!productosListRaw) return productosListRaw;
-    if (form.tipo !== 'venta_directa') return productosListRaw;
-    const stockMap = new Map((stockAlmacenData ?? []).map((s: any) => [s.producto_id, s.cantidad ?? 0]));
-    return productosListRaw.filter((p: any) => {
-      if (p.vender_sin_stock) return true;
-      const qty = form.almacen_id ? (stockMap.get(p.id) ?? 0) : (p.cantidad ?? 0);
-      return qty > 0;
-    }).map((p: any) => ({
-      ...p,
-      _stock: form.almacen_id ? (stockMap.get(p.id) ?? 0) : (p.cantidad ?? 0),
-    }));
-  }, [productosListRaw, form.tipo, form.almacen_id, stockAlmacenData]);
+    let baseList = productosListRaw;
+    if (form.tipo === 'venta_directa') {
+      const stockMap = new Map((stockAlmacenData ?? []).map((s: any) => [s.producto_id, s.cantidad ?? 0]));
+      baseList = productosListRaw.filter((p: any) => {
+        if (p.vender_sin_stock) return true;
+        const qty = form.almacen_id ? (stockMap.get(p.id) ?? 0) : (p.cantidad ?? 0);
+        return qty > 0;
+      }).map((p: any) => ({
+        ...p,
+        _stock: form.almacen_id ? (stockMap.get(p.id) ?? 0) : (p.cantidad ?? 0),
+      }));
+    }
+    
+    return baseList.map((p: any) => {
+      let dispPrice = Number(p.precio_principal) || 0;
+      if (tarifaRules?.length) {
+        const prodForPricing: ProductForPricing = {
+          id: p.id, precio_principal: Number(p.precio_principal) || 0, costo: Number(p.costo) || 0, costos_adicionales: p.costos_adicionales,
+          clasificacion_id: p.clasificacion_id, tiene_iva: p.tiene_iva, iva_pct: Number(p.iva_pct ?? 16),
+          tiene_ieps: p.tiene_ieps || (Number(p.ieps_pct) > 0), ieps_pct: Number(p.ieps_pct ?? 0), ieps_tipo: p.ieps_tipo, usa_listas_precio: p.usa_listas_precio
+        };
+        const pricing = resolveProductPricing(tarifaRules, prodForPricing, effectiveListaId);
+        dispPrice = buildSalePricingSnapshot(prodForPricing, pricing).displayPrice;
+      }
+      return { ...p, _precio_dropdown: dispPrice };
+    });
+  }, [productosListRaw, form.tipo, form.almacen_id, stockAlmacenData, tarifaRules, effectiveListaId]);
 
   const setCellRef = useCallback((row: number, col: number, el: HTMLElement | null) => {
     const key = `${row}-${col}`;
@@ -126,18 +178,6 @@ export function useVentaForm() {
     if (el) { el.focus(); if (el instanceof HTMLInputElement) el.select(); }
   }, []);
 
-  // Tarifa rules
-  const { data: tarifaRules } = useQuery({
-    queryKey: ['tarifa-rules-venta', form.tarifa_id], enabled: !!form.tarifa_id,
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const { data, error } = await supabase.from('tarifa_lineas')
-        .select('aplica_a, producto_ids, clasificacion_ids, presentacion_ids, tipo_calculo, precio, precio_minimo, margen_pct, descuento_pct, redondeo, base_precio, lista_precio_id')
-        .eq('tarifa_id', form.tarifa_id!);
-      if (error) throw error;
-      return (data ?? []) as TarifaLineaRule[];
-    },
-  });
 
   // Entregas
   const { data: entregasExistentes } = useEntregasByPedido(!isNew && form.tipo === 'pedido' ? form.id : undefined);
@@ -176,13 +216,16 @@ export function useVentaForm() {
   useEffect(() => {
     if (!existingVenta) {
       if (isNew) {
-        const defaultTarifa = tarifasList?.find((t: any) => t.tipo === 'general')?.id;
-        setForm(prev => ({
-          ...prev,
-          vendedor_id: profile?.id,
-          ...(defaultTarifa ? { tarifa_id: defaultTarifa } : {}),
-          ...(profile?.almacen_id ? { almacen_id: profile.almacen_id } : {}),
-        }));
+        setForm(prev => {
+          const hasUpdates = (!prev.almacen_id && profile?.almacen_id) || (!prev.vendedor_id && profile?.id);
+          if (!hasUpdates) return prev;
+          
+          return {
+            ...prev,
+            vendedor_id: prev.vendedor_id || profile?.id,
+            ...(profile?.almacen_id && !prev.almacen_id ? { almacen_id: profile.almacen_id } : {}),
+          };
+        });
       }
       return;
     }
@@ -203,23 +246,22 @@ export function useVentaForm() {
     const isReadOnly = existingVenta.status !== 'borrador';
     setLineas(isReadOnly ? existingLines : [...existingLines, emptyLine()]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [(existingVenta as any)?.id, isNew]);
+  }, [(existingVenta as any)?.id, isNew, tarifasList, profile]);
 
   // Build raw pricing map from tarifa for promo-before-rounding logic
   const rawPricingMap = useMemo(() => {
     const m = new Map<string, { rawUnitPrice: number; rawDisplayPrice: number; basePrecio: string; redondeo: string }>();
     if (!tarifaRules?.length || !productosList) return m;
-    const listaPrecioId = (form as any).lista_precio_id || null;
     lineas.forEach(l => {
       if (!l.producto_id || m.has(l.producto_id)) return;
       const prod = productosList.find((p: any) => p.id === l.producto_id);
       if (!prod) return;
-      const pf: ProductForPricing = { id: l.producto_id, precio_principal: Number(prod.precio_principal) || 0, costo: Number(prod.costo) || 0, clasificacion_id: prod.clasificacion_id, tiene_iva: prod.tiene_iva, iva_pct: Number(prod.iva_pct ?? 16), tiene_ieps: prod.tiene_ieps || (Number(prod.ieps_pct) > 0), ieps_pct: Number(prod.ieps_pct ?? 0), ieps_tipo: prod.ieps_tipo, usa_listas_precio: prod.usa_listas_precio };
-      const r = resolveProductPricing(tarifaRules, pf, listaPrecioId);
+      const pf: ProductForPricing = { id: l.producto_id, precio_principal: Number(prod.precio_principal) || 0, costo: Number(prod.costo) || 0, costos_adicionales: prod.costos_adicionales, clasificacion_id: prod.clasificacion_id, tiene_iva: prod.tiene_iva, iva_pct: Number(prod.iva_pct ?? 16), tiene_ieps: prod.tiene_ieps || (Number(prod.ieps_pct) > 0), ieps_pct: Number(prod.ieps_pct ?? 0), ieps_tipo: prod.ieps_tipo, usa_listas_precio: prod.usa_listas_precio };
+      const r = resolveProductPricing(tarifaRules, pf, effectiveListaId);
       m.set(l.producto_id, { rawUnitPrice: r.rawUnitPrice, rawDisplayPrice: r.rawDisplayPrice, basePrecio: r.basePrecio, redondeo: r.appliedRule?.redondeo ?? 'ninguno' });
     });
     return m;
-  }, [tarifaRules, lineas, productosList, (form as any).lista_precio_id]);
+  }, [tarifaRules, lineas, productosList, effectiveListaId]);
 
   // Totals (line-level: manual discount only, no promos yet)
   const totals = useMemo(() => {
@@ -303,26 +345,25 @@ export function useVentaForm() {
   // Re-price existing lines when tarifa rules or lista_precio changes (skip manual lines)
   useEffect(() => {
     if (!tarifaRules?.length || !productosList || readOnly) return;
-    const listaPrecioId = (form as any).lista_precio_id || null;
     setLineas(prev => prev.map(l => {
       if (!l.producto_id) return l;
       if ((l as any).precio_manual) return l;
       // If line has its own lista_precio_id, keep it (per-line override)
-      const lineLista = (l as any).lista_precio_id ?? listaPrecioId;
+      const lineLista = (l as any).lista_precio_id ?? effectiveListaId;
       const prod = productosList.find((p: any) => p.id === l.producto_id);
       if (!prod) return l;
       const prodForPricing: ProductForPricing = {
         id: l.producto_id, precio_principal: Number(prod.precio_principal) || 0, costo: Number(prod.costo) || 0,
         clasificacion_id: prod.clasificacion_id, tiene_iva: prod.tiene_iva, iva_pct: Number(prod.iva_pct ?? 16),
         tiene_ieps: prod.tiene_ieps || (Number(prod.ieps_pct) > 0), ieps_pct: Number(prod.ieps_pct ?? 0), ieps_tipo: prod.ieps_tipo,
-        usa_listas_precio: prod.usa_listas_precio,
+        usa_listas_precio: prod.usa_listas_precio, costos_adicionales: prod.costos_adicionales,
       };
       const pricing = resolveProductPricing(tarifaRules, prodForPricing, lineLista);
       const snap = buildSalePricingSnapshot(prodForPricing, pricing);
       if (snap.unitPrice === Number(l.precio_unitario)) return l;
       return { ...l, precio_unitario: snap.unitPrice, display_unit_price: snap.displayPrice } as any;
     }));
-  }, [tarifaRules, (form as any).lista_precio_id]);
+  }, [tarifaRules, effectiveListaId]);
 
   const set = (field: string, val: any) => { if (readOnly) return; setForm(prev => ({ ...prev, [field]: val })); setDirty(true); };
 
@@ -344,9 +385,9 @@ export function useVentaForm() {
       id: productoId, precio_principal: Number(producto.precio_principal) || 0, costo: Number(producto.costo) || 0,
       clasificacion_id: producto.clasificacion_id, tiene_iva: producto.tiene_iva, iva_pct: Number(producto.iva_pct ?? 16),
       tiene_ieps: hasIeps, ieps_pct: Number(producto.ieps_pct ?? 0), ieps_tipo: producto.ieps_tipo,
-      usa_listas_precio: producto.usa_listas_precio,
+      usa_listas_precio: producto.usa_listas_precio, costos_adicionales: producto.costos_adicionales,
     };
-    const pricing = tarifaRules?.length ? resolveProductPricing(tarifaRules, prodForPricing, (form as any).lista_precio_id) : null;
+    const pricing = tarifaRules?.length ? resolveProductPricing(tarifaRules, prodForPricing, effectiveListaId) : null;
     const snap = pricing ? buildSalePricingSnapshot(prodForPricing, pricing) : null;
     const finalUnitPrice = snap ? snap.unitPrice : Number(producto.precio_principal) || 0;
     const finalDisplayPrice = snap ? snap.displayPrice : finalUnitPrice;
@@ -419,9 +460,9 @@ export function useVentaForm() {
       id: producto.id, precio_principal: Number(producto.precio_principal) || 0, costo: Number(producto.costo) || 0,
       clasificacion_id: producto.clasificacion_id, tiene_iva: producto.tiene_iva, iva_pct: Number(producto.iva_pct ?? 16),
       tiene_ieps: hasIeps, ieps_pct: Number(producto.ieps_pct ?? 0), ieps_tipo: producto.ieps_tipo,
-      usa_listas_precio: producto.usa_listas_precio,
+      usa_listas_precio: producto.usa_listas_precio, costos_adicionales: producto.costos_adicionales,
     };
-    const pricing = tarifaRules?.length ? resolveProductPricing(tarifaRules, prodForPricing, (form as any).lista_precio_id) : null;
+    const pricing = tarifaRules?.length ? resolveProductPricing(tarifaRules, prodForPricing, effectiveListaId) : null;
     const snap = pricing ? buildSalePricingSnapshot(prodForPricing, pricing) : null;
     const finalUnitPrice = snap ? snap.unitPrice : Number(producto.precio_principal) || 0;
 
@@ -471,9 +512,9 @@ export function useVentaForm() {
             tiene_iva: newIvaPct > 0, iva_pct: newIvaPct > 0 ? newIvaPct : Number(prod.iva_pct ?? 16),
             tiene_ieps: newIepsPct > 0, ieps_pct: newIepsPct > 0 ? newIepsPct : Number(prod.ieps_pct ?? 0),
             ieps_tipo: prod.ieps_tipo,
-            usa_listas_precio: prod.usa_listas_precio,
+            usa_listas_precio: prod.usa_listas_precio, costos_adicionales: prod.costos_adicionales,
           };
-          const pricing = resolveProductPricing(tarifaRules, prodForPricing, (form as any).lista_precio_id);
+          const pricing = resolveProductPricing(tarifaRules, prodForPricing, effectiveListaId);
           const snap = buildSalePricingSnapshot(prodForPricing, pricing);
           setLineas(prev => {
             const next = [...prev];
@@ -663,7 +704,7 @@ export function useVentaForm() {
     profile, user, empresa, navigate, queryClient,
     clientesList, productosList, tarifasList, almacenesList, vendedoresList,
     entregasExistentes, entregasActivas, hayEntregas, remaining, fullyDelivered, canCreateEntrega, lineDeliverySummary,
-    pagosData, totalPagado, saldoPendiente, totals: finalTotals, promoResults, tarifaRules,
+    pagosData, totalPagado, saldoPendiente, totals: finalTotals, promoResults, tarifaRules, effectiveListaId,
     pdfBlob, setPdfBlob, showPdfModal, setShowPdfModal, showFacturaDrawer, setShowFacturaDrawer,
     sinImpuestos,
     saveVenta, crearEntrega, PinDialog, requestPin,

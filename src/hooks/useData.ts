@@ -58,7 +58,7 @@ export function useProductosPaginated(search?: string, statusFilter?: string, pa
     enabled: !!empresa?.id,
     queryFn: async () => {
       let q = supabase.from('productos')
-        .select('id, codigo, nombre, precio_principal, costo, costos_adicionales, cantidad, status, imagen_url, tiene_iva, iva_pct, tiene_ieps, ieps_pct, min, marca_id, marcas(nombre), clasificacion_id, clasificaciones(nombre), proveedor_id, proveedores(nombre), unidad_venta_id, unidades_venta:unidad_venta_id(abreviatura), unidad_compra_id, unidades_compra:unidad_compra_id(abreviatura), factor_conversion, calculo_costo, lista_id, listas(nombre)', { count: 'exact' })
+        .select('id, codigo, nombre, precio_principal, costo, costos_adicionales, cantidad, status, imagen_url, tiene_iva, iva_pct, tiene_ieps, ieps_pct, ieps_tipo, min, marca_id, marcas(nombre), clasificacion_id, clasificaciones(nombre), proveedor_id, proveedores(nombre), unidad_venta_id, unidades_venta:unidad_venta_id(abreviatura), unidad_compra_id, unidades_compra:unidad_compra_id(abreviatura), factor_conversion, calculo_costo, lista_id, listas(nombre), usa_listas_precio', { count: 'exact' })
         .eq('empresa_id', empresa!.id)
         .eq('es_combo', false)
         .order('nombre', { ascending: true })
@@ -360,7 +360,28 @@ export function useAlmacenes() {
   return useQuery({ queryKey: ['almacenes', empresa?.id], staleTime: CATALOG_STALE, enabled: !!empresa?.id, queryFn: async () => { const { data } = await supabase.from('almacenes').select('id, nombre').eq('empresa_id', empresa!.id).eq('activo', true).order('nombre'); return data as Almacen[]; } });
 }
 export function useUnidadesSat() {
-  return useQuery({ queryKey: ['unidades_sat'], staleTime: CATALOG_STALE, queryFn: async () => { const { data } = await supabase.from('unidades_sat').select('id, clave, nombre').order('nombre'); return data as UnidadSat[]; } });
+  return useQuery({
+    queryKey: ['unidades_sat'],
+    staleTime: CATALOG_STALE,
+    queryFn: async () => {
+      let allData: UnidadSat[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      while(true) {
+        const { data, error } = await supabase
+          .from('unidades_sat')
+          .select('id, clave, nombre')
+          .order('nombre')
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allData = [...allData, ...(data as UnidadSat[])];
+        if (data.length < pageSize) break;
+        page++;
+      }
+      return allData;
+    }
+  });
 }
 export function useProductosForSelect() {
   const { empresa } = useAuth();
@@ -370,7 +391,7 @@ export function useProductosForSelect() {
     enabled: !!empresa?.id,
     queryFn: async () => {
       const { data } = await supabase.from('productos')
-        .select('id, codigo, nombre, nombre_compra, nombre_venta, nombre_ticket, precio_principal, costo, cantidad, clasificacion_id, unidad_venta_id, unidad_compra_id, factor_conversion, tiene_iva, tiene_ieps, tasa_iva_id, tasa_ieps_id, iva_pct, ieps_pct, ieps_tipo, costo_incluye_impuestos, es_granel, unidad_granel, vender_sin_stock, usa_listas_precio, es_combo, se_puede_inventariar, unidades_venta:unidades!productos_unidad_venta_id_fkey(nombre, abreviatura), unidades_compra:unidades!productos_unidad_compra_id_fkey(nombre, abreviatura)')
+        .select('id, codigo, codigo_sat, nombre, nombre_compra, nombre_venta, nombre_ticket, precio_principal, costo, costos_adicionales, cantidad, clasificacion_id, unidad_venta_id, unidad_compra_id, factor_conversion, tiene_iva, tiene_ieps, tasa_iva_id, tasa_ieps_id, iva_pct, ieps_pct, ieps_tipo, costo_incluye_impuestos, es_granel, unidad_granel, vender_sin_stock, usa_listas_precio, es_combo, se_puede_inventariar, udem_sat_id, unidades_sat(clave, nombre), unidades_venta:unidades!productos_unidad_venta_id_fkey(nombre, abreviatura), unidades_compra:unidades!productos_unidad_compra_id_fkey(nombre, abreviatura)')
         .eq('empresa_id', empresa!.id)
         .eq('status', 'activo').order('nombre');
       return data ?? [];

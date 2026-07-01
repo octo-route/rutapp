@@ -40,7 +40,7 @@ export default function VentaFormPage() {
     profile, user, empresa, navigate, queryClient,
     clientesList, productosList, tarifasList, almacenesList, vendedoresList,
     entregasExistentes, entregasActivas, hayEntregas, remaining, fullyDelivered, canCreateEntrega, lineDeliverySummary,
-    pagosData, totalPagado, saldoPendiente, totals, promoResults,
+    pagosData, totalPagado, saldoPendiente, totals, promoResults, tarifaRules, effectiveListaId,
     pdfBlob, setPdfBlob, showPdfModal, setShowPdfModal, showFacturaDrawer, setShowFacturaDrawer,
     saveVenta, crearEntrega, PinDialog,
     set, handleProductSelect, handleSave: baseSave, handleDelete, handleStatusChange, handleAddPago,
@@ -316,8 +316,8 @@ export default function VentaFormPage() {
           producto={productBeingConfigured.producto}
           presentaciones={productBeingConfigured.presentaciones}
           precioPorUnidadBase={productBeingConfigured.precioBase}
-          tarifaRules={[]} // VentaForm ya calcula rules en handleProductSelect
-          clienteListaPrecioId={(form as any).lista_precio_id ?? null}
+          tarifaRules={tarifaRules ?? []}
+          clienteListaPrecioId={effectiveListaId ?? null}
           onConfirm={handleConfirmPresentacion}
         />
       )}

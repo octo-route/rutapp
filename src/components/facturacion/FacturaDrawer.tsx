@@ -73,9 +73,9 @@ export function FacturaDrawer({ open, onClose, ventaId, cliente, lineas, product
         user_id: user.id,
         receiver_rfc: cliente.facturama_rfc || cliente.rfc || '',
         receiver_name: cliente.facturama_razon_social || cliente.nombre || '',
-        receiver_cfdi_use: cliente.facturama_uso_cfdi || 'G03',
-        receiver_fiscal_regime: cliente.facturama_regimen_fiscal || '601',
-        receiver_tax_zip_code: cliente.facturama_cp || '',
+        receiver_cfdi_use: cliente.facturama_uso_cfdi || cliente.uso_cfdi || 'G03',
+        receiver_fiscal_regime: cliente.facturama_regimen_fiscal || cliente.regimen_fiscal || '601',
+        receiver_tax_zip_code: cliente.facturama_cp || cliente.cp || '',
         payment_form: '01',
         payment_method: 'PUE',
         expedition_place: empresa.cp || '',
@@ -93,6 +93,7 @@ export function FacturaDrawer({ open, onClose, ventaId, cliente, lineas, product
       // Create CFDI lines
       const cfdiLineas = selectedLines.map(l => {
         const prod = productosList?.find((p: any) => p.id === l.producto_id);
+        const uSat = prod?.unidades_sat;
         return {
           cfdi_id: cfdi.id,
           venta_linea_id: l.id,
@@ -107,8 +108,8 @@ export function FacturaDrawer({ open, onClose, ventaId, cliente, lineas, product
           ieps_monto: l.ieps_monto ?? 0,
           total: l.total ?? 0,
           product_code: prod?.codigo_sat || '01010101',
-          unit_code: 'H87',
-          unit_name: 'Pieza',
+          unit_code: uSat?.clave || 'H87',
+          unit_name: uSat?.nombre || 'Pieza',
         };
       });
 

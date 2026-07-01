@@ -28,7 +28,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useListPreferences, groupData } from "@/hooks/useListPreferences";
 import { cn, fmtNum } from "@/lib/utils";
 import { useCurrency } from "@/hooks/useCurrency";
-import { calcularCostoTotal } from "@/lib/priceResolver";
+import { calcularCostoTotal, resolveProductPricing, type TarifaLineaRule, type ProductForPricing } from "@/lib/priceResolver";
+import { buildSalePricingSnapshot } from "@/lib/salePricing";
 
 const PRODUCTOS_COLUMNS: ExportColumn[] = [
   { key: "codigo", header: "Código", width: 12 },
@@ -93,6 +94,7 @@ export default function ProductosListPage() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { fmt: fmtCurrency } = useCurrency();
+  const { empresa } = useAuth();
   const [activeTab, setActiveTab] = useState<"productos" | "combos">(
     "productos",
   );
@@ -166,6 +168,79 @@ export default function ProductosListPage() {
   const isLoadingTab = activeTab === "combos" ? isLoadingCombos : isLoading;
   const from = Math.min((page - 1) * PAGE_SIZE + 1, total);
   const to = Math.min(page * PAGE_SIZE, total);
+
+  // Mirror exactly how the POS loads pricing:
+  // 1) Get default lista de precios (with 3-level fallback just like POS)
+  // 2) Get tarifa_id from that lista
+  // 3) Load tarifa rules for that tarifa
+  const { data: defaultListaPrecioData } = useQuery({
+    queryKey: ["pos-default-lista-precio-v3", empresa?.id],
+    staleTime: 5 * 60 * 1000,
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      let { data } = await supabase
+        .from("lista_precios")
+        .select("id, tarifa_id, nombre")
+        .eq("empresa_id", empresa!.id)
+        .eq("es_principal", true)
+        .limit(1);
+
+      if (!data || data.length === 0) {
+        const { data: fallbackData } = await supabase
+          .from("lista_precios")
+          .select("id, tarifa_id, nombre")
+          .eq("empresa_id", empresa!.id)
+          .ilike("nombre", "%general%")
+          .limit(1);
+        if (fallbackData && fallbackData.length > 0) {
+          data = fallbackData;
+        } else {
+          const { data: lastResort } = await supabase
+            .from("lista_precios")
+            .select("id, tarifa_id, nombre")
+            .eq("empresa_id", empresa!.id)
+            .limit(1);
+          data = lastResort;
+        }
+      }
+      return data?.[0] ?? null;
+    },
+  });
+  const defaultListaId = defaultListaPrecioData?.id ?? null;
+  const defaultTarifaId = defaultListaPrecioData?.tarifa_id ?? null;
+
+  const { data: tarifaRules } = useQuery({
+    queryKey: ["tarifa-rules-list", defaultTarifaId],
+    enabled: !!defaultTarifaId,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("tarifa_lineas")
+        .select("aplica_a, producto_ids, clasificacion_ids, presentacion_ids, tipo_calculo, precio, precio_minimo, margen_pct, descuento_pct, redondeo, base_precio, lista_precio_id")
+        .eq("tarifa_id", defaultTarifaId!);
+      return (data ?? []) as TarifaLineaRule[];
+    },
+  });
+
+  /** Returns the tarifa-computed display price (c/impuestos) or falls back to precio_principal */
+  const getDisplayPrice = (p: any): number => {
+    if (!tarifaRules?.length) return Number(p.precio_principal) ?? 0;
+    const prodForPricing: ProductForPricing = {
+      id: p.id,
+      precio_principal: Number(p.precio_principal) || 0,
+      costo: Number(p.costo) || 0,
+      costos_adicionales: p.costos_adicionales,
+      clasificacion_id: p.clasificacion_id,
+      tiene_iva: p.tiene_iva,
+      iva_pct: Number(p.iva_pct ?? 16),
+      tiene_ieps: p.tiene_ieps || Number(p.ieps_pct) > 0,
+      ieps_pct: Number(p.ieps_pct ?? 0),
+      ieps_tipo: p.ieps_tipo,
+      usa_listas_precio: p.usa_listas_precio,
+    };
+    const pricing = resolveProductPricing(tarifaRules, prodForPricing, defaultListaId);
+    return buildSalePricingSnapshot(prodForPricing, pricing).displayPrice;
+  };
   const pageData = productos;
   const allSelected =
     pageData.length > 0 && pageData.every((p) => selected.has(p.id));
@@ -322,7 +397,7 @@ export default function ProductosListPage() {
                 {p.factor_conversion ?? 1}
               </td>
               <td className="py-1.5 px-3 text-right font-medium tabular-nums">
-                {fmt(p.precio_principal)}
+                {fmt(getDisplayPrice(p))}
               </td>
               <td className="py-1.5 px-3 text-right hidden md:table-cell text-muted-foreground tabular-nums">
                 {fmt(calcularCostoTotal(p.costo ?? 0, p.costos_adicionales))}
@@ -415,7 +490,7 @@ export default function ProductosListPage() {
               <td className="py-1.5 px-3 font-mono text-xs">{p.codigo}</td>
               <td className="py-1.5 px-3 font-medium">{p.nombre}</td>
               <td className="py-1.5 px-3 text-right font-medium tabular-nums">
-                {fmt(p.precio_principal)}
+                {fmt(getDisplayPrice(p))}
               </td>
               <td className="py-1.5 px-3 text-right text-muted-foreground tabular-nums">
                 {fmt((p as any).precio_sugerido_publico)}
@@ -612,7 +687,7 @@ export default function ProductosListPage() {
                 )
               }
               fields={[
-                { label: "Precio", value: fmt(p.precio_principal) },
+                { label: "Precio", value: fmt(getDisplayPrice(p)) },
                 {
                   label: "Stock",
                   value: (

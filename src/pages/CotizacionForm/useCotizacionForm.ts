@@ -52,7 +52,7 @@ export function useCotizacionForm() {
   const convertToVenta = useConvertCotizacionToVenta();
   const queryClient = useQueryClient();
   const { data: clientesList } = useClientes();
-  const { data: productosList } = useProductosForSelect();
+  const { data: productosListRaw } = useProductosForSelect();
   const { data: tarifasList } = useTarifasForSelect();
   const { data: vendedoresList } = useVendedores();
   const { data: presentacionesList } = useAllPresentaciones();
@@ -88,29 +88,71 @@ export function useCotizacionForm() {
     if (el) { el.focus(); if (el instanceof HTMLInputElement) el.select(); }
   }, []);
 
+  // Default lista de precios (same 3-level fallback as POS)
+  const { data: defaultListaPrecioData } = useQuery({
+    queryKey: ["cotizacion-default-lista-precio", empresa?.id],
+    staleTime: 5 * 60 * 1000,
+    enabled: !!empresa?.id,
+    queryFn: async () => {
+      let { data } = await supabase.from('lista_precios').select('id, nombre, tarifa_id').eq('empresa_id', empresa!.id).eq('es_principal', true).limit(1);
+      if (!data || data.length === 0) {
+        const { data: fallbackData } = await supabase.from('lista_precios').select('id, nombre, tarifa_id').eq('empresa_id', empresa!.id).ilike('nombre', '%general%').limit(1);
+        if (fallbackData && fallbackData.length > 0) { data = fallbackData; }
+        else {
+          const { data: lastResort } = await supabase.from('lista_precios').select('id, nombre, tarifa_id').eq('empresa_id', empresa!.id).limit(1);
+          data = lastResort;
+        }
+      }
+      return data?.[0] ?? null;
+    },
+  });
+  const effectiveListaId = (form as any).lista_precio_id || defaultListaPrecioData?.id || null;
+  // Use tarifa from form, or fall back to the tarifa linked to the default lista
+  const effectiveTarifaId = (form as any).tarifa_id || defaultListaPrecioData?.tarifa_id || null;
+
   // Tarifa rules
   const { data: tarifaRules } = useQuery({
-    queryKey: ['tarifa-rules-cotizacion', form.tarifa_id], enabled: !!form.tarifa_id,
+    queryKey: ['tarifa-rules-cotizacion', effectiveTarifaId], enabled: !!effectiveTarifaId,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await supabase.from('tarifa_lineas')
         .select('aplica_a, producto_ids, clasificacion_ids, presentacion_ids, tipo_calculo, precio, precio_minimo, margen_pct, descuento_pct, redondeo, base_precio, lista_precio_id')
-        .eq('tarifa_id', form.tarifa_id!);
+        .eq('tarifa_id', effectiveTarifaId!);
       if (error) throw error;
       return (data ?? []) as TarifaLineaRule[];
     },
   });
 
+  const productosList = useMemo(() => {
+    if (!productosListRaw) return productosListRaw;
+    return productosListRaw.map((p: any) => {
+      let dispPrice = Number(p.precio_principal) || 0;
+      if (tarifaRules?.length) {
+        const prodForPricing: ProductForPricing = {
+          id: p.id, precio_principal: Number(p.precio_principal) || 0, costo: Number(p.costo) || 0, costos_adicionales: p.costos_adicionales,
+          clasificacion_id: p.clasificacion_id, tiene_iva: p.tiene_iva, iva_pct: Number(p.iva_pct ?? 16),
+          tiene_ieps: p.tiene_ieps || (Number(p.ieps_pct) > 0), ieps_pct: Number(p.ieps_pct ?? 0), ieps_tipo: p.ieps_tipo, usa_listas_precio: p.usa_listas_precio
+        };
+        const pricing = resolveProductPricing(tarifaRules, prodForPricing, effectiveListaId);
+        dispPrice = buildSalePricingSnapshot(prodForPricing, pricing).displayPrice;
+      }
+      return { ...p, _precio_dropdown: dispPrice };
+    });
+  }, [productosListRaw, tarifaRules, effectiveListaId]);
+
   // Load existing cotizacion
   useEffect(() => {
     if (!existingCotizacion) {
       if (isNew) {
-        const defaultTarifa = tarifasList?.find((t: any) => t.tipo === 'general')?.id;
-        setForm(prev => ({
-          ...prev,
-          vendedor_id: profile?.id,
-          ...(defaultTarifa ? { tarifa_id: defaultTarifa } : {}),
-        }));
+        setForm(prev => {
+          const hasUpdates = (!prev.vendedor_id && profile?.id);
+          if (!hasUpdates) return prev;
+          
+          return {
+            ...prev,
+            vendedor_id: prev.vendedor_id || profile?.id,
+          };
+        });
       }
       return;
     }
@@ -127,9 +169,10 @@ export function useCotizacionForm() {
       if (l.ieps_pct > 0) taxes.push(`IEPS ${l.ieps_pct}%`);
       return { ...l, unidad_label: unidadLabel, impuestos_label: taxes.join(', ') };
     });
-    const isReadOnly = !!existingCotizacion.venta_id;
+    const isReadOnly = existingCotizacion.status !== 'borrador';
     setLineas(isReadOnly ? existingLines : [...existingLines, emptyLine()]);
-  }, [existingCotizacion?.id, isNew, tarifasList, profile?.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(existingCotizacion as any)?.id, isNew, tarifasList, profile]);
 
   // Totals
   const totals = useMemo(() => {
@@ -149,24 +192,24 @@ export function useCotizacionForm() {
   // Re-price existing lines when tarifa rules change
   useEffect(() => {
     if (!tarifaRules?.length || !productosList || readOnly) return;
-    const listaPrecioId = null;
     setLineas(prev => prev.map(l => {
       if (!l.producto_id) return l;
       if ((l as any).precio_manual) return l;
       const prod = productosList.find((p: any) => p.id === l.producto_id);
       if (!prod) return l;
       const prodForPricing: ProductForPricing = {
-        id: l.producto_id, precio_principal: Number(prod.precio_principal) || 0, costo: Number(prod.costo) || 0,
+        id: l.producto_id, precio_principal: Number(prod.precio_principal) || 0, costo: Number(prod.costo) || 0, costos_adicionales: prod.costos_adicionales,
         clasificacion_id: prod.clasificacion_id, tiene_iva: prod.tiene_iva, iva_pct: Number(prod.iva_pct ?? 16),
         tiene_ieps: prod.tiene_ieps || (Number(prod.ieps_pct) > 0), ieps_pct: Number(prod.ieps_pct ?? 0), ieps_tipo: prod.ieps_tipo,
         usa_listas_precio: prod.usa_listas_precio,
       };
-      const pricing = resolveProductPricing(tarifaRules, prodForPricing, listaPrecioId);
+      const pricing = resolveProductPricing(tarifaRules, prodForPricing, effectiveListaId);
       const snap = buildSalePricingSnapshot(prodForPricing, pricing);
       if (snap.unitPrice === Number(l.precio_unitario)) return l;
       return { ...l, precio_unitario: snap.unitPrice, display_unit_price: snap.displayPrice } as any;
     }));
-  }, [tarifaRules, productosList, readOnly]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tarifaRules, productosList, readOnly, effectiveListaId]);
 
   const set = (field: string, val: any) => { if (readOnly) return; setForm(prev => ({ ...prev, [field]: val })); setDirty(true); };
 
@@ -188,9 +231,9 @@ export function useCotizacionForm() {
     const prodForPricing: ProductForPricing = {
       id: productoId, precio_principal: Number(producto.precio_principal) || 0, costo: Number(producto.costo) || 0,
       clasificacion_id: producto.clasificacion_id, tiene_iva: producto.tiene_iva, iva_pct: Number(producto.iva_pct ?? 16),
-      tiene_ieps: hasIeps, ieps_pct: Number(producto.ieps_pct ?? 0), ieps_tipo: producto.ieps_tipo, usa_listas_precio: producto.usa_listas_precio,
+      tiene_ieps: hasIeps, ieps_pct: Number(producto.ieps_pct ?? 0), ieps_tipo: producto.ieps_tipo, usa_listas_precio: producto.usa_listas_precio, costos_adicionales: producto.costos_adicionales,
     };
-    const pricing = tarifaRules?.length ? resolveProductPricing(tarifaRules, prodForPricing, null) : null;
+    const pricing = tarifaRules?.length ? resolveProductPricing(tarifaRules, prodForPricing, effectiveListaId) : null;
     const snap = pricing ? buildSalePricingSnapshot(prodForPricing, pricing) : null;
     const finalUnitPrice = snap ? snap.unitPrice : Number(producto.precio_principal) || 0;
     
@@ -260,9 +303,9 @@ export function useCotizacionForm() {
       id: producto.id, precio_principal: Number(producto.precio_principal) || 0, costo: Number(producto.costo) || 0,
       clasificacion_id: producto.clasificacion_id, tiene_iva: producto.tiene_iva, iva_pct: Number(producto.iva_pct ?? 16),
       tiene_ieps: hasIeps, ieps_pct: Number(producto.ieps_pct ?? 0), ieps_tipo: producto.ieps_tipo,
-      usa_listas_precio: producto.usa_listas_precio,
+      usa_listas_precio: producto.usa_listas_precio, costos_adicionales: producto.costos_adicionales,
     };
-    const pricing = tarifaRules?.length ? resolveProductPricing(tarifaRules, prodForPricing, null) : null;
+    const pricing = tarifaRules?.length ? resolveProductPricing(tarifaRules, prodForPricing, effectiveListaId) : null;
     const snap = pricing ? buildSalePricingSnapshot(prodForPricing, pricing) : null;
     const finalUnitPrice = snap ? snap.unitPrice : Number(producto.precio_principal) || 0;
 
@@ -299,7 +342,7 @@ export function useCotizacionForm() {
             clasificacion_id: prod.clasificacion_id,
             tiene_iva: newIvaPct > 0, iva_pct: newIvaPct > 0 ? newIvaPct : Number(prod.iva_pct ?? 16),
             tiene_ieps: newIepsPct > 0, ieps_pct: newIepsPct > 0 ? newIepsPct : Number(prod.ieps_pct ?? 0),
-            ieps_tipo: prod.ieps_tipo, usa_listas_precio: prod.usa_listas_precio,
+            ieps_tipo: prod.ieps_tipo, usa_listas_precio: prod.usa_listas_precio, costos_adicionales: prod.costos_adicionales,
           };
           const pricing = resolveProductPricing(tarifaRules, prodForPricing, null);
           const snap = buildSalePricingSnapshot(prodForPricing, pricing);
@@ -373,7 +416,7 @@ export function useCotizacionForm() {
     productBeingConfigured, setProductBeingConfigured, handleConfirmPresentacion, handleEditPresentacion,
     profile, user, empresa, navigate,
     clientesList, productosList, tarifasList, vendedoresList,
-    totals,
+    totals, tarifaRules, effectiveListaId,
     saveCotizacion,
     set, handleProductSelect, handleSave, handleDelete, handleStatusChange, handleConvertToVenta,
     addLine, updateLine, removeLine, setCellRef, handleCellKeyDown, navigateCell,

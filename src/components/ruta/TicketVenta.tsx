@@ -118,7 +118,7 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;font-size:11px;width:80mm;pad
       `Fecha: ${fecha}`,
       `Cliente: ${clienteNombre}`,
       `Pago: ${pagoLabel}`,
-      metodoPago ? `Método: ${metodoPago}` : '',
+      condicionPago !== 'credito' && metodoPago ? `Método: ${metodoPago}` : '',
       '─'.repeat(30),
       ...lineas.map(l => {
         const taxes = [
@@ -219,7 +219,7 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;font-size:11px;width:80mm;pad
               )}
               <div className="flex gap-4">
                 <span><span className="font-bold text-foreground">Pago </span><span className="text-muted-foreground">{pagoLabel}</span></span>
-                {metodoPago && (
+                {condicionPago !== 'credito' && metodoPago && (
                   <span><span className="font-bold text-foreground">Método </span><span className="text-muted-foreground capitalize">{metodoPago}</span></span>
                 )}
               </div>

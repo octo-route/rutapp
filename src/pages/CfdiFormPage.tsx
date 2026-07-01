@@ -15,7 +15,7 @@ import { TableSkeleton } from '@/components/TableSkeleton';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCurrency } from '@/hooks/useCurrency';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn, extractEdgeFunctionError } from '@/lib/utils';
 import { generarCfdiPdf } from '@/lib/cfdiPdf';
 import { loadLogoBase64 } from '@/lib/pdfBase';
 
@@ -248,15 +248,34 @@ export default function CfdiFormPage() {
       return;
     }
     if (lineas.length === 0) {
-      toast.error('Agrega al menos una línea');
+      toast.error('La factura debe tener al menos un concepto');
+      return;
+    }
+    if ((timbreSaldo ?? 0) < 1) {
+      toast.error('No tienes timbres disponibles.');
       return;
     }
 
-    // Save first if dirty
-    if (dirty) await handleSave();
-
     setTimbring(true);
     try {
+      // Check if any of these lines are already facturado
+      const ventaLineaIds = lineas.map(l => l.venta_linea_id).filter(Boolean);
+      if (ventaLineaIds.length > 0) {
+        const { data: alreadyBilled } = await supabase
+          .from('venta_lineas')
+          .select('id')
+          .in('id', ventaLineaIds)
+          .eq('facturado', true)
+          .limit(1);
+        
+        if (alreadyBilled && alreadyBilled.length > 0) {
+          throw new Error('No se puede timbrar: Una o más líneas de esta venta ya fueron facturadas previamente.');
+        }
+      }
+
+      // Save first if dirty
+      if (dirty) await handleSave();
+
       const items = lineas.map(l => ({
         product_code: l.product_code || '01010101',
         description: l.descripcion || 'Producto',
@@ -300,10 +319,12 @@ export default function CfdiFormPage() {
         },
       });
 
-      // Check for errors - data.error contains the real Facturama message
+      if (error) {
+        const msg = await extractEdgeFunctionError(error);
+        throw new Error(msg);
+      }
       if (data?.error) throw new Error(data.error);
-      if (error) throw new Error(data?.error || error.message || 'Error desconocido al timbrar');
-      if (!data?.success) throw new Error(data?.error || 'Respuesta inesperada del servidor');
+      if (!data?.success) throw new Error('Respuesta inesperada del servidor');
 
       // Mark venta_lineas as facturado
       for (const l of lineas) {

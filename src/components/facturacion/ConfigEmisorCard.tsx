@@ -12,7 +12,7 @@ import { Building2, Save, Loader2, Upload, FileText, ShieldCheck, CheckCircle, A
 import SearchableSelect from '@/components/SearchableSelect';
 
 export function ConfigEmisorCard() {
-  const { empresa } = useAuth();
+  const { empresa, refresh } = useAuth();
   const [form, setForm] = useState({
     rfc: '',
     razon_social: '',
@@ -74,10 +74,45 @@ export function ConfigEmisorCard() {
         ciudad: empresa.ciudad || '',
         estado: empresa.estado || '',
       };
-      setForm(initial);
       setInitialForm(initial);
+
+      // Restaura el borrador desde sessionStorage si existe para esta empresa
+      const draftStr = sessionStorage.getItem(`emisor_form_draft_${empresa.id}`);
+      if (draftStr) {
+        try {
+          const draft = JSON.parse(draftStr);
+          if (draft && typeof draft === 'object') {
+            setForm({
+              rfc: draft.rfc ?? initial.rfc,
+              razon_social: draft.razon_social ?? initial.razon_social,
+              regimen_fiscal: draft.regimen_fiscal ?? initial.regimen_fiscal,
+              cp: draft.cp ?? initial.cp,
+              direccion: draft.direccion ?? initial.direccion,
+              colonia: draft.colonia ?? initial.colonia,
+              ciudad: draft.ciudad ?? initial.ciudad,
+              estado: draft.estado ?? initial.estado,
+            });
+            return;
+          }
+        } catch (e) {
+          console.error('Error parsing draft from sessionStorage:', e);
+        }
+      }
+
+      setForm(initial);
     }
   }, [empresa]);
+
+  // Guarda automáticamente los cambios en sessionStorage
+  useEffect(() => {
+    if (!empresa?.id) return;
+    const isDifferent = JSON.stringify(form) !== JSON.stringify(initialForm);
+    if (isDifferent) {
+      sessionStorage.setItem(`emisor_form_draft_${empresa.id}`, JSON.stringify(form));
+    } else {
+      sessionStorage.removeItem(`emisor_form_draft_${empresa.id}`);
+    }
+  }, [form, initialForm, empresa?.id]);
 
   const hasChanges = JSON.stringify(form) !== JSON.stringify(initialForm);
 
@@ -107,6 +142,7 @@ export function ConfigEmisorCard() {
     } else {
       toast.success('Datos fiscales guardados');
       setInitialForm(form);
+      await refresh();
     }
     setSaving(false);
   }

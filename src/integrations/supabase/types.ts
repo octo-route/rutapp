@@ -1021,6 +1021,7 @@ export type Database = {
           cancel_date: string | null
           cancel_status: string | null
           cfdi_type: string
+          cobro_id: string | null
           created_at: string
           currency: string
           empresa_id: string
@@ -1060,6 +1061,7 @@ export type Database = {
           cancel_date?: string | null
           cancel_status?: string | null
           cfdi_type?: string
+          cobro_id?: string | null
           created_at?: string
           currency?: string
           empresa_id: string
@@ -1099,6 +1101,7 @@ export type Database = {
           cancel_date?: string | null
           cancel_status?: string | null
           cfdi_type?: string
+          cobro_id?: string | null
           created_at?: string
           currency?: string
           empresa_id?: string

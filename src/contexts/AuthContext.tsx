@@ -14,11 +14,13 @@ interface AuthContextType {
   /** Super-admin only: override the active empresa to view another company's data */
   overrideEmpresaId: string | null;
   setOverrideEmpresaId: (id: string | null) => void;
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null, profile: null, empresa: null, loading: true, signOut: async () => {},
   overrideEmpresaId: null, setOverrideEmpresaId: () => {},
+  refresh: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -170,8 +172,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => { await supabase.auth.signOut(); };
 
+  const refresh = useCallback(async () => {
+    if (!user) return;
+    await loadUserData(user);
+    
+    // If there is an active override, we should also refresh the overridden company
+    if (overrideEmpresaId) {
+      try {
+        const { data, error } = await supabase.from('empresas')
+          .select('id, nombre, direccion, colonia, ciudad, estado, cp, telefono, email, rfc, logo_url, razon_social, regimen_fiscal, notas_ticket, ticket_campos, moneda, zona_horaria, owner_user_id')
+          .eq('id', overrideEmpresaId)
+          .maybeSingle();
+        if (!error && data) {
+          setEmpresa(data as Empresa);
+          setGlobalTimezone((data as Empresa).zona_horaria);
+        }
+      } catch { /* ignore */ }
+    }
+  }, [user, loadUserData, overrideEmpresaId]);
+
   return (
-    <AuthContext.Provider value={{ user, profile, empresa, loading, signOut, overrideEmpresaId, setOverrideEmpresaId }}>
+    <AuthContext.Provider value={{ user, profile, empresa, loading, signOut, overrideEmpresaId, setOverrideEmpresaId, refresh }}>
       {children}
     </AuthContext.Provider>
   );

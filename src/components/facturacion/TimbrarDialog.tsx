@@ -11,7 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { Loader2, Search, FileCheck, ShoppingCart } from 'lucide-react';
 import SearchableSelect from '@/components/SearchableSelect';
-import { fmtDate } from '@/lib/utils';
+import { fmtDate, extractEdgeFunctionError } from '@/lib/utils';
 import { useCurrency } from '@/hooks/useCurrency';
 
 interface Props {
@@ -61,12 +61,19 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
     queryFn: async () => {
       const { data } = await supabase
         .from('ventas')
-        .select('id, folio, fecha, total, status, clientes(nombre, rfc, regimen_fiscal, uso_cfdi, cp)')
+        .select('id, folio, fecha, total, status, condicion_pago, clientes(nombre, rfc, regimen_fiscal, uso_cfdi, cp, facturama_rfc, facturama_razon_social, facturama_regimen_fiscal, facturama_uso_cfdi, facturama_cp), cobro_aplicaciones(cobros(metodo_pago)), cfdis(id, status, cfdi_type)')
         .eq('empresa_id', empresa!.id)
         .in('status', ['confirmado', 'entregado', 'facturado'])
         .order('fecha', { ascending: false })
-        .limit(100);
-      return data || [];
+        .limit(200);
+
+      if (!data) return [];
+
+      // Filter out ventas that already have a successful (timbrado) CFDI of type 'I' (Ingreso)
+      return data.filter((v: any) => {
+        const hasTimbrado = (v.cfdis || []).some((c: any) => c.status === 'timbrado' && (c.cfdi_type === 'I' || c.cfdi_type === 'E'));
+        return !hasTimbrado;
+      });
     },
   });
 
@@ -77,7 +84,7 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
     queryFn: async () => {
       const { data } = await supabase
         .from('venta_lineas')
-        .select('*, productos(nombre, codigo_sat, codigo)')
+        .select('*, productos(nombre, codigo_sat, codigo, unidades_sat(clave, nombre))')
         .eq('venta_id', selectedVentaId!);
       return data || [];
     },
@@ -118,13 +125,28 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
     if (venta?.clientes) {
       const c = venta.clientes as any;
       setReceiver({
-        rfc: c.rfc || '',
-        name: c.nombre || '',
-        cfdi_use: c.uso_cfdi || 'G01',
-        fiscal_regime: c.regimen_fiscal || '601',
-        tax_zip_code: c.cp || '',
+        rfc: c.facturama_rfc || c.rfc || '',
+        name: c.facturama_razon_social || c.nombre || '',
+        cfdi_use: c.facturama_uso_cfdi || c.uso_cfdi || 'G01',
+        fiscal_regime: c.facturama_regimen_fiscal || c.regimen_fiscal || '601',
+        tax_zip_code: c.facturama_cp || c.cp || '',
       });
     }
+    if (venta?.condicion_pago === 'credito') {
+      setPaymentMethod('PPD');
+      setPaymentForm('99');
+    } else {
+      setPaymentMethod('PUE');
+      let defaultForma = '01'; // Efectivo
+      const aplicacion = venta?.cobro_aplicaciones?.[0];
+      if (aplicacion && aplicacion.cobros) {
+        const m = aplicacion.cobros.metodo_pago;
+        if (m === 'transferencia') defaultForma = '03';
+        else if (m === 'tarjeta') defaultForma = '04'; // Tarjeta de crédito
+      }
+      setPaymentForm(defaultForma);
+    }
+
     setStep('review');
   }, [selectedVentaId]);
 
@@ -154,18 +176,36 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
 
     setTimbrating(true);
     try {
-      const items = ventaLineas.map((l: any) => ({
-        product_code: l.productos?.codigo_sat || '01010101',
-        description: l.descripcion || l.productos?.nombre || 'Producto',
-        unit: 'Pieza',
-        unit_code: 'H87',
-        unit_price: l.precio_unitario,
-        quantity: l.cantidad,
+      const ventaLineaIds = ventaLineas.map((l: any) => l.id).filter(Boolean);
+      if (ventaLineaIds.length > 0) {
+        const { data: alreadyBilled } = await supabase
+          .from('venta_lineas')
+          .select('id')
+          .in('id', ventaLineaIds)
+          .eq('facturado', true)
+          .limit(1);
+        
+        if (alreadyBilled && alreadyBilled.length > 0) {
+          throw new Error('No se puede timbrar: Una o más líneas de esta venta ya fueron facturadas previamente.');
+        }
+      }
+
+      const items = ventaLineas.map((l: any) => {
+        const uSat = l.productos?.unidades_sat;
+        return {
+          product_code: l.productos?.codigo_sat || '01010101',
+          description: l.descripcion || l.productos?.nombre || 'Producto',
+          unit: uSat?.nombre || 'Pieza',
+          unit_code: uSat?.clave || 'H87',
+          unit_price: l.precio_unitario,
+          quantity: l.cantidad,
+          subtotal: l.subtotal,
         iva_rate: (l.iva_pct || 0) / 100,
         ieps_rate: (l.ieps_pct || 0) / 100,
         iva_ret_rate: 0,
         isr_ret_rate: 0,
-      }));
+        };
+      });
 
       const venta = ventas?.find((v: any) => v.id === selectedVentaId);
 
@@ -198,29 +238,35 @@ export function TimbrarDialog({ open, onOpenChange, onSuccess }: Props) {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        const msg = await extractEdgeFunctionError(error);
+        throw new Error(msg);
+      }
       if (data?.error) throw new Error(data.error);
 
       const cfdiId = data?.cfdi?.id;
       if (!cfdiId) throw new Error('Se timbró, pero no se pudo guardar el CFDI localmente');
 
-      const cfdiLineas = ventaLineas.map((l: any) => ({
-        cfdi_id: cfdiId,
-        venta_linea_id: l.id,
-        producto_id: l.producto_id,
-        descripcion: l.descripcion || l.productos?.nombre || 'Producto',
-        cantidad: l.cantidad,
-        precio_unitario: l.precio_unitario,
-        subtotal: l.subtotal ?? 0,
-        iva_pct: l.iva_pct ?? 0,
-        ieps_pct: l.ieps_pct ?? 0,
-        iva_monto: l.iva_monto ?? 0,
-        ieps_monto: l.ieps_monto ?? 0,
-        total: l.total ?? 0,
-        product_code: l.productos?.codigo_sat || '01010101',
-        unit_code: 'H87',
-        unit_name: 'Pieza',
-      }));
+      const cfdiLineas = ventaLineas.map((l: any) => {
+        const uSat = l.productos?.unidades_sat;
+        return {
+          cfdi_id: cfdiId,
+          venta_linea_id: l.id,
+          producto_id: l.producto_id,
+          descripcion: l.descripcion || l.productos?.nombre || 'Producto',
+          cantidad: l.cantidad,
+          precio_unitario: l.precio_unitario,
+          subtotal: l.subtotal ?? 0,
+          iva_pct: l.iva_pct ?? 0,
+          ieps_pct: l.ieps_pct ?? 0,
+          iva_monto: l.iva_monto ?? 0,
+          ieps_monto: l.ieps_monto ?? 0,
+          total: l.total ?? 0,
+          product_code: l.productos?.codigo_sat || '01010101',
+          unit_code: uSat?.clave || 'H87',
+          unit_name: uSat?.nombre || 'Pieza',
+        };
+      });
 
       const { error: linesError } = await supabase.from('cfdi_lineas').insert(cfdiLineas);
       if (linesError) throw linesError;

@@ -42,7 +42,7 @@ export default function SearchableSelect({
   const triggerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; width: number; strategy: 'fixed' | 'absolute'; maxHeight: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; strategy: 'fixed' | 'absolute'; maxHeight: number; openUp?: boolean } | null>(null);
 
   const selectedOption = options.find(o => o.value === value);
   const selectedLabel = selectedOption?.label ?? '';
@@ -75,12 +75,13 @@ export default function SearchableSelect({
       const maxHeight = Math.max(160, Math.min(estimatedHeight, openUp ? spaceAbove : spaceBelow));
       setPos({
         top: openUp
-          ? triggerRect.top - containerRect.top + dialogContainer.scrollTop - dialogContainer.clientTop - maxHeight - 2
+          ? triggerRect.top - containerRect.top + dialogContainer.scrollTop - dialogContainer.clientTop - 2
           : triggerRect.bottom - containerRect.top + dialogContainer.scrollTop - dialogContainer.clientTop + 2,
         left: triggerRect.left - containerRect.left + dialogContainer.scrollLeft - dialogContainer.clientLeft,
         width: Math.max(triggerRect.width, 220),
         maxHeight,
         strategy: 'absolute',
+        openUp,
       });
       return;
     }
@@ -90,11 +91,12 @@ export default function SearchableSelect({
     const openUp = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
     const maxHeight = Math.max(160, Math.min(estimatedHeight, openUp ? spaceAbove : spaceBelow));
     setPos({
-      top: openUp ? triggerRect.top - maxHeight - 2 : triggerRect.bottom + 2,
+      top: openUp ? triggerRect.top - 2 : triggerRect.bottom + 2,
       left: triggerRect.left,
       width: Math.max(triggerRect.width, 220),
       maxHeight,
       strategy: 'fixed',
+      openUp,
     });
   }, []);
 
@@ -213,6 +215,7 @@ export default function SearchableSelect({
             top: pos.top,
             left: pos.left,
             width: pos.width,
+            transform: pos.openUp ? 'translateY(-100%)' : undefined,
             zIndex: 99999,
           }}
           className="bg-popover border border-border rounded-md shadow-xl flex flex-col overflow-hidden"

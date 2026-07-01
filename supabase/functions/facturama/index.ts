@@ -7,8 +7,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-// Use production API
-const FACTURAMA_API = "https://api.facturama.mx";
+// Use dynamic API URL based on environment variable (falls back to production)
+const FACTURAMA_API = Deno.env.get("FACTURAMA_API_URL") || "https://api.facturama.mx";
 
 function getAuth() {
   const user = Deno.env.get("FACTURAMA_USERNAME");
@@ -66,6 +66,8 @@ serve(async (req) => {
 
     if (action === "timbrar") {
       return await timbrar(supabase, user.id, body);
+    } else if (action === "timbrar_pago") {
+      return await timbrarPago(supabase, user.id, body);
     } else if (action === "cancelar") {
       return await cancelar(supabase, user.id, body);
     } else {
@@ -167,6 +169,90 @@ async function listCsds() {
 }
 
 // ========================================
+// TIMBRAR CFDI PAGO (REP)
+// ========================================
+async function timbrarPago(supabase: any, userId: string, body: any) {
+  const auth = getAuth();
+  const serviceDb = getServiceSupabase();
+  const { cfdi_id, cobro_id, empresa_id, issuer, receiver, complemento, expedition_place, serie, name_id } = body;
+
+  // Check timbre balance before proceeding
+  const { data: saldoRow } = await serviceDb.from("timbres_saldo").select("saldo").eq("empresa_id", empresa_id).single();
+  const saldoActual = saldoRow?.saldo ?? 0;
+  if (saldoActual < 1) {
+    throw new Error("No tienes timbres disponibles. Contacta al administrador para adquirir más timbres.");
+  }
+
+  let folio = body.folio;
+  if (!folio || folio.trim() === '') {
+    folio = String(Date.now()).slice(-8);
+  }
+
+  const facturamaPayload: any = {
+    NameId: name_id,
+    CfdiType: "P",
+    ExpeditionPlace: expedition_place,
+    Folio: folio,
+    Serie: serie || "P",
+    Receiver: {
+      Name: receiver.name,
+      CfdiUse: "CP01", // CP01 is required for Payments
+      Rfc: receiver.rfc,
+      FiscalRegime: receiver.fiscal_regime,
+      TaxZipCode: receiver.tax_zip_code,
+    },
+    Complemento: complemento,
+  };
+
+  const res = await fetch(`${FACTURAMA_API}/3/cfdis`, {
+    method: "POST",
+    headers: { Authorization: auth, "Content-Type": "application/json" },
+    body: JSON.stringify(facturamaPayload),
+  });
+
+  const responseText = await res.text();
+  if (!res.ok) {
+    let errorDetail = responseText;
+    try {
+      const p = JSON.parse(responseText);
+      if (p.Message) errorDetail = p.Message;
+      if (p.ModelState) errorDetail += " " + JSON.stringify(p.ModelState);
+    } catch (e) {}
+    
+    await supabase.from("cfdis").update({ status: "error", error_detalle: errorDetail }).eq("id", cfdi_id);
+    throw new Error(errorDetail);
+  }
+
+  const facturamaData = JSON.parse(responseText);
+  
+  await supabase.from("cfdis").update({
+    facturama_id: facturamaData.Id,
+    status: "timbrado",
+    error_detalle: null,
+    sello_cfdi: facturamaData.Sello,
+    no_certificado_emisor: facturamaData.NoCertificado,
+    cadena_original: facturamaData.CadenaOriginal,
+    fecha_timbrado: facturamaData.Date,
+    folio_fiscal: facturamaData.Complement?.TaxStamp?.Uuid || facturamaData.Uuid,
+    sello_sat: facturamaData.Complement?.TaxStamp?.SatSign,
+    no_certificado_sat: facturamaData.Complement?.TaxStamp?.SatCertNumber,
+  }).eq("id", cfdi_id);
+
+  // Consume a timbre for this company
+  await serviceDb.rpc("decrement_timbres", { emp_id: empresa_id, cantidad: 1 });
+  // Add movement to history
+  await serviceDb.from("timbres_movimientos").insert({
+    empresa_id: empresa_id,
+    tipo_movimiento: "consumo",
+    cantidad: 1,
+    descripcion: `Timbrado de Complemento de Pago Folio: ${folio}`,
+    referencia_id: cfdi_id
+  });
+
+  return new Response(JSON.stringify(facturamaData), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+}
+
+// ========================================
 // TIMBRAR CFDI
 // ========================================
 async function timbrar(supabase: any, userId: string, body: any) {
@@ -192,9 +278,14 @@ async function timbrar(supabase: any, userId: string, body: any) {
   let totalFactura = 0;
 
   for (const item of items) {
-    const unitPrice = r2(item.unit_price);
+    const unitPrice = r6(item.unit_price);
     const quantity = r6(item.quantity);
-    const subtotal = r2(unitPrice * quantity);
+    let subtotal = 0;
+    if (item.subtotal !== undefined) {
+      subtotal = r2(item.subtotal);
+    } else {
+      subtotal = r2(unitPrice * quantity);
+    }
 
     const facItem: any = {
       ProductCode: item.product_code || "01010101",

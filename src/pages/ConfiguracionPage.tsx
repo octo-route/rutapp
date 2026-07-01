@@ -467,7 +467,7 @@ function DangerZoneCard() {
 
 export default function ConfiguracionPage() {
   const { fmt } = useCurrency();
-  const { empresa } = useAuth();
+  const { empresa, refresh } = useAuth();
   const qc = useQueryClient();
   const { data: config, isLoading } = useEmpresaConfig();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -592,6 +592,7 @@ export default function ConfiguracionPage() {
       qc.invalidateQueries({ queryKey: ['empresa'] });
       qc.invalidateQueries({ queryKey: ['empresa-jornada'] });
       setLogoFile(null);
+      refresh();
     },
     onError: (e: any) => {
       const msg = e.message?.includes('empresas_email_unique')

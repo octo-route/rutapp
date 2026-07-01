@@ -56,8 +56,8 @@ export function CotizacionLineaMobile({ idx, line: l, isLast, lineas, productosL
             </>
           ) : (
             <ProductSearchInput
-              products={(productosList ?? []).filter((p: any) => !lineas.filter((_, j) => j !== idx).map(ll => ll.producto_id).filter(Boolean).includes(p.id)).map((p: any) => ({ id: p.id, codigo: p.codigo, nombre: p.nombre, precio_principal: p.precio_principal, _stock: p._stock, es_combo: p.es_combo, se_puede_incotizacionriar: p.se_puede_incotizacionriar }))}
-              value={l.producto_id ?? ''} displayText={prod ? `${prod.codigo} · ${prod.nombre}` : (snapshotProd ? `${snapshotProd.codigo ?? ''}${snapshotProd.codigo && snapshotProd.nombre ? ' · ' : ''}${snapshotProd.nombre ?? ''}` : undefined)}
+              products={(productosList ?? []).filter((p: any) => !lineas.filter((_, j) => j !== idx).map(ll => ll.producto_id).filter(Boolean).includes(p.id)).map((p: any) => ({ id: p.id, codigo: p.codigo, nombre: p.nombre, precio_principal: p._precio_dropdown ?? p.precio_principal, _stock: p._stock, es_combo: p.es_combo, se_puede_incotizacionriar: p.se_puede_incotizacionriar }))}
+              value={l.producto_id ?? ''} displayText={prod ? `${prod.codigo} - ${prod.nombre}` : (snapshotProd ? `${snapshotProd.codigo ?? ''}${snapshotProd.codigo && snapshotProd.nombre ? ' - ' : ''}${snapshotProd.nombre ?? ''}` : undefined)}
               onSelect={pid => onProductSelect(idx, pid)} autoFocus={idx === lineas.length - 1 && isEmpty} readOnly={readOnly}
             />
           )}

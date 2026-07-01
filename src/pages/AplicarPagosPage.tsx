@@ -14,6 +14,7 @@ import { TableSkeleton } from '@/components/TableSkeleton';
 import { Badge } from '@/components/ui/badge';
 import { printTicket } from '@/lib/printTicketUtil';
 import { buildCobroTicketData } from '@/lib/cobroTicket';
+import { TimbrarPagoDialog } from '@/components/facturacion/TimbrarPagoDialog';
 
 /* ──────────── types ──────────── */
 interface PendingSale {
@@ -105,6 +106,10 @@ export default function AplicarPagosPage() {
   const [notas, setNotas] = useState('');
   const [ventas, setVentas] = useState<PendingSale[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Timbrar Pago state
+  const [timbrarPagoOpen, setTimbrarPagoOpen] = useState(false);
+  const [recentCobroId, setRecentCobroId] = useState<string | null>(null);
 
   const { data: clientesRaw, isLoading: loadingClientes } = useClientesConSaldo(clienteSearch);
   const { data: ventasRaw, isLoading: loadingVentas } = useVentasPendientes(selectedCliente?.id ?? null);
@@ -204,11 +209,22 @@ export default function AplicarPagosPage() {
         await supabase.from('ventas').update({ saldo_pendiente: nuevoSaldo }).eq('id', v.id);
       }
 
-      toast.success(`Pago de ${fmt(totalDistribuido)} aplicado a ${aplicaciones.length} venta(s)`);
-      queryClient.invalidateQueries({ queryKey: ['ventas-pendientes-aplicar'] });
+      toast.success('Pago aplicado exitosamente');
+      setRecentCobroId(cobro.id);
+      
+      // Cleanup for next
+      setSelectedCliente(null);
+      setVentas([]);
+      setMontoRecibido('');
+      setReferencia('');
+      setNotas('');
+      
+      // Attempt to refresh
       queryClient.invalidateQueries({ queryKey: ['clientes-con-saldo'] });
-      queryClient.invalidateQueries({ queryKey: ['cuentas-cobrar'] });
-      queryClient.invalidateQueries({ queryKey: ['cobros'] });
+      queryClient.invalidateQueries({ queryKey: ['ventas-pendientes-aplicar'] });
+
+      // Open the dialog to ask if they want to timbrar
+      setTimbrarPagoOpen(true);
 
       // Print ticket
       if (empresa) {
@@ -247,8 +263,6 @@ export default function AplicarPagosPage() {
         });
         printTicket(ticketData, { ticketAncho: (empresa as any).ticket_ancho ?? '80' });
       }
-
-      handleBack();
     } catch (e: any) {
       toast.error(e.message || 'Error al aplicar pago');
     } finally {
@@ -336,6 +350,11 @@ export default function AplicarPagosPage() {
             </table>
           </div>
         )}
+        <TimbrarPagoDialog 
+          open={timbrarPagoOpen}
+          onOpenChange={setTimbrarPagoOpen}
+          cobroId={recentCobroId}
+        />
       </div>
     );
   }

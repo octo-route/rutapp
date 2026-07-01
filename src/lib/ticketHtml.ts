@@ -141,7 +141,7 @@ export function buildTicketHTML(data: TicketData, opts?: { ticketAncho?: string;
   add(`Cliente: ${clienteNombre}`.substring(0, COLS));
   if (vendedorNombre) add(`Vendedor: ${vendedorNombre}`.substring(0, COLS));
   const pagoLabel = condicionPago === 'credito' ? 'Credito' : condicionPago === 'contado' ? 'Contado' : 'P/definir';
-  add(`Pago: ${pagoLabel}${metodoPago ? ` (${metodoPago})` : ''}`);
+  add(`Pago: ${pagoLabel}${condicionPago !== 'credito' && metodoPago ? ` (${metodoPago})` : ''}`);
   add(div);
 
   add(pad('Cant Producto', 'Importe'));

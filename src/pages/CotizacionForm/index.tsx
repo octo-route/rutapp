@@ -25,7 +25,7 @@ export default function CotizacionFormPage() {
     id, isNew, form, lineas, setLineas, readOnly, canEditCotizacion, isLoading,
     productBeingConfigured, setProductBeingConfigured, handleConfirmPresentacion, handleEditPresentacion,
     navigate, clientesList, productosList, tarifasList, vendedoresList,
-    profile, user, empresa, totals, saveCotizacion,
+    profile, user, empresa, totals, saveCotizacion, tarifaRules, effectiveListaId,
     set, handleProductSelect, handleSave, handleDelete, handleStatusChange, handleConvertToVenta,
     addLine, updateLine, removeLine, setCellRef, handleCellKeyDown, navigateCell,
   } = useCotizacionForm();
@@ -188,6 +188,8 @@ export default function CotizacionFormPage() {
           producto={productBeingConfigured.producto}
           presentaciones={productBeingConfigured.presentaciones}
           precioPorUnidadBase={productBeingConfigured.precioBase}
+          tarifaRules={tarifaRules ?? []}
+          clienteListaPrecioId={effectiveListaId ?? null}
           onConfirm={handleConfirmPresentacion}
           onClose={() => setProductBeingConfigured(null)}
         />
