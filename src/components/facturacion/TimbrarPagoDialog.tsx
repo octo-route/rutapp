@@ -50,7 +50,7 @@ export function TimbrarPagoDialog({ open, onOpenChange, cobroId, onSuccess }: Pr
             facturama_rfc, facturama_razon_social, facturama_regimen_fiscal, facturama_uso_cfdi, facturama_cp
           ),
           cobro_aplicaciones (
-            id, monto,
+            id, monto:monto_aplicado,
             ventas (
               id, folio, total, cfdis (id, folio_fiscal, status, cfdi_type)
             )
@@ -87,7 +87,7 @@ export function TimbrarPagoDialog({ open, onOpenChange, cobroId, onSuccess }: Pr
         // Find previous payments applied to this venta to calculate installment number and previous balance
         const { data: allApps } = await supabase
           .from('cobro_aplicaciones')
-          .select('id, monto, cobros(fecha)')
+          .select('id, monto:monto_aplicado, cobros(fecha)')
           .eq('venta_id', venta.id)
           .order('created_at', { ascending: true });
 
