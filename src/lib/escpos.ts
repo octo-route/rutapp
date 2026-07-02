@@ -2,28 +2,31 @@
  * ESC/POS command builder for 58mm and 80mm thermal printers.
  * Fixed-width column layout to prevent price overflow / line jumping.
  */
-import type { TicketData } from './ticketHtml';
-import { getCurrencyConfig } from './currency';
+import type { TicketData } from "./ticketHtml";
+import { getCurrencyConfig } from "./currency";
 
 const COLS_58 = 32;
 const COLS_80 = 48;
 
-const ESC = 0x1B;
-const GS  = 0x1D;
+const ESC = 0x1b;
+const GS = 0x1d;
 
-const INIT         = [ESC, 0x40];
+const INIT = [ESC, 0x40];
 const ALIGN_CENTER = [ESC, 0x61, 0x01];
-const ALIGN_LEFT   = [ESC, 0x61, 0x00];
-const BOLD_ON      = [ESC, 0x45, 0x01];
-const BOLD_OFF     = [ESC, 0x45, 0x00];
-const CUT          = [GS, 0x56, 0x42, 0x00];
-const LF           = [0x0A];
+const ALIGN_LEFT = [ESC, 0x61, 0x00];
+const BOLD_ON = [ESC, 0x45, 0x01];
+const BOLD_OFF = [ESC, 0x45, 0x00];
+const CUT = [GS, 0x56, 0x42, 0x00];
+const LF = [0x0a];
 
 const enc = new TextEncoder();
 
 /** Strip accents and non-ASCII so byte length = char count */
 function clean(s: string): string {
-  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, '');
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "");
 }
 
 /** Format number without locale (avoids non-ASCII separators) */
@@ -31,21 +34,21 @@ function fmtNum(n: number): string {
   const abs = Math.abs(n);
   const fixed = abs.toFixed(2);
   // Add thousand separators manually with comma
-  const [int, dec] = fixed.split('.');
-  const withCommas = int.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return (n < 0 ? '-' : '') + withCommas + '.' + dec;
+  const [int, dec] = fixed.split(".");
+  const withCommas = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return (n < 0 ? "-" : "") + withCommas + "." + dec;
 }
 
 /** Pad-right a string to exactly w chars, truncating if needed */
 function padR(s: string, w: number): string {
   if (s.length >= w) return s.slice(0, w);
-  return s + ' '.repeat(w - s.length);
+  return s + " ".repeat(w - s.length);
 }
 
 /** Pad-left a string to exactly w chars, truncating if needed */
 function padL(s: string, w: number): string {
   if (s.length >= w) return s.slice(0, w);
-  return ' '.repeat(w - s.length) + s;
+  return " ".repeat(w - s.length) + s;
 }
 
 /** Build a row: left text padded-right + right text padded-left = exactly W chars */
@@ -54,7 +57,8 @@ function row(left: string, right: string, W: number): string {
   left = clean(left);
   const rightW = Math.max(right.length, 1);
   const leftW = W - rightW;
-  if (leftW < 1) return (left.slice(0, W - right.length - 1) + ' ' + right).slice(0, W);
+  if (leftW < 1)
+    return (left.slice(0, W - right.length - 1) + " " + right).slice(0, W);
   return padR(left, leftW) + padL(right, rightW);
 }
 
@@ -67,7 +71,7 @@ function wrap(s: string, w: number): string[] {
   if (s.length <= w) return [padR(s, w)];
   const result: string[] = [];
   while (s.length > w) {
-    let cut = s.lastIndexOf(' ', w);
+    let cut = s.lastIndexOf(" ", w);
     if (cut < 1) cut = w;
     result.push(padR(s.slice(0, cut), w));
     s = s.slice(cut).trim();
@@ -86,12 +90,12 @@ function itemLines(desc: string, price: string, W: number): string[] {
   const descLines = wrap(desc, LEFT_W);
   return [
     descLines[0] + padL(price, PRICE_W),
-    ...descLines.slice(1).map(l => l + ' '.repeat(PRICE_W)),
+    ...descLines.slice(1).map((l) => l + " ".repeat(PRICE_W)),
   ];
 }
 
 function divider(w: number): string {
-  return '-'.repeat(w);
+  return "-".repeat(w);
 }
 
 /** Center text within w chars */
@@ -99,23 +103,26 @@ function center(s: string, w: number): string {
   s = clean(s);
   if (s.length >= w) return s.slice(0, w);
   const pad = Math.floor((w - s.length) / 2);
-  return ' '.repeat(pad) + s;
+  return " ".repeat(pad) + s;
 }
 
 /**
  * Load an image URL and convert to ESC/POS GS v 0 raster bytes (monochrome).
  * Returns empty array if image fails to load.
  */
-async function logoToRasterBytes(url: string, maxWidth: number): Promise<number[]> {
+async function logoToRasterBytes(
+  url: string,
+  maxWidth: number,
+): Promise<number[]> {
   try {
     // Load image
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    img.crossOrigin = "anonymous";
 
     // Try fetching as blob first to avoid CORS
     let objectUrl: string | null = null;
     try {
-      const resp = await fetch(url, { mode: 'cors' });
+      const resp = await fetch(url, { mode: "cors" });
       if (resp.ok) {
         const blob = await resp.blob();
         objectUrl = URL.createObjectURL(blob);
@@ -129,7 +136,7 @@ async function logoToRasterBytes(url: string, maxWidth: number): Promise<number[
 
     await new Promise<void>((res, rej) => {
       img.onload = () => res();
-      img.onerror = () => rej(new Error('img load failed'));
+      img.onerror = () => rej(new Error("img load failed"));
     });
 
     // Scale to fit printer width (maxWidth pixels)
@@ -140,11 +147,11 @@ async function logoToRasterBytes(url: string, maxWidth: number): Promise<number[
     w = Math.floor(w / 8) * 8;
     if (w < 8) w = 8;
 
-    const canvas = document.createElement('canvas');
+    const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#ffffff';
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, w, h);
     ctx.drawImage(img, 0, 0, w, h);
 
@@ -169,7 +176,7 @@ async function logoToRasterBytes(url: string, maxWidth: number): Promise<number[
           const gray = 0.299 * r + 0.587 * g + 0.114 * b;
           // Dark pixel = ink (1), light pixel = no ink (0)
           if (gray < 128) {
-            byte |= (0x80 >> bit);
+            byte |= 0x80 >> bit;
           }
         }
         rasterData.push(byte);
@@ -179,37 +186,49 @@ async function logoToRasterBytes(url: string, maxWidth: number): Promise<number[
     // GS v 0 — print raster bit image
     // Format: GS v 0 m xL xH yL yH data
     // m=0 (normal), xL/xH = bytes per row, yL/yH = height in dots
-    const xL = bytesPerRow & 0xFF;
-    const xH = (bytesPerRow >> 8) & 0xFF;
-    const yL = h & 0xFF;
-    const yH = (h >> 8) & 0xFF;
+    const xL = bytesPerRow & 0xff;
+    const xH = (bytesPerRow >> 8) & 0xff;
+    const yL = h & 0xff;
+    const yH = (h >> 8) & 0xff;
 
     return [GS, 0x76, 0x30, 0x00, xL, xH, yL, yH, ...rasterData];
   } catch (e) {
-    console.warn('[ESC/POS] Logo raster failed:', e);
+    console.warn("[ESC/POS] Logo raster failed:", e);
     return [];
   }
 }
 
-export async function buildEscPosBytes(data: TicketData, opts?: { ticketAncho?: string; showTax?: boolean }): Promise<Uint8Array> {
-  const is58 = (opts?.ticketAncho ?? '80') === '58';
+export async function buildEscPosBytes(
+  data: TicketData,
+  opts?: { ticketAncho?: string; showTax?: boolean },
+): Promise<Uint8Array> {
+  const is58 = (opts?.ticketAncho ?? "80") === "58";
   const W = is58 ? COLS_58 : COLS_80;
   const maxPixelWidth = is58 ? 384 : 576;
 
-  const showTax = opts?.showTax ?? (data.empresa.ticket_campos?.impuestos !== false);
+  const showTax =
+    opts?.showTax ?? data.empresa.ticket_campos?.impuestos !== false;
   const sym = getCurrencyConfig(data.empresa.moneda).symbol;
   const fmt = (n: number) => `${sym}${fmtNum(n)}`;
 
   const parts: number[] = [];
-  const add = (bytes: number[]) => { for (const b of bytes) parts.push(b); };
-  const ln = (s: string) => { const encoded = enc.encode(s + '\n'); for (const b of encoded) parts.push(b); };
+  const add = (bytes: number[]) => {
+    for (const b of bytes) parts.push(b);
+  };
+  const ln = (s: string) => {
+    const encoded = enc.encode(s + "\n");
+    for (const b of encoded) parts.push(b);
+  };
 
   add(INIT);
 
   // ── LOGO (raster image) ──
   if (data.empresa.logo_url && data.empresa.ticket_campos?.logo !== false) {
     add(ALIGN_CENTER);
-    const logoBytes = await logoToRasterBytes(data.empresa.logo_url, maxPixelWidth);
+    const logoBytes = await logoToRasterBytes(
+      data.empresa.logo_url,
+      maxPixelWidth,
+    );
     if (logoBytes.length > 0) {
       add(logoBytes);
       add(LF);
@@ -221,15 +240,25 @@ export async function buildEscPosBytes(data: TicketData, opts?: { ticketAncho?: 
   add(BOLD_ON);
   ln(clean(data.empresa.nombre).slice(0, W));
   add(BOLD_OFF);
-  if (data.empresa.razon_social) ln(clean(data.empresa.razon_social).slice(0, W));
+  if (data.empresa.razon_social)
+    ln(clean(data.empresa.razon_social).slice(0, W));
   if (data.empresa.rfc) ln(clean(`RFC: ${data.empresa.rfc}`).slice(0, W));
-  const dir = [data.empresa.direccion, data.empresa.colonia].filter(Boolean).join(', ');
+  const dir = [data.empresa.direccion, data.empresa.colonia]
+    .filter(Boolean)
+    .join(", ");
   if (dir) {
-    wrap(dir, W).forEach(l => ln(l.trim()));
+    wrap(dir, W).forEach((l) => ln(l.trim()));
   }
-  const dir2Parts = [data.empresa.ciudad, data.empresa.estado, data.empresa.cp ? `CP ${data.empresa.cp}` : ''].filter(Boolean).join(', ');
+  const dir2Parts = [
+    data.empresa.ciudad,
+    data.empresa.estado,
+    data.empresa.cp ? `CP ${data.empresa.cp}` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
   if (dir2Parts) ln(clean(dir2Parts).slice(0, W));
-  if (data.empresa.telefono) ln(clean(`Tel: ${data.empresa.telefono}`).slice(0, W));
+  if (data.empresa.telefono)
+    ln(clean(`Tel: ${data.empresa.telefono}`).slice(0, W));
   if (data.empresa.email) ln(clean(data.empresa.email).slice(0, W));
   add(LF);
 
@@ -239,26 +268,32 @@ export async function buildEscPosBytes(data: TicketData, opts?: { ticketAncho?: 
   ln(`Folio: ${clean(data.folio).slice(0, W - 7)}`);
   ln(`Fecha: ${clean(data.fecha).slice(0, W - 7)}`);
   ln(`Cliente: ${clean(data.clienteNombre).slice(0, W - 9)}`);
-  if (data.vendedorNombre) ln(`Vendedor: ${clean(data.vendedorNombre).slice(0, W - 10)}`);
-  const pagoLabel = data.condicionPago === 'credito' ? 'Credito' : 'Contado';
+  if (data.vendedorNombre)
+    ln(`Vendedor: ${clean(data.vendedorNombre).slice(0, W - 10)}`);
+  const pagoLabel = data.condicionPago === "credito" ? "Credito" : "Contado";
   ln(`Pago: ${pagoLabel}`);
   ln(divider(W));
 
   // ── PRODUCTOS ──
   for (const l of data.lineas) {
     const desc = `${l.cantidad}x ${clean(l.nombre)}`;
-    const lineAmt = showTax ? l.total : (l.total - (l.iva_monto ?? 0) - (l.ieps_monto ?? 0));
+    const lineAmt = showTax
+      ? l.total
+      : l.total - (l.iva_monto ?? 0) - (l.ieps_monto ?? 0);
     const price = fmt(lineAmt);
-    itemLines(desc, price, W).forEach(x => ln(x));
+    itemLines(desc, price, W).forEach((x) => ln(x));
     // Detail: unit price (smaller, indented)
     if (l.precio > 0) {
       const detParts = [`  ${fmt(l.precio)}c/u`];
-      if (showTax && (l.iva_monto ?? 0) > 0) detParts.push(`IVA ${fmt(l.iva_monto!)}`);
-      const det = detParts.join(' ');
+      if (showTax && (l.iva_monto ?? 0) > 0)
+        detParts.push(`IVA ${fmt(l.iva_monto!)}`);
+      const det = detParts.join(" ");
       ln(clean(det).slice(0, W));
     }
     // Per-product promotions
-    const linePromos = (data.promociones ?? []).filter(p => p.producto_id && p.producto_id === l.producto_id);
+    const linePromos = (data.promociones ?? []).filter(
+      (p) => p.producto_id && p.producto_id === l.producto_id,
+    );
     for (const lp of linePromos) {
       ln(row(`  *${clean(lp.descripcion)}`, `-${fmt(lp.descuento)}`, W));
     }
@@ -267,40 +302,56 @@ export async function buildEscPosBytes(data: TicketData, opts?: { ticketAncho?: 
 
   // ── TOTALES ──
   if (showTax) {
-    ln(row('Subtotal', fmt(data.subtotal), W));
-    if (data.iva > 0) ln(row('IVA', fmt(data.iva), W));
-    if ((data.ieps ?? 0) > 0) ln(row('IEPS', fmt(data.ieps!), W));
+    ln(row("Subtotal", fmt(data.subtotal), W));
+    if (data.iva > 0) ln(row("IVA", fmt(data.iva), W));
+    if ((data.ieps ?? 0) > 0) ln(row("IEPS", fmt(data.ieps!), W));
     ln(divider(W));
   }
   add(BOLD_ON);
-  ln(row('TOTAL', fmt(showTax ? data.total : data.subtotal), W));
+  ln(row("TOTAL", fmt(showTax ? data.total : data.subtotal), W));
   add(BOLD_OFF);
+
+  const ahorroCliente = data.lineas.reduce((sum, l) => {
+    const sugerido = Number(l.precio_sugerido_publico) || 0;
+    if (sugerido <= 0) return sum;
+
+    const ahorroLinea = sugerido * l.cantidad - l.total;
+    return sum + Math.max(0, ahorroLinea);
+  }, 0);
+
+  if (
+    ahorroCliente > 0 &&
+    data.empresa.ticket_campos?.ahorro_cliente !== false
+  ) {
+    ln(row("Ahorraste", fmt(ahorroCliente), W));
+  }
 
   // Ahorro total por promociones
   if (data.promociones && data.promociones.length > 0) {
     const totalPromo = data.promociones.reduce((s, p) => s + p.descuento, 0);
     if (totalPromo > 0) {
-      ln(row('Ahorro promos', `-${fmt(totalPromo)}`, W));
+      ln(row("Ahorro promos", `-${fmt(totalPromo)}`, W));
     }
   }
 
   if (data.montoRecibido && data.montoRecibido > 0) {
-    ln(row('Recibido', fmt(data.montoRecibido), W));
-    if ((data.cambio ?? 0) > 0) ln(row('Cambio', fmt(data.cambio!), W));
+    ln(row("Recibido", fmt(data.montoRecibido), W));
+    if ((data.cambio ?? 0) > 0) ln(row("Cambio", fmt(data.cambio!), W));
   }
 
   // ── SALDO ──
   {
     ln(divider(W));
     add(BOLD_ON);
-    ln('EDO. CUENTA');
+    ln("EDO. CUENTA");
     add(BOLD_OFF);
-    ln(row('Saldo ant', fmt(data.saldoAnterior ?? 0), W));
-    if (data.pagoAplicado != null && data.pagoAplicado > 0) ln(row('Pago', `-${fmt(data.pagoAplicado)}`, W));
-    if (data.condicionPago === 'credito') ln(row('+Venta', fmt(data.total), W));
+    ln(row("Saldo ant", fmt(data.saldoAnterior ?? 0), W));
+    if (data.pagoAplicado != null && data.pagoAplicado > 0)
+      ln(row("Pago", `-${fmt(data.pagoAplicado)}`, W));
+    if (data.condicionPago === "credito") ln(row("+Venta", fmt(data.total), W));
     ln(divider(W));
     add(BOLD_ON);
-    ln(row('Saldo', fmt(data.saldoNuevo ?? 0), W));
+    ln(row("Saldo", fmt(data.saldoNuevo ?? 0), W));
     add(BOLD_OFF);
   }
 
@@ -308,11 +359,14 @@ export async function buildEscPosBytes(data: TicketData, opts?: { ticketAncho?: 
   if (data.pagos && data.pagos.length > 0) {
     ln(divider(W));
     add(BOLD_ON);
-    ln('PAGOS RECIBIDOS');
+    ln("PAGOS RECIBIDOS");
     add(BOLD_OFF);
     for (const p of data.pagos) {
-      const fechaPart = p.fecha ? `${clean(p.fecha)} ` : '';
-      const label = fechaPart + clean(p.metodo) + (p.referencia ? ` (${clean(p.referencia)})` : '');
+      const fechaPart = p.fecha ? `${clean(p.fecha)} ` : "";
+      const label =
+        fechaPart +
+        clean(p.metodo) +
+        (p.referencia ? ` (${clean(p.referencia)})` : "");
       ln(row(label.slice(0, W - 14), fmt(p.monto), W));
     }
   }
@@ -320,13 +374,15 @@ export async function buildEscPosBytes(data: TicketData, opts?: { ticketAncho?: 
   // ── FOOTER ──
   add(LF);
   add(ALIGN_CENTER);
-  ln('Gracias por su compra');
+  ln("Gracias por su compra");
   if (data.empresa.notas_ticket) {
-    wrap(data.empresa.notas_ticket, W).forEach(l => ln(l.trim()));
+    wrap(data.empresa.notas_ticket, W).forEach((l) => ln(l.trim()));
   }
-  ln('');
-  ln('octoapp.mx');
-  add(LF); add(LF); add(LF);
+  ln("");
+  ln("octoapp.mx");
+  add(LF);
+  add(LF);
+  add(LF);
   add(CUT);
 
   return new Uint8Array(parts);
