@@ -3013,9 +3013,6 @@ export default function PuntoVentaPage() {
             {/* Confirm button */}
             <div className="px-5 pb-5 pt-2">
               {(() => {
-                const bloqueadoPorFaltaDeCredito =
-                  condicion === "credito" && !clienteCredito;
-
                 const nuevoAdeudo =
                   condicion === "credito"
                     ? totals.total
@@ -3025,16 +3022,19 @@ export default function PuntoVentaPage() {
                       ? faltante
                       : 0;
                 const totalDeudaNueva = clienteSaldoPendiente + nuevoAdeudo;
+                const bloqueadoPorFaltaDeCredito =
+                  !clienteCredito && (clienteSaldoPendiente > 0.01 || nuevoAdeudo > 0.01);
                 const excedeLimiteCredito =
                   clienteCredito === true &&
-                  clienteLimiteCredito > 0 &&
                   totalDeudaNueva > clienteLimiteCredito;
 
                 return (
                   <div className="flex flex-col gap-2">
                     {bloqueadoPorFaltaDeCredito && (
                       <p className="text-[12px] text-destructive text-center font-medium px-2">
-                        El cliente no tiene crédito.
+                        {clienteSaldoPendiente > 0.01
+                          ? `El cliente no tiene crédito. Debe liquidar su saldo anterior (${fmtM(clienteSaldoPendiente)}) para poder cerrar la venta.`
+                          : "El cliente no tiene crédito autorizado para registrar adeudos."}
                       </p>
                     )}
                     {excedeLimiteCredito && (

@@ -198,9 +198,13 @@ describe('importUtils', () => {
       expect(insertedData.nombre).toBe('Cliente Test 1');
       expect(insertedData.codigo).toBe('CLI-T1');
       expect(insertedData.rfc).toBe('RFC123456789');
+      expect(insertedData.facturama_rfc).toBe('RFC123456789');
       expect(insertedData.regimen_fiscal).toBe('601');
+      expect(insertedData.facturama_regimen_fiscal).toBe('601');
       expect(insertedData.cp).toBe('54321');
+      expect(insertedData.facturama_cp).toBe('54321');
       expect(insertedData.uso_cfdi).toBe('G03');
+      expect(insertedData.facturama_uso_cfdi).toBe('G03');
     });
 
     it('should omit client properties from updates if they are not in the spreadsheet', async () => {
@@ -232,9 +236,13 @@ describe('importUtils', () => {
 
       // Unprovided fields in spreadsheet should be undefined (omitted) in clientData update payload
       expect(updatedData.rfc).toBeUndefined();
+      expect(updatedData.facturama_rfc).toBeUndefined();
       expect(updatedData.regimen_fiscal).toBeUndefined();
+      expect(updatedData.facturama_regimen_fiscal).toBeUndefined();
       expect(updatedData.cp).toBeUndefined();
+      expect(updatedData.facturama_cp).toBeUndefined();
       expect(updatedData.uso_cfdi).toBeUndefined();
+      expect(updatedData.facturama_uso_cfdi).toBeUndefined();
     });
   });
 });

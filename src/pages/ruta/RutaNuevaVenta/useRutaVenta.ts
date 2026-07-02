@@ -466,7 +466,7 @@ export function useRutaVenta(opts?: { onAlmacenMissing?: () => void }) {
   }, [cart, promoRawByProduct, descuentoDevolucion, canApplyDiscount, descuentoExtraValor, descuentoExtraTipo]);
 
   const creditoDisponible = clienteCredito ? clienteCredito.limite - saldoPendienteTotal : 0;
-  const excedeCredito = condicionPago === 'credito' && clienteCredito?.limite ? clienteCredito.limite > 0 && totals.total > creditoDisponible : false;
+  const excedeCredito = (condicionPago === 'credito' || condicionPago === 'por_definir') && clienteCredito?.credito ? (totals.total > creditoDisponible) : false;
   const totalPagosLineas = pagos.reduce((s, p) => s + p.monto, 0);
 
   // Auto-distribute surplus payment to pending accounts (FIFO)

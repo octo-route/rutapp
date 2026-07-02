@@ -258,10 +258,30 @@ function applyClientInsertDefaults(data: any) {
   if (data.email === undefined) data.email = null;
   if (data.direccion === undefined) data.direccion = null;
   if (data.colonia === undefined) data.colonia = null;
-  if (data.rfc === undefined) data.rfc = null;
-  if (data.regimen_fiscal === undefined) data.regimen_fiscal = null;
-  if (data.cp === undefined) data.cp = null;
-  if (data.uso_cfdi === undefined) data.uso_cfdi = null;
+  if (data.rfc === undefined) {
+    data.rfc = null;
+    data.facturama_rfc = null;
+  } else {
+    data.facturama_rfc = data.rfc;
+  }
+  if (data.regimen_fiscal === undefined) {
+    data.regimen_fiscal = null;
+    data.facturama_regimen_fiscal = null;
+  } else {
+    data.facturama_regimen_fiscal = data.regimen_fiscal;
+  }
+  if (data.cp === undefined) {
+    data.cp = null;
+    data.facturama_cp = null;
+  } else {
+    data.facturama_cp = data.cp;
+  }
+  if (data.uso_cfdi === undefined) {
+    data.uso_cfdi = null;
+    data.facturama_uso_cfdi = null;
+  } else {
+    data.facturama_uso_cfdi = data.uso_cfdi;
+  }
   if (data.credito === undefined) data.credito = false;
   if (data.limite_credito === undefined) data.limite_credito = 0;
   if (data.dias_credito === undefined) data.dias_credito = 0;
@@ -540,10 +560,28 @@ export async function importClients(rows: Record<string, any>[], empresaId: stri
       if (has('email')) clientData.email = raw.email?.toString().trim() || null;
       if (has('direccion')) clientData.direccion = raw.direccion?.toString().trim() || null;
       if (has('colonia')) clientData.colonia = raw.colonia?.toString().trim() || null;
-      if (has('rfc')) clientData.rfc = raw.rfc?.toString().trim() || null;
-      if (has('regimen_fiscal')) clientData.regimen_fiscal = raw.regimen_fiscal?.toString().trim() || null;
-      if (has('cp')) clientData.cp = raw.cp?.toString().trim() || null;
-      if (has('uso_cfdi')) clientData.uso_cfdi = raw.uso_cfdi?.toString().trim() || null;
+      if (has('rfc')) {
+        const val = raw.rfc?.toString().trim().toUpperCase() || null;
+        clientData.rfc = val;
+        clientData.facturama_rfc = val;
+      }
+      if (has('regimen_fiscal')) {
+        const val = raw.regimen_fiscal?.toString().trim();
+        const code = val ? val.split('-')[0].trim() : null;
+        clientData.regimen_fiscal = code;
+        clientData.facturama_regimen_fiscal = code;
+      }
+      if (has('cp')) {
+        const val = raw.cp?.toString().trim() || null;
+        clientData.cp = val;
+        clientData.facturama_cp = val;
+      }
+      if (has('uso_cfdi')) {
+        const val = raw.uso_cfdi?.toString().trim();
+        const code = val ? val.split('-')[0].trim() : null;
+        clientData.uso_cfdi = code;
+        clientData.facturama_uso_cfdi = code;
+      }
 
       if (has('credito')) clientData.credito = raw.credito ? toBool(raw.credito) : false;
       if (has('limite_credito')) clientData.limite_credito = raw.limite_credito ? Number(raw.limite_credito) : 0;

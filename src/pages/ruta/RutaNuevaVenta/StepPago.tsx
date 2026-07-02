@@ -407,12 +407,15 @@ export function StepPago(props: Props) {
         {(() => {
           const clienteNoTieneCredito = clienteCredito?.credito === false;
           const deudasAnterioresNoPagadas = saldoPendienteTotal - totalAplicarCuentas > 0.01;
-          const bloqueadoPorFaltaDeCredito = clienteNoTieneCredito && deudasAnterioresNoPagadas;
+          const nuevoAdeudo = (condicionPago === 'credito' || condicionPago === 'por_definir') ? totals.total : 0;
+          const bloqueadoPorFaltaDeCredito = clienteNoTieneCredito && (deudasAnterioresNoPagadas || nuevoAdeudo > 0.01);
           return (
             <div className="flex flex-col gap-2">
               {bloqueadoPorFaltaDeCredito && (
                 <p className="text-[11px] text-destructive text-center font-medium px-2">
-                  El cliente no tiene crédito. Debe liquidar su saldo anterior ({fmt(saldoPendienteTotal)}) para continuar.
+                  {deudasAnterioresNoPagadas
+                    ? `El cliente no tiene crédito. Debe liquidar su saldo anterior (${fmt(saldoPendienteTotal)}) para continuar.`
+                    : 'El cliente no tiene crédito autorizado para registrar adeudos.'}
                 </p>
               )}
               <div className="flex gap-2">
