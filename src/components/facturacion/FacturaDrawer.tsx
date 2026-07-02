@@ -66,6 +66,28 @@ export function FacturaDrawer({ open, onClose, ventaId, cliente, lineas, product
       const ivaTotal = selectedLines.reduce((s, l) => s + (l.iva_monto ?? 0), 0);
       const iepsTotal = selectedLines.reduce((s, l) => s + (l.ieps_monto ?? 0), 0);
 
+      // Fetch venta info to get condicion_pago and payment method
+      const { data: ventaInfo } = await supabase
+        .from('ventas')
+        .select('condicion_pago, cobro_aplicaciones(cobros(metodo_pago))')
+        .eq('id', ventaId)
+        .single();
+
+      let pMethod = 'PUE';
+      let pForm = '01';
+
+      if (ventaInfo?.condicion_pago === 'credito') {
+        pMethod = 'PPD';
+        pForm = '99';
+      } else {
+        const aplicacion = ventaInfo?.cobro_aplicaciones?.[0];
+        if (aplicacion && aplicacion.cobros) {
+          const m = aplicacion.cobros.metodo_pago;
+          if (m === 'transferencia') pForm = '03';
+          else if (m === 'tarjeta') pForm = '04';
+        }
+      }
+
       const { data: cfdi, error: cfdiErr } = await supabase.from('cfdis').insert({
         empresa_id: empresa.id,
         venta_id: ventaId,
@@ -76,8 +98,8 @@ export function FacturaDrawer({ open, onClose, ventaId, cliente, lineas, product
         receiver_cfdi_use: cliente.facturama_uso_cfdi || cliente.uso_cfdi || 'G03',
         receiver_fiscal_regime: cliente.facturama_regimen_fiscal || cliente.regimen_fiscal || '601',
         receiver_tax_zip_code: cliente.facturama_cp || cliente.cp || '',
-        payment_form: '01',
-        payment_method: 'PUE',
+        payment_form: pForm,
+        payment_method: pMethod,
         expedition_place: empresa.cp || '',
         subtotal: Math.round(subtotal * 100) / 100,
         iva_total: Math.round(ivaTotal * 100) / 100,

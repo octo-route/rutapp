@@ -37,6 +37,14 @@ export function ImportDialog({ open, onOpenChange, type }: ImportDialogProps) {
   const columns: ImportColumn[] = type === 'productos' ? PRODUCT_IMPORT_COLUMNS : CLIENT_IMPORT_COLUMNS;
   const label = type === 'productos' ? 'Productos' : 'Clientes';
 
+  const handleDownloadTemplate = () => {
+    const fileName = type === 'productos' ? 'Plantilla_Productos.xlsx' : 'Plantilla_Clientes.xlsx';
+    const link = document.createElement('a');
+    link.href = `/templates/${fileName}`;
+    link.download = fileName;
+    link.click();
+  };
+
   const reset = useCallback(() => {
     setStep('upload');
     setFile(null);
@@ -127,7 +135,7 @@ export function ImportDialog({ open, onOpenChange, type }: ImportDialogProps) {
                 Sube un archivo Excel o CSV con tus {label.toLowerCase()}.
               </p>
               <button
-                onClick={() => downloadTemplate(columns, `Plantilla_${label}`)}
+                onClick={handleDownloadTemplate}
                 className="btn-odoo-secondary text-xs gap-1"
               >
                 <Download className="h-3.5 w-3.5" />

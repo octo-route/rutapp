@@ -12,6 +12,7 @@ import { Loader2, FileCheck, DollarSign } from 'lucide-react';
 import SearchableSelect from '@/components/SearchableSelect';
 import { fmtDate, extractEdgeFunctionError, roundMoney } from '@/lib/utils';
 import { useCurrency } from '@/hooks/useCurrency';
+import { Input } from '@/components/ui/input';
 
 interface Props {
   open: boolean;
@@ -227,7 +228,7 @@ export function TimbrarPagoDialog({ open, onOpenChange, cobroId, onSuccess }: Pr
       };
 
       const res = await supabase.functions.invoke('facturama', { body: payload });
-      if (res.error) throw new Error(extractEdgeFunctionError(res.error));
+      if (res.error) throw new Error(await extractEdgeFunctionError(res.error));
       
       return res.data;
     },

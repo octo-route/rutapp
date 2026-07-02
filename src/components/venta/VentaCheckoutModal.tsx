@@ -325,17 +325,19 @@ export function VentaCheckoutModal({
           {(() => {
             const deudasAnteriores = cuentasPendientes.reduce((s, c) => s + c.saldo_pendiente, 0);
             const deudasAnterioresNoPagadas = deudasAnteriores - totalAplicarCuentas > 0.01;
-            const bloqueadoPorFaltaDeCredito = clienteCredito === false && deudasAnterioresNoPagadas;
-
             const nuevoAdeudo = condicion === 'credito' ? total : (condicion === 'contado' && faltante > 0 && payMode === 'efectivo' ? faltante : 0);
+            const bloqueadoPorFaltaDeCredito = clienteCredito === false && (deudasAnterioresNoPagadas || nuevoAdeudo > 0.01);
+
             const totalDeudaNueva = deudasAnteriores + nuevoAdeudo - totalAplicarCuentas;
-            const excedeLimiteCredito = clienteCredito === true && clienteLimiteCredito > 0 && totalDeudaNueva > clienteLimiteCredito;
+            const excedeLimiteCredito = clienteCredito === true && totalDeudaNueva > clienteLimiteCredito;
 
             return (
               <div className="flex flex-col gap-2">
                 {bloqueadoPorFaltaDeCredito && (
                   <p className="text-[12px] text-destructive text-center font-medium px-2">
-                    El cliente no tiene crédito. Debe liquidar su saldo anterior ({fmt(deudasAnteriores)}) para poder cerrar la venta.
+                    {deudasAnterioresNoPagadas
+                      ? `El cliente no tiene crédito. Debe liquidar su saldo anterior (${fmt(deudasAnteriores)}) para poder cerrar la venta.`
+                      : "El cliente no tiene crédito autorizado para registrar adeudos."}
                   </p>
                 )}
                 {excedeLimiteCredito && (

@@ -40,4 +40,8 @@ describe('excedeLimiteCredito', () => {
   it('returns false at exact limit', () => {
     expect(excedeLimiteCredito(40000, 10000, 50000)).toBe(false);
   });
+
+  it('returns true when limit is 0 and there is any debt', () => {
+    expect(excedeLimiteCredito(0, 100, 0)).toBe(true);
+  });
 });
