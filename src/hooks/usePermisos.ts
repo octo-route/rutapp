@@ -1,8 +1,8 @@
-import { useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/AuthContext';
-import { fetchAllPages } from '@/lib/supabasePaginate';
+import { useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
+import { fetchAllPages } from "@/lib/supabasePaginate";
 
 interface Permiso {
   modulo: string;
@@ -23,17 +23,17 @@ interface UsePermisosReturn {
 
 /** Priority list of modules → routes used to compute the home redirect. */
 const ROUTE_PRIORITY: Array<{ modulo: string; path: string }> = [
-  { modulo: 'dashboard', path: '/dashboard' },
-  { modulo: 'pos', path: '/pos' },
-  { modulo: 'ventas', path: '/ventas' },
-  { modulo: 'clientes', path: '/clientes' },
-  { modulo: 'logistica.dashboard', path: '/logistica/dashboard' },
-  { modulo: 'logistica.pedidos', path: '/logistica/pedidos' },
-  { modulo: 'logistica.entregas', path: '/logistica/entregas' },
-  { modulo: 'almacen.inventario', path: '/almacen/inventario' },
-  { modulo: 'catalogo.productos', path: '/productos' },
-  { modulo: 'reportes.generales', path: '/reportes' },
-  { modulo: 'configuracion.suscripcion', path: '/mi-suscripcion' },
+  { modulo: "dashboard", path: "/dashboard" },
+  { modulo: "pos", path: "/pos" },
+  { modulo: "ventas", path: "/ventas" },
+  { modulo: "clientes", path: "/clientes" },
+  { modulo: "logistica.dashboard", path: "/logistica/dashboard" },
+  { modulo: "logistica.pedidos", path: "/logistica/pedidos" },
+  { modulo: "logistica.entregas", path: "/logistica/entregas" },
+  { modulo: "almacen.inventario", path: "/almacen/inventario" },
+  { modulo: "catalogo.productos", path: "/productos" },
+  { modulo: "reportes.generales", path: "/reportes" },
+  { modulo: "configuracion.suscripcion", path: "/mi-suscripcion" },
 ];
 
 export function getFirstAccessibleRoute(
@@ -41,11 +41,11 @@ export function getFirstAccessibleRoute(
   isSoloMovil: boolean = false,
 ): string {
   // Solo vista móvil tiene prioridad absoluta sobre cualquier permiso residual
-  if (isSoloMovil) return '/ruta';
+  if (isSoloMovil) return "/ruta";
   for (const { modulo, path } of ROUTE_PRIORITY) {
     if (hasModulo(modulo)) return path;
   }
-  return '/configuracion-inicial';
+  return "/configuracion-inicial";
 }
 
 /**
@@ -60,107 +60,151 @@ export interface ModuloDef {
 
 export const MODULOS: ModuloDef[] = [
   // General
-  { id: 'dashboard', label: 'Dashboard', group: 'General' },
-  { id: 'supervisor', label: 'Supervisor', group: 'General' },
-  { id: 'solo_movil', label: 'Solo vista móvil (ruta)', group: 'General' },
+  { id: "dashboard", label: "Dashboard", group: "General" },
+  { id: "supervisor", label: "Supervisor", group: "General" },
+  { id: "solo_movil", label: "Solo vista móvil (ruta)", group: "General" },
 
   // Ventas
-  { id: 'ventas', label: 'Todas las ventas', group: 'Ventas' },
-  { id: 'ventas.reporte_diario', label: 'Reporte diario', group: 'Ventas' },
-  { id: 'ventas.devoluciones', label: 'Devoluciones', group: 'Ventas' },
-  { id: 'ventas.cobranza', label: 'Cobranza', group: 'Ventas' },
-  { id: 'ventas.promociones', label: 'Promociones', group: 'Ventas' },
-  { id: 'ventas.cambiar_precio', label: 'Cambiar precio en venta', group: 'Ventas' },
-  { id: 'ventas.aplicar_descuento', label: 'Aplicar descuento al total', group: 'Ventas' },
-  { id: 'pos', label: 'Punto de venta', group: 'Ventas' },
+  { id: "ventas", label: "Todas las ventas", group: "Ventas" },
+  { id: "ventas.reporte_diario", label: "Reporte diario", group: "Ventas" },
+  { id: "ventas.devoluciones", label: "Devoluciones", group: "Ventas" },
+  { id: "ventas.cobranza", label: "Cobranza", group: "Ventas" },
+  { id: "ventas.promociones", label: "Promociones", group: "Ventas" },
+  {
+    id: "ventas.cambiar_precio",
+    label: "Cambiar precio en venta",
+    group: "Ventas",
+  },
+  {
+    id: "ventas.aplicar_descuento",
+    label: "Aplicar descuento al total",
+    group: "Ventas",
+  },
+  { id: "pos", label: "Punto de venta", group: "Ventas" },
 
   // Clientes
-  { id: 'clientes', label: 'Clientes', group: 'Clientes' },
+  { id: "clientes", label: "Clientes", group: "Clientes" },
 
   // Logística
-  { id: 'logistica.dashboard', label: 'Dashboard logística', group: 'Logística' },
-  { id: 'logistica.pedidos', label: 'Pedidos pendientes', group: 'Logística' },
-  { id: 'logistica.entregas', label: 'Entregas', group: 'Logística' },
-  { id: 'logistica.descargas', label: 'Descargas de ruta', group: 'Logística' },
-  { id: 'logistica.monitor', label: 'Monitor de rutas', group: 'Logística' },
-  { id: 'logistica.rutas', label: 'Rutas', group: 'Logística' },
-  { id: 'logistica.mapa_clientes', label: 'Mapa de clientes', group: 'Logística' },
-  { id: 'logistica.mapa_ventas', label: 'Mapa de ventas', group: 'Logística' },
+  {
+    id: "logistica.dashboard",
+    label: "Dashboard logística",
+    group: "Logística",
+  },
+  { id: "logistica.pedidos", label: "Pedidos pendientes", group: "Logística" },
+  { id: "logistica.entregas", label: "Entregas", group: "Logística" },
+  { id: "logistica.descargas", label: "Descargas de ruta", group: "Logística" },
+  { id: "logistica.monitor", label: "Monitor de rutas", group: "Logística" },
+  { id: "logistica.rutas", label: "Rutas", group: "Logística" },
+  {
+    id: "logistica.mapa_clientes",
+    label: "Mapa de clientes",
+    group: "Logística",
+  },
+  { id: "logistica.mapa_ventas", label: "Mapa de ventas", group: "Logística" },
 
   // Catálogo
-  { id: 'catalogo.productos', label: 'Productos', group: 'Catálogo' },
-  { id: 'catalogo.listas_precio', label: 'Listas de Precios', group: 'Catálogo' },
-  { id: 'catalogo.clasificaciones', label: 'Categorías', group: 'Catálogo' },
-  { id: 'catalogo.marcas', label: 'Marcas', group: 'Catálogo' },
-  { id: 'catalogo.cajas', label: 'Cajas', group: 'Catálogo' },
-  { id: 'catalogo.proveedores', label: 'Proveedores', group: 'Catálogo' },
-  { id: 'catalogo.unidades', label: 'Unidades', group: 'Catálogo' },
-  { id: 'catalogo.zonas', label: 'Zonas', group: 'Catálogo' },
-  { id: 'catalogo.tasas_iva', label: 'Tasas IVA', group: 'Catálogo' },
-  { id: 'catalogo.tasas_ieps', label: 'Tasas IEPS', group: 'Catálogo' },
+  { id: "catalogo.productos", label: "Productos", group: "Catálogo" },
+  {
+    id: "catalogo.listas_precio",
+    label: "Listas de Precios",
+    group: "Catálogo",
+  },
+  { id: "catalogo.clasificaciones", label: "Categorías", group: "Catálogo" },
+  { id: "catalogo.marcas", label: "Marcas", group: "Catálogo" },
+  { id: "catalogo.cajas", label: "Cajas", group: "Catálogo" },
+  { id: "catalogo.proveedores", label: "Proveedores", group: "Catálogo" },
+  { id: "catalogo.unidades", label: "Unidades", group: "Catálogo" },
+  { id: "catalogo.zonas", label: "Zonas", group: "Catálogo" },
+  { id: "catalogo.tasas_iva", label: "Tasas IVA", group: "Catálogo" },
+  { id: "catalogo.tasas_ieps", label: "Tasas IEPS", group: "Catálogo" },
 
   // Almacén
-  { id: 'almacen.inventario', label: 'Inventario', group: 'Almacén' },
-  { id: 'almacen.traspasos', label: 'Traspasos', group: 'Almacén' },
-  { id: 'almacen.ajustes', label: 'Ajustes', group: 'Almacén' },
-  { id: 'almacen.auditorias', label: 'Auditorías', group: 'Almacén' },
-  { id: 'almacen.conteos', label: 'Conteos físicos', group: 'Almacén' },
-  { id: 'almacen.compras', label: 'Compras', group: 'Almacén' },
-  { id: 'almacen.almacenes', label: 'Almacenes', group: 'Almacén' },
+  { id: "almacen.inventario", label: "Inventario", group: "Almacén" },
+  { id: "almacen.traspasos", label: "Traspasos", group: "Almacén" },
+  { id: "almacen.ajustes", label: "Ajustes", group: "Almacén" },
+  { id: "almacen.auditorias", label: "Auditorías", group: "Almacén" },
+  { id: "almacen.conteos", label: "Conteos físicos", group: "Almacén" },
+  { id: "almacen.compras", label: "Compras", group: "Almacén" },
+  { id: "almacen.almacenes", label: "Almacenes", group: "Almacén" },
 
   // Control
-  { id: 'control', label: 'Control', group: 'Control' },
+  { id: "control", label: "Control", group: "Control" },
 
   // Finanzas
-  { id: 'finanzas.por_cobrar', label: 'Cuentas por cobrar', group: 'Finanzas' },
-  { id: 'finanzas.aplicar_pagos', label: 'Aplicar pagos clientes', group: 'Finanzas' },
-  { id: 'finanzas.saldos_cliente', label: 'Saldos por cliente', group: 'Finanzas' },
-  { id: 'finanzas.por_pagar', label: 'Cuentas por pagar', group: 'Finanzas' },
-  { id: 'finanzas.pagos_proveedores', label: 'Pagos proveedores', group: 'Finanzas' },
-  { id: 'finanzas.saldos_proveedor', label: 'Saldos por proveedor', group: 'Finanzas' },
-  { id: 'finanzas.gastos', label: 'Gastos', group: 'Finanzas' },
-  { id: 'finanzas.comisiones', label: 'Comisiones', group: 'Finanzas' },
+  { id: "finanzas.por_cobrar", label: "Cuentas por cobrar", group: "Finanzas" },
+  {
+    id: "finanzas.aplicar_pagos",
+    label: "Aplicar pagos clientes",
+    group: "Finanzas",
+  },
+  {
+    id: "finanzas.saldos_cliente",
+    label: "Saldos por cliente",
+    group: "Finanzas",
+  },
+  { id: "finanzas.por_pagar", label: "Cuentas por pagar", group: "Finanzas" },
+  {
+    id: "finanzas.pagos_proveedores",
+    label: "Pagos proveedores",
+    group: "Finanzas",
+  },
+  {
+    id: "finanzas.saldos_proveedor",
+    label: "Saldos por proveedor",
+    group: "Finanzas",
+  },
+  { id: "finanzas.gastos", label: "Gastos", group: "Finanzas" },
+  { id: "finanzas.comisiones", label: "Comisiones", group: "Finanzas" },
 
   // Reportes
-  { id: 'reportes.generales', label: 'Reportes generales', group: 'Reportes' },
-  { id: 'reportes.entregas', label: 'Reporte entregas', group: 'Reportes' },
+  { id: "reportes.generales", label: "Reportes generales", group: "Reportes" },
+  { id: "reportes.entregas", label: "Reporte entregas", group: "Reportes" },
 
   // Facturación
-  { id: 'facturacion.cfdi', label: 'Facturas CFDI', group: 'Facturación' },
-  { id: 'facturacion.catalogos', label: 'Catálogos SAT', group: 'Facturación' },
+  { id: "facturacion.cfdi", label: "Facturas CFDI", group: "Facturación" },
+  { id: "facturacion.catalogos", label: "Catálogos SAT", group: "Facturación" },
 
   // Configuración
-  { id: 'configuracion.general', label: 'General', group: 'Configuración' },
-  { id: 'configuracion.usuarios', label: 'Usuarios y permisos', group: 'Configuración' },
-  { id: 'configuracion.whatsapp', label: 'WhatsApp', group: 'Configuración' },
-  { id: 'configuracion.suscripcion', label: 'Mi suscripción', group: 'Configuración' },
+  { id: "configuracion.general", label: "General", group: "Configuración" },
+  {
+    id: "configuracion.usuarios",
+    label: "Usuarios y permisos",
+    group: "Configuración",
+  },
+  { id: "configuracion.whatsapp", label: "WhatsApp", group: "Configuración" },
+  {
+    id: "configuracion.suscripcion",
+    label: "Mi suscripción",
+    group: "Configuración",
+  },
 ];
 
-export const ACCIONES = ['ver', 'crear', 'editar', 'eliminar', 'ver_todos'];
+export const ACCIONES = ["ver", "crear", "editar", "eliminar", "ver_todos"];
 
 /**
  * Maps module IDs to the actions that actually apply.
  * Modules not listed here default to all ACCIONES.
  */
 export const ACCIONES_POR_MODULO: Record<string, string[]> = {
-  dashboard: ['ver'],
-  supervisor: ['ver'],
-  solo_movil: ['ver'],
-  pos: ['ver'],
-  control: ['ver'],
-  'ventas.reporte_diario': ['ver'],
-  'ventas.cambiar_precio': ['ver'],
-  'ventas.aplicar_descuento': ['ver'],
-  'logistica.dashboard': ['ver'],
-  'logistica.monitor': ['ver'],
-  'logistica.mapa_clientes': ['ver'],
-  'logistica.mapa_ventas': ['ver'],
-  'reportes.generales': ['ver'],
-  'reportes.entregas': ['ver'],
-  'configuracion.general': ['ver', 'editar'],
-  'configuracion.suscripcion': ['ver'],
-  'configuracion.whatsapp': ['ver', 'editar'],
-  'facturacion.catalogos': ['ver'],
+  dashboard: ["ver"],
+  supervisor: ["ver"],
+  solo_movil: ["ver"],
+  pos: ["ver"],
+  control: ["ver"],
+  "ventas.reporte_diario": ["ver"],
+  "ventas.cambiar_precio": ["ver"],
+  "ventas.aplicar_descuento": ["ver"],
+  "logistica.dashboard": ["ver"],
+  "logistica.monitor": ["ver"],
+  "logistica.mapa_clientes": ["ver"],
+  "logistica.mapa_ventas": ["ver"],
+  "reportes.generales": ["ver"],
+  "reportes.entregas": ["ver"],
+  "configuracion.general": ["ver", "editar"],
+  "configuracion.suscripcion": ["ver"],
+  "configuracion.whatsapp": ["ver", "editar"],
+  "facturacion.catalogos": ["ver"],
 };
 
 /** Get the applicable actions for a given module */
@@ -172,7 +216,10 @@ export function getModuloAcciones(moduloId: string): string[] {
 export function getModuloGroups(): string[] {
   const seen = new Set<string>();
   return MODULOS.reduce<string[]>((acc, m) => {
-    if (!seen.has(m.group)) { seen.add(m.group); acc.push(m.group); }
+    if (!seen.has(m.group)) {
+      seen.add(m.group);
+      acc.push(m.group);
+    }
     return acc;
   }, []);
 }
@@ -181,61 +228,68 @@ export function getModuloGroups(): string[] {
  * Maps exact nav child paths → permission module IDs.
  */
 export const PATH_MODULE_MAP: Record<string, string> = {
-  '/dashboard': 'dashboard',
-  '/supervisor': 'supervisor',
-  '/ventas': 'ventas',
-  '/ventas/cotizaciones': 'ventas',
-  '/ventas/reporte-diario': 'ventas.reporte_diario',
-  '/ventas/devoluciones': 'ventas.devoluciones',
-  '/ventas/cobranza': 'ventas.cobranza',
-  '/ventas/promociones': 'ventas.promociones',
-  '/pos': 'pos',
-  '/clientes': 'clientes',
-  '/logistica/dashboard': 'logistica.dashboard',
-  '/logistica/pedidos': 'logistica.pedidos',
-  '/logistica/entregas': 'logistica.entregas',
-  '/almacen/descargas': 'logistica.descargas',
-  '/monitor-rutas': 'logistica.monitor',
-  '/ventas/rutas': 'logistica.rutas',
-  '/ventas/mapa-clientes': 'logistica.mapa_clientes',
-  '/ventas/mapa-ventas': 'logistica.mapa_ventas',
-  '/productos': 'catalogo.productos',
-  '/listas-precio': 'catalogo.listas_precio',
-  '/catalogos/clasificaciones': 'catalogo.clasificaciones',
-  '/catalogos/marcas': 'catalogo.marcas',
-  '/catalogos/cajas': 'catalogo.cajas',
-  '/proveedores': 'catalogo.proveedores',
-  '/catalogos/unidades': 'catalogo.unidades',
-  '/catalogos/zonas': 'catalogo.zonas',
-  '/catalogos/tasas-iva': 'catalogo.tasas_iva',
-  '/catalogos/tasas-ieps': 'catalogo.tasas_ieps',
-  '/almacen/inventario': 'almacen.inventario',
-  '/almacen/traspasos': 'almacen.traspasos',
-  '/almacen/ajustes': 'almacen.ajustes',
-  '/almacen/auditorias': 'almacen.auditorias',
-  '/almacen/conteos': 'almacen.conteos',
-  '/almacen/compras': 'almacen.compras',
-  '/almacen/almacenes': 'almacen.almacenes',
-  '/control': 'control',
-  '/finanzas/por-cobrar': 'finanzas.por_cobrar',
-  '/finanzas/aplicar-pagos': 'finanzas.aplicar_pagos',
-  '/finanzas/saldos-cliente': 'finanzas.saldos_cliente',
-  '/finanzas/por-pagar': 'finanzas.por_pagar',
-  '/finanzas/pagos-proveedores': 'finanzas.pagos_proveedores',
-  '/finanzas/saldos-proveedor': 'finanzas.saldos_proveedor',
-  '/finanzas/aplicar-pagos-proveedor': 'finanzas.saldos_proveedor',
-  '/finanzas/gastos': 'finanzas.gastos',
-  '/finanzas/comisiones': 'finanzas.comisiones',
-  '/reportes': 'reportes.generales',
-  '/reportes/entregas': 'reportes.entregas',
-  '/facturacion-cfdi': 'facturacion.cfdi',
-  '/facturacion-cfdi/catalogos': 'facturacion.catalogos',
-  '/configuracion': 'configuracion.general',
-  '/configuracion/usuarios': 'configuracion.usuarios',
-  '/configuracion/whatsapp': 'configuracion.whatsapp',
-  '/facturacion': 'configuracion.suscripcion',
-  '/mi-suscripcion': 'configuracion.suscripcion',
-  '/configuracion-inicial': '', // always accessible
+  "/dashboard": "dashboard",
+  "/supervisor": "supervisor",
+  "/ventas": "ventas",
+  "/ventas/cotizaciones": "ventas",
+  "/ventas/reporte-diario": "ventas.reporte_diario",
+  "/ventas/devoluciones": "ventas.devoluciones",
+  "/ventas/cobranza": "ventas.cobranza",
+  "/ventas/promociones": "ventas.promociones",
+  "/pos": "pos",
+  "/pos/admin": "pos",
+  "/pos/admin?tab=turnos": "pos",
+  "/pos/admin?tab=cortes": "pos",
+  "/pos/admin?tab=depositos": "pos",
+  "/pos/admin?tab=retiros": "pos",
+  "/pos/admin?tab=gastos": "pos",
+  "/pos/admin?tab=ventas": "pos",
+  "/clientes": "clientes",
+  "/logistica/dashboard": "logistica.dashboard",
+  "/logistica/pedidos": "logistica.pedidos",
+  "/logistica/entregas": "logistica.entregas",
+  "/almacen/descargas": "logistica.descargas",
+  "/monitor-rutas": "logistica.monitor",
+  "/ventas/rutas": "logistica.rutas",
+  "/ventas/mapa-clientes": "logistica.mapa_clientes",
+  "/ventas/mapa-ventas": "logistica.mapa_ventas",
+  "/productos": "catalogo.productos",
+  "/listas-precio": "catalogo.listas_precio",
+  "/catalogos/clasificaciones": "catalogo.clasificaciones",
+  "/catalogos/marcas": "catalogo.marcas",
+  "/catalogos/cajas": "catalogo.cajas",
+  "/proveedores": "catalogo.proveedores",
+  "/catalogos/unidades": "catalogo.unidades",
+  "/catalogos/zonas": "catalogo.zonas",
+  "/catalogos/tasas-iva": "catalogo.tasas_iva",
+  "/catalogos/tasas-ieps": "catalogo.tasas_ieps",
+  "/almacen/inventario": "almacen.inventario",
+  "/almacen/traspasos": "almacen.traspasos",
+  "/almacen/ajustes": "almacen.ajustes",
+  "/almacen/auditorias": "almacen.auditorias",
+  "/almacen/conteos": "almacen.conteos",
+  "/almacen/compras": "almacen.compras",
+  "/almacen/almacenes": "almacen.almacenes",
+  "/control": "control",
+  "/finanzas/por-cobrar": "finanzas.por_cobrar",
+  "/finanzas/aplicar-pagos": "finanzas.aplicar_pagos",
+  "/finanzas/saldos-cliente": "finanzas.saldos_cliente",
+  "/finanzas/por-pagar": "finanzas.por_pagar",
+  "/finanzas/pagos-proveedores": "finanzas.pagos_proveedores",
+  "/finanzas/saldos-proveedor": "finanzas.saldos_proveedor",
+  "/finanzas/aplicar-pagos-proveedor": "finanzas.saldos_proveedor",
+  "/finanzas/gastos": "finanzas.gastos",
+  "/finanzas/comisiones": "finanzas.comisiones",
+  "/reportes": "reportes.generales",
+  "/reportes/entregas": "reportes.entregas",
+  "/facturacion-cfdi": "facturacion.cfdi",
+  "/facturacion-cfdi/catalogos": "facturacion.catalogos",
+  "/configuracion": "configuracion.general",
+  "/configuracion/usuarios": "configuracion.usuarios",
+  "/configuracion/whatsapp": "configuracion.whatsapp",
+  "/facturacion": "configuracion.suscripcion",
+  "/mi-suscripcion": "configuracion.suscripcion",
+  "/configuracion-inicial": "", // always accessible
 };
 
 interface PermisosData {
@@ -247,9 +301,9 @@ interface PermisosData {
 
 async function fetchPermisos(userId: string): Promise<PermisosData> {
   const { data: userRole } = await supabase
-    .from('user_roles')
-    .select('role_id, roles(solo_movil)')
-    .eq('user_id', userId)
+    .from("user_roles")
+    .select("role_id, roles(solo_movil)")
+    .eq("user_id", userId)
     .maybeSingle();
 
   if (!userRole?.role_id) {
@@ -259,10 +313,11 @@ async function fetchPermisos(userId: string): Promise<PermisosData> {
   const roleSoloMovil = !!(userRole as any).roles?.solo_movil;
 
   const rolePermisos = await fetchAllPages<Permiso>((from, to) =>
-    supabase.from('role_permisos')
-      .select('modulo, accion, permitido')
-      .eq('role_id', userRole.role_id)
-      .range(from, to)
+    supabase
+      .from("role_permisos")
+      .select("modulo, accion, permitido")
+      .eq("role_id", userRole.role_id)
+      .range(from, to),
   );
 
   return { hasRole: true, permisos: rolePermisos, roleSoloMovil };
@@ -271,10 +326,14 @@ async function fetchPermisos(userId: string): Promise<PermisosData> {
 export function usePermisos(): UsePermisosReturn {
   const { user, empresa } = useAuth();
 
-  const isOwner = !!(user && empresa?.owner_user_id && empresa.owner_user_id === user.id);
+  const isOwner = !!(
+    user &&
+    empresa?.owner_user_id &&
+    empresa.owner_user_id === user.id
+  );
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['user-permisos', user?.id],
+    queryKey: ["user-permisos", user?.id],
     queryFn: () => fetchPermisos(user!.id),
     enabled: !!user?.id,
     staleTime: 2 * 60_000,
@@ -285,39 +344,60 @@ export function usePermisos(): UsePermisosReturn {
   const permisos = data?.permisos ?? [];
   const roleSoloMovil = data?.roleSoloMovil ?? false;
 
-  const hasPermiso = useCallback((modulo: string, accion: string): boolean => {
-    // Owner always has full access and is never restricted
-    if (isOwner) {
-      return modulo === 'solo_movil' ? false : true;
-    }
-    // 'solo_movil' is a restrictive flag — source of truth is roles.solo_movil column
-    if (modulo === 'solo_movil') {
-      if (hasRole === false) return false;
-      if (hasRole === null) return false;
-      // Trust the roles table flag OR an explicit permission row (whichever is true)
-      if (roleSoloMovil) return true;
-      const perm = permisos.find(p => p.modulo === 'solo_movil' && p.accion === accion);
+  const hasPermiso = useCallback(
+    (modulo: string, accion: string): boolean => {
+      // Owner always has full access and is never restricted
+      if (isOwner) {
+        return modulo === "solo_movil" ? false : true;
+      }
+      // 'solo_movil' is a restrictive flag — source of truth is roles.solo_movil column
+      if (modulo === "solo_movil") {
+        if (hasRole === false) return false;
+        if (hasRole === null) return false;
+        // Trust the roles table flag OR an explicit permission row (whichever is true)
+        if (roleSoloMovil) return true;
+        const perm = permisos.find(
+          (p) => p.modulo === "solo_movil" && p.accion === accion,
+        );
+        return perm?.permitido ?? false;
+      }
+      if (hasRole === false) return true; // no role = full access
+      if (hasRole === null) return modulo === "solo_movil" ? false : true; // still loading — allow access
+      // Each module requires its own explicit permission — no parent fallback
+      const perm = permisos.find(
+        (p) => p.modulo === modulo && p.accion === accion,
+      );
       return perm?.permitido ?? false;
-    }
-    if (hasRole === false) return true; // no role = full access
-    if (hasRole === null) return modulo === 'solo_movil' ? false : true; // still loading — allow access
-    // Each module requires its own explicit permission — no parent fallback
-    const perm = permisos.find(p => p.modulo === modulo && p.accion === accion);
-    return perm?.permitido ?? false;
-  }, [permisos, hasRole, isOwner, roleSoloMovil]);
+    },
+    [permisos, hasRole, isOwner, roleSoloMovil],
+  );
 
-  const hasModulo = useCallback((modulo: string): boolean => {
-    if (!modulo) return true;
-    return hasPermiso(modulo, 'ver');
-  }, [hasPermiso]);
+  const hasModulo = useCallback(
+    (modulo: string): boolean => {
+      if (!modulo) return true;
+      return hasPermiso(modulo, "ver");
+    },
+    [hasPermiso],
+  );
 
   const reload = useCallback(() => {
     refetch();
-    window.dispatchEvent(new Event('uniline:permisos-changed'));
+    window.dispatchEvent(new Event("uniline:permisos-changed"));
   }, [refetch]);
 
   // Para owners, no aplica solo_movil. Para roles solo_movil, redirigir directo a /ruta.
-  const firstAccessibleRoute = getFirstAccessibleRoute(hasModulo, !isOwner && roleSoloMovil);
+  const firstAccessibleRoute = getFirstAccessibleRoute(
+    hasModulo,
+    !isOwner && roleSoloMovil,
+  );
 
-  return { permisos, loading: isLoading, hasPermiso, hasModulo, isOwner, reload, firstAccessibleRoute };
+  return {
+    permisos,
+    loading: isLoading,
+    hasPermiso,
+    hasModulo,
+    isOwner,
+    reload,
+    firstAccessibleRoute,
+  };
 }
