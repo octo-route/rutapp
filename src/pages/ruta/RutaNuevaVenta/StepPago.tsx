@@ -1,17 +1,40 @@
-import React from 'react';
-import { useCurrency } from '@/hooks/useCurrency';
-import { fmtDate, cn } from '@/lib/utils';
-import { ShoppingCart, Package, CalendarDays, Wallet, Banknote, CreditCard, Save, ReceiptText, Plus, Trash2, Tag, Percent, DollarSign, Lock, ChevronDown, ChevronUp } from 'lucide-react';
-import type { CartItem, CuentaPendiente, DevolucionItem, PagoLinea, DescuentoExtraTipo } from './types';
-import { ACCIONES } from './types';
+import React from "react";
+import { useCurrency } from "@/hooks/useCurrency";
+import { fmtDate, cn } from "@/lib/utils";
+import {
+  ShoppingCart,
+  Package,
+  CalendarDays,
+  Wallet,
+  Banknote,
+  CreditCard,
+  Save,
+  ReceiptText,
+  Plus,
+  Trash2,
+  Tag,
+  Percent,
+  DollarSign,
+  Lock,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
+import type {
+  CartItem,
+  CuentaPendiente,
+  DevolucionItem,
+  PagoLinea,
+  DescuentoExtraTipo,
+} from "./types";
+import { ACCIONES } from "./types";
 
 interface Props {
-  tipoVenta: 'venta_directa' | 'pedido';
+  tipoVenta: "venta_directa" | "pedido";
   entregaInmediata: boolean;
   fechaEntrega: string;
   setFechaEntrega: (v: string) => void;
-  condicionPago: 'contado' | 'credito' | 'por_definir';
-  setCondicionPago: (v: 'contado' | 'credito' | 'por_definir') => void;
+  condicionPago: "contado" | "credito" | "por_definir";
+  setCondicionPago: (v: "contado" | "credito" | "por_definir") => void;
   clienteCredito: { credito: boolean; limite: number; dias: number } | null;
   excedeCredito: boolean;
   creditoDisponible: number;
@@ -24,7 +47,15 @@ interface Props {
   setPagos: (fn: PagoLinea[] | ((prev: PagoLinea[]) => PagoLinea[])) => void;
   notas: string;
   setNotas: (v: string) => void;
-  totals: { subtotal: number; total: number; iva?: number; ieps?: number; descuento?: number; descuentoDevolucion?: number; descuentoExtra?: number };
+  totals: {
+    subtotal: number;
+    total: number;
+    iva?: number;
+    ieps?: number;
+    descuento?: number;
+    descuentoDevolucion?: number;
+    descuentoExtra?: number;
+  };
   totalACobrar: number;
   cambio: number;
   saving: boolean;
@@ -44,9 +75,9 @@ interface Props {
 }
 
 const METODOS = [
-  { value: 'efectivo' as const, label: 'Efectivo', Icon: Wallet },
-  { value: 'transferencia' as const, label: 'Transfer.', Icon: Banknote },
-  { value: 'tarjeta' as const, label: 'Tarjeta', Icon: CreditCard },
+  { value: "efectivo" as const, label: "Efectivo", Icon: Wallet },
+  { value: "transferencia" as const, label: "Transfer.", Icon: Banknote },
+  { value: "tarjeta" as const, label: "Tarjeta", Icon: CreditCard },
 ];
 
 /**
@@ -57,7 +88,9 @@ const REAL_BILLS = [20, 50, 100, 200, 500, 1000];
 function getDynamicBills(total: number): { label: string; amount: number }[] {
   if (total <= 0) return [];
   const exacto = Math.round(total * 100) / 100;
-  const bills: { label: string; amount: number }[] = [{ label: 'Exacto', amount: exacto }];
+  const bills: { label: string; amount: number }[] = [
+    { label: "Exacto", amount: exacto },
+  ];
   const seen = new Set<number>([exacto]);
   for (const b of REAL_BILLS) {
     if (b > total && !seen.has(b)) {
@@ -70,7 +103,42 @@ function getDynamicBills(total: number): { label: string; amount: number }[] {
 }
 
 export function StepPago(props: Props) {
-  const { tipoVenta, entregaInmediata, fechaEntrega, setFechaEntrega, condicionPago, setCondicionPago, clienteCredito, excedeCredito, creditoDisponible, saldoPendienteTotal, cuentasPendientes, liquidarTodas, updateCuentaMonto, totalAplicarCuentas, pagos, setPagos, notas, setNotas, totals, totalACobrar, cambio, saving, cart, devoluciones, handleSave, navigate, fmt, canApplyDiscount, descuentoExtraTipo, setDescuentoExtraTipo, descuentoExtraValor, setDescuentoExtraValor, descuentoExtraMotivo, setDescuentoExtraMotivo } = props;
+  const {
+    tipoVenta,
+    entregaInmediata,
+    fechaEntrega,
+    setFechaEntrega,
+    condicionPago,
+    setCondicionPago,
+    clienteCredito,
+    excedeCredito,
+    creditoDisponible,
+    saldoPendienteTotal,
+    cuentasPendientes,
+    liquidarTodas,
+    updateCuentaMonto,
+    totalAplicarCuentas,
+    pagos,
+    setPagos,
+    notas,
+    setNotas,
+    totals,
+    totalACobrar,
+    cambio,
+    saving,
+    cart,
+    devoluciones,
+    handleSave,
+    navigate,
+    fmt,
+    canApplyDiscount,
+    descuentoExtraTipo,
+    setDescuentoExtraTipo,
+    descuentoExtraValor,
+    setDescuentoExtraValor,
+    descuentoExtraMotivo,
+    setDescuentoExtraMotivo,
+  } = props;
   const { symbol: s } = useCurrency();
   const descExtraAmt = totals.descuentoExtra ?? 0;
   const requiresMotivo = descExtraAmt > 0 && !descuentoExtraMotivo.trim();
@@ -85,37 +153,58 @@ export function StepPago(props: Props) {
   // Además, si solo hay un pago de Efectivo, mantenerlo sincronizado con el total a cobrar
   // (para que cambios en descuento/cuentas pendientes se reflejen automáticamente).
   React.useEffect(() => {
-    if (condicionPago === 'credito' || condicionPago === 'por_definir') {
+    if (condicionPago === "credito" || condicionPago === "por_definir") {
       if (pagos.length > 0) {
         setPagos([]);
       }
       return;
     }
     if (totalACobrar > 0 && pagos.length === 0) {
-      setPagos([{ id: crypto.randomUUID(), metodo_pago: 'efectivo', monto: totalACobrar, referencia: '' }]);
+      setPagos([
+        {
+          id: crypto.randomUUID(),
+          metodo_pago: "efectivo",
+          monto: totalACobrar,
+          referencia: "",
+        },
+      ]);
       return;
     }
-    if (pagos.length === 1 && pagos[0].metodo_pago === 'efectivo' && pagos[0].monto !== totalACobrar) {
+    if (
+      pagos.length === 1 &&
+      pagos[0].metodo_pago === "efectivo" &&
+      pagos[0].monto !== totalACobrar
+    ) {
       setPagos([{ ...pagos[0], monto: totalACobrar }]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalACobrar, condicionPago]);
 
-  const addPagoLinea = (metodo: PagoLinea['metodo_pago']) => {
-    setPagos(prev => [...prev, { id: crypto.randomUUID(), metodo_pago: metodo, monto: restante, referencia: '' }]);
+  const addPagoLinea = (metodo: PagoLinea["metodo_pago"]) => {
+    setPagos((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        metodo_pago: metodo,
+        monto: restante,
+        referencia: "",
+      },
+    ]);
   };
 
   const updatePago = (id: string, field: keyof PagoLinea, value: any) => {
-    setPagos(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
+    setPagos((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, [field]: value } : p)),
+    );
   };
 
   const removePago = (id: string) => {
-    setPagos(prev => prev.filter(p => p.id !== id));
+    setPagos((prev) => prev.filter((p) => p.id !== id));
   };
 
   // Métodos disponibles para agregar (que no estén ya en uso)
-  const metodosUsados = new Set(pagos.map(p => p.metodo_pago));
-  const metodosDisponibles = METODOS.filter(m => !metodosUsados.has(m.value));
+  const metodosUsados = new Set(pagos.map((p) => p.metodo_pago));
+  const metodosDisponibles = METODOS.filter((m) => !metodosUsados.has(m.value));
 
   const [cuentasOpen, setCuentasOpen] = React.useState(false);
 
@@ -128,69 +217,191 @@ export function StepPago(props: Props) {
             <div className="flex items-start gap-2">
               <CalendarDays className="h-3.5 w-3.5 text-muted-foreground mt-1.5 shrink-0" />
               <div className="flex-1">
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Fecha de entrega</p>
-                <input type="date" className="w-full bg-accent/40 border border-border rounded-md px-2.5 py-1.5 text-[12px] text-foreground focus:outline-none focus:ring-1.5 focus:ring-primary/40" value={fechaEntrega} onChange={e => setFechaEntrega(e.target.value)} />
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                  Fecha de entrega
+                </p>
+                <input
+                  type="date"
+                  className="w-full bg-accent/40 border border-border rounded-md px-2.5 py-1.5 text-[12px] text-foreground focus:outline-none focus:ring-1.5 focus:ring-primary/40"
+                  value={fechaEntrega}
+                  onChange={(e) => setFechaEntrega(e.target.value)}
+                />
               </div>
             </div>
           </section>
         )}
 
         <section className="bg-card rounded-lg p-3">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Condición de pago</p>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Condición de pago
+          </p>
           <div className="flex gap-1.5">
-            {([['contado', 'Contado'], ...(clienteCredito?.credito ? [['credito', 'Crédito'] as const] : []), ['por_definir', 'Por definir']] as const).map(([val, label]) => (
-              <button key={val} onClick={() => setCondicionPago(val as any)} className={`flex-1 py-2 rounded-md text-[12px] font-semibold transition-all active:scale-95 ${condicionPago === val ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-accent/60 text-foreground'}`}>{label}</button>
+            {(
+              [
+                ["contado", "Contado"],
+                ...(clienteCredito?.credito
+                  ? [["credito", "Crédito"] as const]
+                  : []),
+                ["por_definir", "Por definir"],
+              ] as const
+            ).map(([val, label]) => (
+              <button
+                key={val}
+                onClick={() => setCondicionPago(val as any)}
+                className={`flex-1 py-2 rounded-md text-[12px] font-semibold transition-all active:scale-95 ${condicionPago === val ? "bg-primary text-primary-foreground shadow-sm" : "bg-accent/60 text-foreground"}`}
+              >
+                {label}
+              </button>
             ))}
           </div>
-          {condicionPago === 'credito' && clienteCredito && (
-            <div className={`mt-2.5 rounded-md px-2.5 py-2 text-[11px] space-y-1 ${excedeCredito ? 'bg-destructive/8' : 'bg-accent/50'}`}>
-              <div className="flex justify-between"><span className="text-muted-foreground">Límite</span><span className="font-medium text-foreground">{fmt(clienteCredito.limite)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Saldo pendiente</span><span className="font-medium text-foreground">{fmt(saldoPendienteTotal)}</span></div>
-              <div className="flex justify-between border-t border-border/40 pt-1"><span className="text-muted-foreground">Disponible</span><span className={`font-bold ${excedeCredito ? 'text-destructive' : 'text-green-600'}`}>{fmt(creditoDisponible)}</span></div>
-              {excedeCredito && <p className="text-[10px] text-destructive font-medium mt-1">⚠ El total excede el crédito disponible</p>}
+          {condicionPago === "credito" && clienteCredito && (
+            <div
+              className={`mt-2.5 rounded-md px-2.5 py-2 text-[11px] space-y-1 ${excedeCredito ? "bg-destructive/8" : "bg-accent/50"}`}
+            >
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Límite</span>
+                <span className="font-medium text-foreground">
+                  {fmt(clienteCredito.limite)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Saldo pendiente</span>
+                <span className="font-medium text-foreground">
+                  {fmt(saldoPendienteTotal)}
+                </span>
+              </div>
+              <div className="flex justify-between border-t border-border/40 pt-1">
+                <span className="text-muted-foreground">Disponible</span>
+                <span
+                  className={`font-bold ${excedeCredito ? "text-destructive" : "text-green-600"}`}
+                >
+                  {fmt(creditoDisponible)}
+                </span>
+              </div>
+              {excedeCredito && (
+                <p className="text-[10px] text-destructive font-medium mt-1">
+                  ⚠ El total excede el crédito disponible
+                </p>
+              )}
             </div>
           )}
-
         </section>
 
         {cuentasPendientes.length > 0 && (
           <section className="bg-card rounded-lg overflow-hidden">
             <button
-              onClick={() => setCuentasOpen(o => !o)}
+              onClick={() => setCuentasOpen((o) => !o)}
               className="w-full flex items-center justify-between p-3 active:bg-accent/40 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Cuentas pendientes</span>
-                <span className="text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded-full">{cuentasPendientes.length}</span>
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Cuentas pendientes
+                </span>
+                <span className="text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded-full">
+                  {cuentasPendientes.length}
+                </span>
                 {totalAplicarCuentas > 0 && (
-                  <span className="text-[10.5px] font-semibold text-primary">+{fmt(totalAplicarCuentas)}</span>
+                  <span className="text-[10.5px] font-semibold text-primary">
+                    +{fmt(totalAplicarCuentas)}
+                  </span>
                 )}
               </div>
               <div className="flex items-center gap-2">
                 {!cuentasOpen && (
                   <span className="text-[10.5px] text-destructive font-medium">
-                    {fmt(cuentasPendientes.reduce((a, c) => a + c.saldo_pendiente, 0))}
+                    {fmt(
+                      cuentasPendientes.reduce(
+                        (a, c) => a + c.saldo_pendiente,
+                        0,
+                      ),
+                    )}
                   </span>
                 )}
-                {cuentasOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                {cuentasOpen ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
               </div>
             </button>
             {cuentasOpen && (
               <div className="px-3 pb-3 -mt-1">
                 <div className="flex justify-end mb-1.5">
-                  <button onClick={liquidarTodas} className="text-[10.5px] text-primary font-semibold">Liquidar todas</button>
+                  <button
+                    onClick={liquidarTodas}
+                    className="text-[10.5px] text-primary font-semibold"
+                  >
+                    Liquidar todas
+                  </button>
                 </div>
-                <div className="space-y-1.5">{cuentasPendientes.map(cuenta => (
-                  <div key={cuenta.id} className="rounded-md border border-border/60 p-2.5">
-                    <div className="flex items-center justify-between mb-1.5"><div><span className="text-[11px] font-semibold text-foreground">{cuenta.folio ?? '—'}</span><span className="text-[10px] text-muted-foreground ml-2">{fmtDate(cuenta.fecha)}</span></div><span className="text-[11px] font-medium text-destructive">Debe: {fmt(cuenta.saldo_pendiente)}</span></div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => updateCuentaMonto(cuenta.id, cuenta.saldo_pendiente)} className={`text-[10px] px-2 py-1 rounded font-medium transition-all ${cuenta.montoAplicar === cuenta.saldo_pendiente ? 'bg-primary text-primary-foreground' : 'bg-accent/60 text-foreground'}`}>Liquidar</button>
-                      <div className="flex-1 relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">{s}</span><input type="number" inputMode="decimal" className="w-full bg-accent/40 rounded-md pl-5 pr-2 py-1.5 text-[12px] text-foreground font-medium focus:outline-none focus:ring-1.5 focus:ring-primary/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" value={cuenta.montoAplicar || ''} placeholder="0.00" onChange={e => updateCuentaMonto(cuenta.id, parseFloat(e.target.value) || 0)} /></div>
-                      {cuenta.montoAplicar > 0 && <button onClick={() => updateCuentaMonto(cuenta.id, 0)} className="text-[10px] text-destructive font-medium">Quitar</button>}
+                <div className="space-y-1.5">
+                  {cuentasPendientes.map((cuenta) => (
+                    <div
+                      key={cuenta.id}
+                      className="rounded-md border border-border/60 p-2.5"
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div>
+                          <span className="text-[11px] font-semibold text-foreground">
+                            {cuenta.folio ?? "—"}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground ml-2">
+                            {fmtDate(cuenta.fecha)}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-medium text-destructive">
+                          Debe: {fmt(cuenta.saldo_pendiente)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() =>
+                            updateCuentaMonto(cuenta.id, cuenta.saldo_pendiente)
+                          }
+                          className={`text-[10px] px-2 py-1 rounded font-medium transition-all ${cuenta.montoAplicar === cuenta.saldo_pendiente ? "bg-primary text-primary-foreground" : "bg-accent/60 text-foreground"}`}
+                        >
+                          Liquidar
+                        </button>
+                        <div className="flex-1 relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
+                            {s}
+                          </span>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            className="w-full bg-accent/40 rounded-md pl-5 pr-2 py-1.5 text-[12px] text-foreground font-medium focus:outline-none focus:ring-1.5 focus:ring-primary/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            value={cuenta.montoAplicar || ""}
+                            placeholder="0.00"
+                            onChange={(e) =>
+                              updateCuentaMonto(
+                                cuenta.id,
+                                parseFloat(e.target.value) || 0,
+                              )
+                            }
+                          />
+                        </div>
+                        {cuenta.montoAplicar > 0 && (
+                          <button
+                            onClick={() => updateCuentaMonto(cuenta.id, 0)}
+                            className="text-[10px] text-destructive font-medium"
+                          >
+                            Quitar
+                          </button>
+                        )}
+                      </div>
                     </div>
+                  ))}
+                </div>
+                {totalAplicarCuentas > 0 && (
+                  <div className="mt-2 pt-2 border-t border-border/60 flex justify-between">
+                    <span className="text-[11px] text-muted-foreground">
+                      Total a cuentas anteriores
+                    </span>
+                    <span className="text-[12px] font-bold text-foreground">
+                      {fmt(totalAplicarCuentas)}
+                    </span>
                   </div>
-                ))}</div>
-                {totalAplicarCuentas > 0 && <div className="mt-2 pt-2 border-t border-border/60 flex justify-between"><span className="text-[11px] text-muted-foreground">Total a cuentas anteriores</span><span className="text-[12px] font-bold text-foreground">{fmt(totalAplicarCuentas)}</span></div>}
+                )}
               </div>
             )}
           </section>
@@ -199,60 +410,11 @@ export function StepPago(props: Props) {
         {/* Total a cobrar — encabezado prominente */}
         {totalACobrar > 0 && (
           <section className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-lg px-3 py-3 text-center">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">Total a cobrar</p>
-            <p className="text-[26px] font-bold text-primary tabular-nums leading-tight">{fmt(totalACobrar)}</p>
-          </section>
-        )}
-
-        {/* Descuento al total (gateado por permiso) */}
-        {canApplyDiscount ? (
-          <section className="bg-card rounded-lg p-3 border border-border">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
-              <Tag className="h-3 w-3" /> Descuento al total (opcional)
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">
+              Total a cobrar
             </p>
-            <div className="flex items-stretch gap-1.5 mb-2">
-              <div className="inline-flex bg-accent/40 rounded-md p-0.5">
-                <button type="button" onClick={() => setDescuentoExtraTipo('monto')}
-                  className={cn("px-2.5 py-1.5 rounded text-[11px] font-semibold flex items-center gap-1 transition-colors",
-                    descuentoExtraTipo === 'monto' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground')}>
-                  {s}
-                </button>
-                <button type="button" onClick={() => setDescuentoExtraTipo('porcentaje')}
-                  className={cn("px-2.5 py-1.5 rounded text-[11px] font-semibold flex items-center gap-1 transition-colors",
-                    descuentoExtraTipo === 'porcentaje' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground')}>
-                  %
-                </button>
-              </div>
-              <input type="number" inputMode="decimal" step="0.01" min="0"
-                max={descuentoExtraTipo === 'porcentaje' ? 100 : undefined}
-                value={descuentoExtraValor || ''}
-                onChange={(e) => setDescuentoExtraValor(Math.max(0, Number(e.target.value) || 0))}
-                placeholder="0"
-                className="flex-1 bg-accent/40 rounded-md px-2.5 py-1.5 text-[13px] font-semibold text-foreground focus:outline-none focus:ring-1.5 focus:ring-primary/40 text-right tabular-nums"
-              />
-              {descuentoExtraValor > 0 && (
-                <button type="button" onClick={() => { setDescuentoExtraValor(0); setDescuentoExtraMotivo(''); }}
-                  className="px-2 text-[11px] text-muted-foreground hover:text-destructive">Quitar</button>
-              )}
-            </div>
-            {descExtraAmt > 0 && (
-              <>
-                <input type="text" value={descuentoExtraMotivo}
-                  onChange={(e) => setDescuentoExtraMotivo(e.target.value)}
-                  placeholder="Motivo del descuento (obligatorio)"
-                  maxLength={120}
-                  className={cn("w-full bg-accent/40 rounded-md px-2.5 py-1.5 text-[12px] text-foreground focus:outline-none focus:ring-1.5 transition-colors",
-                    requiresMotivo ? 'ring-1.5 ring-destructive/60 focus:ring-destructive/60' : 'focus:ring-primary/40')}
-                />
-                {requiresMotivo && <p className="text-[10px] text-destructive mt-1">⚠ Captura el motivo para continuar</p>}
-              </>
-            )}
-          </section>
-        ) : (
-          <section className="bg-muted/30 rounded-lg p-2.5 border border-dashed border-border flex items-center gap-2">
-            <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
-            <p className="text-[10.5px] text-muted-foreground">
-              Para aplicar descuentos, pide a tu administrador el permiso <span className="font-semibold">"Aplicar descuento al total"</span>.
+            <p className="text-[26px] font-bold text-primary tabular-nums leading-tight">
+              {fmt(totalACobrar)}
             </p>
           </section>
         )}
@@ -260,24 +422,34 @@ export function StepPago(props: Props) {
         {/* Payment lines section */}
         {totalACobrar > 0 && (
           <section className="bg-card rounded-lg p-3">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Pagos recibidos</p>
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              Pagos recibidos
+            </p>
 
             {/* Existing payment lines */}
             <div className="space-y-2 mb-2.5">
               {pagos.map((pago) => {
-                const meta = METODOS.find(m => m.value === pago.metodo_pago)!;
+                const meta = METODOS.find((m) => m.value === pago.metodo_pago)!;
                 const Icon = meta.Icon;
                 return (
-                  <div key={pago.id} className="rounded-md border border-border/60 p-2.5 space-y-2">
+                  <div
+                    key={pago.id}
+                    className="rounded-md border border-border/60 p-2.5 space-y-2"
+                  >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center">
                           <Icon className="h-4 w-4 text-primary" />
                         </div>
-                        <span className="text-[12.5px] font-semibold text-foreground">{meta.label}</span>
+                        <span className="text-[12.5px] font-semibold text-foreground">
+                          {meta.label}
+                        </span>
                       </div>
                       {pagos.length > 1 && (
-                        <button onClick={() => removePago(pago.id)} className="text-destructive hover:text-destructive/80 active:scale-95">
+                        <button
+                          onClick={() => removePago(pago.id)}
+                          className="text-destructive hover:text-destructive/80 active:scale-95"
+                        >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       )}
@@ -286,23 +458,39 @@ export function StepPago(props: Props) {
                     {/* Amount */}
                     <div>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-muted-foreground font-medium">{s}</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-muted-foreground font-medium">
+                          {s}
+                        </span>
                         <input
-                          type="number" inputMode="decimal"
+                          type="number"
+                          inputMode="decimal"
                           className="w-full bg-accent/40 rounded-lg pl-7 pr-3 py-2.5 text-[16px] font-bold text-foreground focus:outline-none focus:ring-1.5 focus:ring-primary/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          value={pago.monto || ''}
+                          value={pago.monto || ""}
                           placeholder="0.00"
-                          onChange={e => updatePago(pago.id, 'monto', parseFloat(e.target.value) || 0)}
+                          onChange={(e) =>
+                            updatePago(
+                              pago.id,
+                              "monto",
+                              parseFloat(e.target.value) || 0,
+                            )
+                          }
                         />
                       </div>
 
                       {/* Quick bill buttons for efectivo - dynamic based on remaining */}
-                      {pago.metodo_pago === 'efectivo' && (
+                      {pago.metodo_pago === "efectivo" && (
                         <div className="flex flex-wrap gap-1.5 mt-1.5">
-                          {getDynamicBills(restante + pago.monto).map(b => (
-                            <button key={b.label} onClick={() => updatePago(pago.id, 'monto', b.amount)}
-                              className={`flex-1 min-w-[60px] py-1.5 rounded-lg text-[12px] font-semibold transition-all active:scale-95 ${pago.monto === b.amount ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-accent/60 text-foreground'}`}>
-                              {b.label === 'Exacto' ? b.label : `${s}${b.amount}`}
+                          {getDynamicBills(restante + pago.monto).map((b) => (
+                            <button
+                              key={b.label}
+                              onClick={() =>
+                                updatePago(pago.id, "monto", b.amount)
+                              }
+                              className={`flex-1 min-w-[60px] py-1.5 rounded-lg text-[12px] font-semibold transition-all active:scale-95 ${pago.monto === b.amount ? "bg-primary text-primary-foreground shadow-sm" : "bg-accent/60 text-foreground"}`}
+                            >
+                              {b.label === "Exacto"
+                                ? b.label
+                                : `${s}${b.amount}`}
                             </button>
                           ))}
                         </div>
@@ -310,10 +498,20 @@ export function StepPago(props: Props) {
                     </div>
 
                     {/* Reference for non-cash */}
-                    {pago.metodo_pago !== 'efectivo' && (
+                    {pago.metodo_pago !== "efectivo" && (
                       <div>
-                        <label className="text-[10px] text-muted-foreground font-medium">Referencia (opcional)</label>
-                        <input type="text" className="w-full mt-0.5 bg-accent/40 rounded-lg px-3 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1.5 focus:ring-primary/40" value={pago.referencia} placeholder="No. de referencia" onChange={e => updatePago(pago.id, 'referencia', e.target.value)} />
+                        <label className="text-[10px] text-muted-foreground font-medium">
+                          Referencia (opcional)
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full mt-0.5 bg-accent/40 rounded-lg px-3 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1.5 focus:ring-primary/40"
+                          value={pago.referencia}
+                          placeholder="No. de referencia"
+                          onChange={(e) =>
+                            updatePago(pago.id, "referencia", e.target.value)
+                          }
+                        />
                       </div>
                     )}
                   </div>
@@ -325,9 +523,13 @@ export function StepPago(props: Props) {
             {totalACobrar > 0 && metodosDisponibles.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {metodosDisponibles.map(({ value, label, Icon }) => (
-                  <button key={value} onClick={() => addPagoLinea(value)}
-                    className="flex-1 min-w-[80px] py-2 px-3 rounded-full text-[11px] font-semibold transition-all active:scale-95 flex items-center justify-center gap-1 bg-accent/40 text-foreground border border-dashed border-border hover:bg-accent/70 hover:border-primary/40">
-                    <Plus className="h-3 w-3" /><Icon className="h-3.5 w-3.5" /> {label}
+                  <button
+                    key={value}
+                    onClick={() => addPagoLinea(value)}
+                    className="flex-1 min-w-[80px] py-2 px-3 rounded-full text-[11px] font-semibold transition-all active:scale-95 flex items-center justify-center gap-1 bg-accent/40 text-foreground border border-dashed border-border hover:bg-accent/70 hover:border-primary/40"
+                  >
+                    <Plus className="h-3 w-3" />
+                    <Icon className="h-3.5 w-3.5" /> {label}
                   </button>
                 ))}
               </div>
@@ -336,91 +538,229 @@ export function StepPago(props: Props) {
             {/* Change display */}
             {cambio > 0 && (
               <div className="flex justify-between bg-green-50 dark:bg-green-950/30 rounded-md px-2.5 py-2 mt-2">
-                <span className="text-[12px] text-green-700 dark:text-green-400 font-medium">Cambio</span>
-                <span className="text-[14px] text-green-700 dark:text-green-400 font-bold">{fmt(cambio)}</span>
+                <span className="text-[12px] text-green-700 dark:text-green-400 font-medium">
+                  Cambio
+                </span>
+                <span className="text-[14px] text-green-700 dark:text-green-400 font-bold">
+                  {fmt(cambio)}
+                </span>
               </div>
             )}
 
             {/* Remaining to pay indicator */}
             {restante > 0.01 && pagos.length > 0 && (
               <div className="flex justify-between bg-amber-50 dark:bg-amber-950/30 rounded-md px-2.5 py-2 mt-2">
-                <span className="text-[12px] text-amber-700 dark:text-amber-400 font-medium">Falta por cubrir</span>
-                <span className="text-[14px] text-amber-700 dark:text-amber-400 font-bold">{fmt(restante)}</span>
+                <span className="text-[12px] text-amber-700 dark:text-amber-400 font-medium">
+                  Falta por cubrir
+                </span>
+                <span className="text-[14px] text-amber-700 dark:text-amber-400 font-bold">
+                  {fmt(restante)}
+                </span>
               </div>
             )}
           </section>
         )}
 
-        <section className="bg-card rounded-lg p-3"><p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Notas</p><textarea className="w-full bg-accent/40 rounded-md px-2.5 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1.5 focus:ring-primary/40 resize-none" rows={2} placeholder="Instrucciones o comentarios..." value={notas} onChange={e => setNotas(e.target.value)} /></section>
-
+        <section className="bg-card rounded-lg p-3">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+            Notas
+          </p>
+          <textarea
+            className="w-full bg-accent/40 rounded-md px-2.5 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1.5 focus:ring-primary/40 resize-none"
+            rows={2}
+            placeholder="Instrucciones o comentarios..."
+            value={notas}
+            onChange={(e) => setNotas(e.target.value)}
+          />
+        </section>
 
         {/* Totals summary */}
         <section className="bg-card rounded-lg p-3">
           <div className="space-y-1">
-            <div className="flex justify-between text-[12px]"><span className="text-muted-foreground">Venta actual</span><span className="font-medium text-foreground tabular-nums">{fmt(totals.subtotal)}</span></div>
+            <div className="flex justify-between text-[12px]">
+              <span className="text-muted-foreground">Venta actual</span>
+              <span className="font-medium text-foreground tabular-nums">
+                {fmt(totals.subtotal)}
+              </span>
+            </div>
             {descPromos > 0 && (
-              <div className="flex justify-between text-[11px]"><span className="text-emerald-600 dark:text-emerald-400">🏷️ Promociones</span><span className="font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">{fmt(descPromos)}</span></div>
+              <div className="flex justify-between text-[11px]">
+                <span className="text-emerald-600 dark:text-emerald-400">
+                  🏷️ Promociones
+                </span>
+                <span className="font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
+                  {fmt(descPromos)}
+                </span>
+              </div>
             )}
             {descDevolucion > 0 && (
-              <div className="flex justify-between text-[11px]"><span className="text-amber-600 dark:text-amber-400">🔄 Desc. devolución</span><span className="font-medium text-amber-600 dark:text-amber-400 tabular-nums">{fmt(descDevolucion)}</span></div>
+              <div className="flex justify-between text-[11px]">
+                <span className="text-amber-600 dark:text-amber-400">
+                  🔄 Desc. devolución
+                </span>
+                <span className="font-medium text-amber-600 dark:text-amber-400 tabular-nums">
+                  {fmt(descDevolucion)}
+                </span>
+              </div>
             )}
             {descExtraAmt > 0 && (
-              <div className="flex justify-between text-[11px]"><span className="text-rose-600 dark:text-rose-400 flex items-center gap-1"><Tag className="h-3 w-3" /> Descuento {descuentoExtraTipo === 'porcentaje' ? `(${descuentoExtraValor}%)` : ''}</span><span className="font-medium text-rose-600 dark:text-rose-400 tabular-nums">-{fmt(descExtraAmt)}</span></div>
+              <div className="flex justify-between text-[11px]">
+                <span className="text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                  <Tag className="h-3 w-3" /> Descuento{" "}
+                  {descuentoExtraTipo === "porcentaje"
+                    ? `(${descuentoExtraValor}%)`
+                    : ""}
+                </span>
+                <span className="font-medium text-rose-600 dark:text-rose-400 tabular-nums">
+                  -{fmt(descExtraAmt)}
+                </span>
+              </div>
             )}
             {devoluciones.length > 0 && (
               <div className="mt-1 pt-1 border-t border-border/30 space-y-0.5">
-                <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">Devoluciones ({devoluciones.reduce((s, d) => s + d.cantidad, 0)} uds)</p>
-                {devoluciones.map(d => {
-                  const accion = ACCIONES.find(a => a.value === d.accion);
+                <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">
+                  Devoluciones (
+                  {devoluciones.reduce((s, d) => s + d.cantidad, 0)} uds)
+                </p>
+                {devoluciones.map((d) => {
+                  const accion = ACCIONES.find((a) => a.value === d.accion);
                   return (
-                    <div key={d.producto_id} className="flex justify-between text-[10px]">
-                      <span className="text-muted-foreground truncate flex-1 mr-2">{d.cantidad}x {d.nombre}</span>
-                      <span className="text-muted-foreground shrink-0">{accion?.icon} {accion?.label}</span>
+                    <div
+                      key={d.producto_id}
+                      className="flex justify-between text-[10px]"
+                    >
+                      <span className="text-muted-foreground truncate flex-1 mr-2">
+                        {d.cantidad}x {d.nombre}
+                      </span>
+                      <span className="text-muted-foreground shrink-0">
+                        {accion?.icon} {accion?.label}
+                      </span>
                     </div>
                   );
                 })}
               </div>
             )}
-            {condicionPago === 'credito' && <div className="flex justify-between text-[11px]"><span className="text-muted-foreground italic">→ Se deja a crédito</span><span className="text-muted-foreground italic">{s}0.00 hoy</span></div>}
-            {condicionPago === 'por_definir' && <div className="flex justify-between text-[11px]"><span className="text-muted-foreground italic">→ Pago por definir</span><span className="text-muted-foreground italic">{s}0.00 hoy</span></div>}
-            {totalAplicarCuentas > 0 && <div className="flex justify-between text-[12px]"><span className="text-muted-foreground">Cuentas anteriores</span><span className="font-medium text-foreground tabular-nums">{fmt(totalAplicarCuentas)}</span></div>}
+            {condicionPago === "credito" && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-muted-foreground italic">
+                  → Se deja a crédito
+                </span>
+                <span className="text-muted-foreground italic">
+                  {s}0.00 hoy
+                </span>
+              </div>
+            )}
+            {condicionPago === "por_definir" && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-muted-foreground italic">
+                  → Pago por definir
+                </span>
+                <span className="text-muted-foreground italic">
+                  {s}0.00 hoy
+                </span>
+              </div>
+            )}
+            {totalAplicarCuentas > 0 && (
+              <div className="flex justify-between text-[12px]">
+                <span className="text-muted-foreground">
+                  Cuentas anteriores
+                </span>
+                <span className="font-medium text-foreground tabular-nums">
+                  {fmt(totalAplicarCuentas)}
+                </span>
+              </div>
+            )}
 
             {/* Payment lines summary */}
             {pagos.length > 0 && (
               <div className="mt-1 pt-1 border-t border-border/30 space-y-0.5">
-                <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">Desglose de pagos</p>
+                <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">
+                  Desglose de pagos
+                </p>
                 {pagos.map((p, i) => (
                   <div key={p.id} className="flex justify-between text-[11px]">
-                    <span className="text-muted-foreground capitalize">{p.metodo_pago}{p.referencia ? ` · ${p.referencia}` : ''}</span>
-                    <span className="font-medium text-foreground tabular-nums">{fmt(p.monto)}</span>
+                    <span className="text-muted-foreground capitalize">
+                      {p.metodo_pago}
+                      {p.referencia ? ` · ${p.referencia}` : ""}
+                    </span>
+                    <span className="font-medium text-foreground tabular-nums">
+                      {fmt(p.monto)}
+                    </span>
                   </div>
                 ))}
               </div>
             )}
           </div>
-          {totalACobrar > 0 && <div className="flex justify-between items-baseline mt-2 pt-2 border-t border-border/60"><span className="text-[13px] font-semibold text-foreground">Total a cobrar</span><span className="text-[20px] font-bold text-primary tabular-nums">{fmt(totalACobrar)}</span></div>}
-          {totalACobrar === 0 && (condicionPago === 'credito' || condicionPago === 'por_definir') && <div className="mt-2 pt-2 border-t border-border/60"><p className="text-[12px] text-muted-foreground text-center">{condicionPago === 'credito' ? 'No hay cobro por ahora — se registra a crédito' : 'No hay cobro por ahora — pago por definir'}</p></div>}
+          {totalACobrar > 0 && (
+            <div className="flex justify-between items-baseline mt-2 pt-2 border-t border-border/60">
+              <span className="text-[13px] font-semibold text-foreground">
+                Total a cobrar
+              </span>
+              <span className="text-[20px] font-bold text-primary tabular-nums">
+                {fmt(totalACobrar)}
+              </span>
+            </div>
+          )}
+          {totalACobrar === 0 &&
+            (condicionPago === "credito" ||
+              condicionPago === "por_definir") && (
+              <div className="mt-2 pt-2 border-t border-border/60">
+                <p className="text-[12px] text-muted-foreground text-center">
+                  {condicionPago === "credito"
+                    ? "No hay cobro por ahora — se registra a crédito"
+                    : "No hay cobro por ahora — pago por definir"}
+                </p>
+              </div>
+            )}
         </section>
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-30 px-3 pb-3 pt-1 bg-gradient-to-t from-background via-background to-transparent safe-area-bottom">
         {(() => {
           const clienteNoTieneCredito = clienteCredito?.credito === false;
-          const deudasAnterioresNoPagadas = saldoPendienteTotal - totalAplicarCuentas > 0.01;
-          const nuevoAdeudo = (condicionPago === 'credito' || condicionPago === 'por_definir') ? totals.total : 0;
-          const bloqueadoPorFaltaDeCredito = clienteNoTieneCredito && (deudasAnterioresNoPagadas || nuevoAdeudo > 0.01);
+          const deudasAnterioresNoPagadas =
+            saldoPendienteTotal - totalAplicarCuentas > 0.01;
+          const nuevoAdeudo =
+            condicionPago === "credito" || condicionPago === "por_definir"
+              ? totals.total
+              : 0;
+          const bloqueadoPorFaltaDeCredito =
+            clienteNoTieneCredito &&
+            (deudasAnterioresNoPagadas || nuevoAdeudo > 0.01);
           return (
             <div className="flex flex-col gap-2">
               {bloqueadoPorFaltaDeCredito && (
                 <p className="text-[11px] text-destructive text-center font-medium px-2">
                   {deudasAnterioresNoPagadas
                     ? `El cliente no tiene crédito. Debe liquidar su saldo anterior (${fmt(saldoPendienteTotal)}) para continuar.`
-                    : 'El cliente no tiene crédito autorizado para registrar adeudos.'}
+                    : "El cliente no tiene crédito autorizado para registrar adeudos."}
                 </p>
               )}
               <div className="flex gap-2">
-                <button onClick={() => navigate(-1)} className="flex-1 bg-card border border-destructive/30 text-destructive rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5">Cancelar</button>
-                <button onClick={handleSave} disabled={saving || cart.length === 0 || excedeCredito || requiresMotivo || (tipoVenta === 'venta_directa' && condicionPago === 'contado' && totalACobrar > 0 && totalPagos < totalACobrar - 0.01) || bloqueadoPorFaltaDeCredito} className="flex-1 bg-primary text-primary-foreground rounded-xl py-3 text-[14px] font-bold disabled:opacity-40 active:scale-[0.98] transition-transform shadow-lg shadow-primary/20 flex items-center justify-center gap-1.5"><Save className="h-4 w-4" />{saving ? 'Guardando...' : 'Guardar'}</button>
+                <button
+                  onClick={() => navigate(-1)}
+                  className="flex-1 bg-card border border-destructive/30 text-destructive rounded-xl py-3 text-[13px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={
+                    saving ||
+                    cart.length === 0 ||
+                    excedeCredito ||
+                    requiresMotivo ||
+                    (tipoVenta === "venta_directa" &&
+                      condicionPago === "contado" &&
+                      totalACobrar > 0 &&
+                      totalPagos < totalACobrar - 0.01) ||
+                    bloqueadoPorFaltaDeCredito
+                  }
+                  className="flex-1 bg-primary text-primary-foreground rounded-xl py-3 text-[14px] font-bold disabled:opacity-40 active:scale-[0.98] transition-transform shadow-lg shadow-primary/20 flex items-center justify-center gap-1.5"
+                >
+                  <Save className="h-4 w-4" />
+                  {saving ? "Guardando..." : "Guardar"}
+                </button>
               </div>
             </div>
           );
