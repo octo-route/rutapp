@@ -93,7 +93,7 @@ const EMPTY_LINEA = {
   margen_pct: 0,
   descuento_pct: 0,
   comision_pct: 0,
-  base_precio: "sin_impuestos" as "sin_impuestos" | "con_impuestos",
+  base_precio: "con_impuestos" as "sin_impuestos" | "con_impuestos",
   redondeo: "ninguno" as RedondeoTarifa,
   notas: "",
   lista_precio_id: "" as string,
@@ -410,7 +410,7 @@ function PreciosPreviewTab({
           margen_pct: l.margen_pct,
           descuento_pct: l.descuento_pct,
           redondeo: l.redondeo ?? "ninguno",
-          base_precio: l.base_precio ?? "sin_impuestos",
+          base_precio: l.base_precio ?? "con_impuestos",
           lista_precio_id: null,
         }));
 
@@ -1099,7 +1099,7 @@ export default function TarifaFormPage() {
         margen_pct: l.margen_pct,
         descuento_pct: l.descuento_pct,
         comision_pct: (l as any).comision_pct ?? 0,
-        base_precio: (l as any).base_precio ?? "sin_impuestos",
+        base_precio: (l as any).base_precio ?? "con_impuestos",
         redondeo: (l as any).redondeo ?? "ninguno",
         notas: (l as any).notas ?? "",
         lista_precio_id: (l as any).lista_precio_id ?? "",
@@ -1696,9 +1696,6 @@ export default function TarifaFormPage() {
                                       }))
                                     }
                                   >
-                                    <option value="sin_impuestos">
-                                      Sin impuestos
-                                    </option>
                                     <option value="con_impuestos">
                                       Con impuestos
                                     </option>

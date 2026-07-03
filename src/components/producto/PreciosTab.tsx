@@ -1,15 +1,22 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Star, X, Trash2, Plus } from 'lucide-react';
-import SearchableSelect from '@/components/SearchableSelect';
-import { useSaveTarifaLinea, useDeleteTarifaLinea, useSaveTarifa, useAllListasPrecios, useClasificaciones, useSaveListaPrecio } from '@/hooks/useData';
-import { toast } from 'sonner';
-import type { Producto, TipoCalculoTarifa } from '@/types';
-import { useQueryClient } from '@tanstack/react-query';
-import { useCurrency } from '@/hooks/useCurrency';
-import { useAuth } from '@/contexts/AuthContext';
-import { usePresentaciones } from '@/hooks/usePresentaciones';
-import { calcTax } from '@/lib/taxUtils';
-import { calcularCostoTotal } from '@/lib/priceResolver';
+import { useState, useEffect, useMemo } from "react";
+import { Star, X, Trash2, Plus } from "lucide-react";
+import SearchableSelect from "@/components/SearchableSelect";
+import {
+  useSaveTarifaLinea,
+  useDeleteTarifaLinea,
+  useSaveTarifa,
+  useAllListasPrecios,
+  useClasificaciones,
+  useSaveListaPrecio,
+} from "@/hooks/useData";
+import { toast } from "sonner";
+import type { Producto, TipoCalculoTarifa } from "@/types";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCurrency } from "@/hooks/useCurrency";
+import { useAuth } from "@/contexts/AuthContext";
+import { usePresentaciones } from "@/hooks/usePresentaciones";
+import { calcTax } from "@/lib/taxUtils";
+import { calcularCostoTotal } from "@/lib/priceResolver";
 
 interface PreciosTabProps {
   form: Partial<Producto>;
@@ -20,14 +27,23 @@ interface PreciosTabProps {
   navigate: (path: string) => void;
 }
 
-export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew, navigate }: PreciosTabProps) {
+export function PreciosTab({
+  form,
+  tarifaLineas,
+  tarifasDisp,
+  productoId,
+  isNew,
+  navigate,
+}: PreciosTabProps) {
   const { symbol: cs, fmt } = useCurrency();
   const { empresa } = useAuth();
   const { data: dbPresentaciones } = usePresentaciones(productoId);
   const saveLinea = useSaveTarifaLinea();
   const deleteLineaMut = useDeleteTarifaLinea();
   const saveTarifaMut = useSaveTarifa();
-  const { data: allListas } = useAllListasPrecios(form.empresa_id ?? empresa?.id);
+  const { data: allListas } = useAllListasPrecios(
+    form.empresa_id ?? empresa?.id,
+  );
   const { data: clasificaciones } = useClasificaciones();
   const saveListaMut = useSaveListaPrecio();
   const qc = useQueryClient();
@@ -36,23 +52,35 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
   const [editingCol, setEditingCol] = useState<string | null>(null);
   const [editVal, setEditVal] = useState<Record<string, unknown>>({});
   const baseNetCost = useMemo(() => {
-    const costoTotal = calcularCostoTotal(form.costo ?? 0, form.costos_adicionales);
+    const costoTotal = calcularCostoTotal(
+      form.costo ?? 0,
+      form.costos_adicionales,
+    );
     return calcTax({
       precio: costoTotal,
       iva_pct: form.tiene_iva ? (form.iva_pct ?? 16) : 0,
       ieps_pct: form.tiene_ieps ? (form.ieps_pct ?? 0) : 0,
-      ieps_tipo: form.ieps_tipo || 'porcentaje',
-      incluye_impuestos: true
+      ieps_tipo: form.ieps_tipo || "porcentaje",
+      incluye_impuestos: true,
     }).precio_neto;
-  }, [form.costo, form.costos_adicionales, form.tiene_iva, form.iva_pct, form.tiene_ieps, form.ieps_pct, form.ieps_tipo, form.costo_incluye_impuestos]);
+  }, [
+    form.costo,
+    form.costos_adicionales,
+    form.tiene_iva,
+    form.iva_pct,
+    form.tiene_ieps,
+    form.ieps_pct,
+    form.ieps_tipo,
+    form.costo_incluye_impuestos,
+  ]);
 
   const [newRule, setNewRule] = useState({
-    aplica_a: 'producto' as 'producto' | 'categoria' | 'todos' | 'presentacion',
+    aplica_a: "producto" as "producto" | "categoria" | "todos" | "presentacion",
     clasificacion_ids: [] as string[],
     presentacion_ids: [] as string[],
-    tarifa_id: '',
-    lista_precio_id: '',
-    tipo_calculo: 'precio_fijo' as TipoCalculoTarifa,
+    tarifa_id: "",
+    lista_precio_id: "",
+    tipo_calculo: "precio_fijo" as TipoCalculoTarifa,
     precio: 0,
     margen_pct: 0,
     descuento_pct: 0,
@@ -61,113 +89,204 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
 
   const listasForTarifa = useMemo(() => {
     if (!newRule.tarifa_id) return allListas ?? [];
-    return (allListas ?? []).filter((l: any) => l.tarifa_id === newRule.tarifa_id);
+    return (allListas ?? []).filter(
+      (l: any) => l.tarifa_id === newRule.tarifa_id,
+    );
   }, [allListas, newRule.tarifa_id]);
 
   useEffect(() => {
     if (newRule.tarifa_id) {
       const principal = listasForTarifa.find((l: any) => l.es_principal);
-      setNewRule(p => ({ ...p, lista_precio_id: (principal as any)?.id ?? (listasForTarifa[0] as any)?.id ?? '' }));
+      setNewRule((p) => ({
+        ...p,
+        lista_precio_id:
+          (principal as any)?.id ?? (listasForTarifa[0] as any)?.id ?? "",
+      }));
     }
   }, [newRule.tarifa_id, listasForTarifa]);
 
   const handleCreateTarifa = async (name: string) => {
     try {
-      const res = await saveTarifaMut.mutateAsync({ nombre: name, tipo: 'general', activa: true } as any);
-      qc.invalidateQueries({ queryKey: ['tarifas-select'] });
+      const res = await saveTarifaMut.mutateAsync({
+        nombre: name,
+        tipo: "general",
+        activa: true,
+      } as any);
+      qc.invalidateQueries({ queryKey: ["tarifas-select"] });
       return res.id;
-    } catch { return undefined; }
+    } catch {
+      return undefined;
+    }
   };
 
   const handleCreateLista = async (name: string) => {
     let tarifaId = newRule.tarifa_id;
     if (!tarifaId) {
       try {
-        const res = await saveTarifaMut.mutateAsync({ nombre: name, tipo: 'general', activa: true } as any);
-        qc.invalidateQueries({ queryKey: ['tarifas-select'] });
+        const res = await saveTarifaMut.mutateAsync({
+          nombre: name,
+          tipo: "general",
+          activa: true,
+        } as any);
+        qc.invalidateQueries({ queryKey: ["tarifas-select"] });
         tarifaId = res.id;
-      } catch { return undefined; }
+      } catch {
+        return undefined;
+      }
     }
     try {
-      const res = await saveListaMut.mutateAsync({ tarifa_id: tarifaId, nombre: name, es_principal: false });
-      qc.invalidateQueries({ queryKey: ['lista_precios_all'] });
+      const res = await saveListaMut.mutateAsync({
+        tarifa_id: tarifaId,
+        nombre: name,
+        es_principal: false,
+      });
+      qc.invalidateQueries({ queryKey: ["lista_precios_all"] });
       return res.id;
-    } catch { return undefined; }
+    } catch {
+      return undefined;
+    }
   };
 
   const applyRedondeo = (precio: number, redondeo: string) => {
-    if (!redondeo || redondeo === 'ninguno') return precio;
-    if (redondeo === 'arriba') return Math.ceil(precio);
-    if (redondeo === 'abajo') return Math.floor(precio);
+    if (!redondeo || redondeo === "ninguno") return precio;
+    if (redondeo === "arriba") return Math.ceil(precio);
+    if (redondeo === "abajo") return Math.floor(precio);
     return Math.round(precio);
   };
 
-  const calcLabel = (l: any) => l.tipo_calculo === 'margen_costo' ? `+${l.margen_pct}% s/costo` : l.tipo_calculo === 'descuento_precio' ? `-${l.descuento_pct}% s/precio` : 'Precio fijo';
+  const calcLabel = (l: any) =>
+    l.tipo_calculo === "margen_costo"
+      ? `+${l.margen_pct}% s/costo`
+      : l.tipo_calculo === "descuento_precio"
+        ? `-${l.descuento_pct}% s/precio`
+        : "Precio fijo";
 
   const handleSaveRule = async () => {
-    if (!newRule.lista_precio_id) { toast.error('Selecciona una lista de precios'); return; }
-    if (newRule.aplica_a === 'categoria' && newRule.clasificacion_ids.length === 0) { toast.error('Selecciona al menos una categoría'); return; }
-    if (newRule.aplica_a === 'presentacion' && newRule.presentacion_ids.length === 0) { toast.error('Selecciona al menos una presentación'); return; }
+    if (!newRule.lista_precio_id) {
+      toast.error("Selecciona una lista de precios");
+      return;
+    }
+    if (
+      newRule.aplica_a === "categoria" &&
+      newRule.clasificacion_ids.length === 0
+    ) {
+      toast.error("Selecciona al menos una categoría");
+      return;
+    }
+    if (
+      newRule.aplica_a === "presentacion" &&
+      newRule.presentacion_ids.length === 0
+    ) {
+      toast.error("Selecciona al menos una presentación");
+      return;
+    }
 
     const existing = (tarifaLineas ?? []) as any[];
     const listaId = newRule.lista_precio_id || null;
     const duplicate = existing.find((l: any) => {
       const existLista = l.lista_precios?.id ?? l.lista_precio_id ?? null;
       if (existLista !== listaId) return false;
-      if (newRule.aplica_a === 'producto' && l.aplica_a === 'producto' && (l.producto_ids ?? []).includes(productoId)) return true;
-      if (newRule.aplica_a === 'presentacion' && l.aplica_a === 'presentacion') {
-        const overlap = newRule.presentacion_ids.some((pid: string) => (l.presentacion_ids ?? []).includes(pid));
+      if (
+        newRule.aplica_a === "producto" &&
+        l.aplica_a === "producto" &&
+        (l.producto_ids ?? []).includes(productoId)
+      )
+        return true;
+      if (
+        newRule.aplica_a === "presentacion" &&
+        l.aplica_a === "presentacion"
+      ) {
+        const overlap = newRule.presentacion_ids.some((pid: string) =>
+          (l.presentacion_ids ?? []).includes(pid),
+        );
         if (overlap) return true;
       }
-      if (newRule.aplica_a === 'categoria' && l.aplica_a === 'categoria') {
-        const overlap = newRule.clasificacion_ids.some((cid: string) => (l.clasificacion_ids ?? []).includes(cid));
+      if (newRule.aplica_a === "categoria" && l.aplica_a === "categoria") {
+        const overlap = newRule.clasificacion_ids.some((cid: string) =>
+          (l.clasificacion_ids ?? []).includes(cid),
+        );
         if (overlap) return true;
       }
-      if (newRule.aplica_a === 'todos' && l.aplica_a === 'todos') return true;
+      if (newRule.aplica_a === "todos" && l.aplica_a === "todos") return true;
       return false;
     });
     if (duplicate) {
-      const listaName = duplicate.lista_precios?.nombre ?? 'esta lista';
-      toast.error(`Ya existe una regla en "${listaName}" con el mismo alcance. Edítala o elimínala antes de crear otra.`);
+      const listaName = duplicate.lista_precios?.nombre ?? "esta lista";
+      toast.error(
+        `Ya existe una regla en "${listaName}" con el mismo alcance. Edítala o elimínala antes de crear otra.`,
+      );
       return;
     }
 
     try {
       await saveLinea.mutateAsync({
-        tarifa_id: newRule.tarifa_id, lista_precio_id: newRule.lista_precio_id || null,
-        aplica_a: newRule.aplica_a, tipo_calculo: newRule.tipo_calculo,
-        precio: newRule.precio, margen_pct: newRule.margen_pct, descuento_pct: newRule.descuento_pct,
+        tarifa_id: newRule.tarifa_id,
+        lista_precio_id: newRule.lista_precio_id || null,
+        aplica_a: newRule.aplica_a,
+        tipo_calculo: newRule.tipo_calculo,
+        precio: newRule.precio,
+        margen_pct: newRule.margen_pct,
+        descuento_pct: newRule.descuento_pct,
         precio_minimo: newRule.precio_minimo,
-        producto_ids: ['producto', 'presentacion'].includes(newRule.aplica_a) ? [productoId!] : [],
-        clasificacion_ids: newRule.aplica_a === 'categoria' ? newRule.clasificacion_ids : [],
-        presentacion_ids: newRule.aplica_a === 'presentacion' ? newRule.presentacion_ids : [],
+        producto_ids: ["producto", "presentacion"].includes(newRule.aplica_a)
+          ? [productoId!]
+          : [],
+        clasificacion_ids:
+          newRule.aplica_a === "categoria" ? newRule.clasificacion_ids : [],
+        presentacion_ids:
+          newRule.aplica_a === "presentacion" ? newRule.presentacion_ids : [],
       } as any);
-      toast.success('Precio agregado');
+      toast.success("Precio agregado");
       setShowModal(false);
-      setNewRule({ aplica_a: 'producto', clasificacion_ids: [], presentacion_ids: [], tarifa_id: '', lista_precio_id: '', tipo_calculo: 'precio_fijo', precio: 0, margen_pct: 0, descuento_pct: 0, precio_minimo: 0 });
-    } catch (err: any) { toast.error(err.message); }
+      setNewRule({
+        aplica_a: "producto",
+        clasificacion_ids: [],
+        presentacion_ids: [],
+        tarifa_id: "",
+        lista_precio_id: "",
+        tipo_calculo: "precio_fijo",
+        precio: 0,
+        margen_pct: 0,
+        descuento_pct: 0,
+        precio_minimo: 0,
+      });
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const handleDeleteRule = async (lineaId: string) => {
-    try { await deleteLineaMut.mutateAsync(lineaId); toast.success('Precio eliminado'); } catch (err: any) { toast.error(err.message); }
+    try {
+      await deleteLineaMut.mutateAsync(lineaId);
+      toast.success("Precio eliminado");
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const startEdit = (linea: any, col: string) => {
     setEditingId(linea.id);
     setEditingCol(col);
     setEditVal({
-      tipo_calculo: linea.tipo_calculo, precio: linea.precio, margen_pct: linea.margen_pct,
-      descuento_pct: linea.descuento_pct, precio_minimo: linea.precio_minimo,
-      comision_pct: linea.comision_pct ?? 0, redondeo: linea.redondeo ?? 'ninguno',
-      base_precio: linea.base_precio ?? 'sin_impuestos',
+      tipo_calculo: linea.tipo_calculo,
+      precio: linea.precio,
+      margen_pct: linea.margen_pct,
+      descuento_pct: linea.descuento_pct,
+      precio_minimo: linea.precio_minimo,
+      comision_pct: linea.comision_pct ?? 0,
+      redondeo: linea.redondeo ?? "ninguno",
+      base_precio: linea.base_precio ?? "con_impuestos",
     });
   };
 
   const saveEdit = async (lineaId: string) => {
     try {
       await saveLinea.mutateAsync({ id: lineaId, ...editVal } as any);
-      setEditingId(null); setEditingCol(null);
-    } catch (err: any) { toast.error(err.message); }
+      setEditingId(null);
+      setEditingCol(null);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const allLineas = (tarifaLineas ?? []) as any[];
@@ -175,54 +294,78 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
   allLineas.forEach((tl: any) => {
     if (!tl.tarifas) return;
     const tid = tl.tarifas.id;
-    if (!grouped.has(tid)) grouped.set(tid, { nombre: tl.tarifas.nombre, rules: [] });
+    if (!grouped.has(tid))
+      grouped.set(tid, { nombre: tl.tarifas.nombre, rules: [] });
     grouped.get(tid)!.rules.push(tl);
   });
 
   const aplica_label = (l: any) => {
-    if (l.aplica_a === 'producto') return 'Este producto';
-    if (l.aplica_a === 'presentacion') {
+    if (l.aplica_a === "producto") return "Este producto";
+    if (l.aplica_a === "presentacion") {
       const names = (l.presentacion_ids ?? []).map((pid: string) => {
         const p = (dbPresentaciones ?? []).find((pr: any) => pr.id === pid);
         return (p as any)?.nombre ?? pid.slice(0, 6);
       });
-      return names.length ? `Presentación: ${names.join(', ')}` : 'Presentación';
+      return names.length
+        ? `Presentación: ${names.join(", ")}`
+        : "Presentación";
     }
-    if (l.aplica_a === 'categoria') {
+    if (l.aplica_a === "categoria") {
       const names = (l.clasificacion_ids ?? []).map((cid: string) => {
         const c = (clasificaciones ?? []).find((cl: any) => cl.id === cid);
         return (c as any)?.nombre ?? cid.slice(0, 6);
       });
-      return names.length ? names.join(', ') : 'Categoría';
+      return names.length ? names.join(", ") : "Categoría";
     }
-    return 'Todos';
+    return "Todos";
   };
 
   function renderModal() {
     if (!showModal) return null;
     return (
-      <div className="fixed inset-0 bg-foreground/20 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
-        <div className="bg-card border border-border rounded-lg shadow-lg w-full max-w-[600px]" onClick={e => e.stopPropagation()}>
+      <div
+        className="fixed inset-0 bg-foreground/20 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        onClick={() => setShowModal(false)}
+      >
+        <div
+          className="bg-card border border-border rounded-lg shadow-lg w-full max-w-[600px]"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <h3 className="text-[15px] font-semibold">Crear regla de precio</h3>
-            <button onClick={() => setShowModal(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            <button
+              onClick={() => setShowModal(false)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-2 gap-x-8">
               <div className="odoo-field-row">
                 <span className="odoo-field-label">Aplica a</span>
-                <select className="input-odoo py-1 text-[13px]" value={newRule.aplica_a}
-                  onChange={e => {
-                    const val = e.target.value as 'producto' | 'categoria' | 'todos' | 'presentacion';
-                    const isPres = val === 'presentacion';
-                    setNewRule(p => ({
+                <select
+                  className="input-odoo py-1 text-[13px]"
+                  value={newRule.aplica_a}
+                  onChange={(e) => {
+                    const val = e.target.value as
+                      | "producto"
+                      | "categoria"
+                      | "todos"
+                      | "presentacion";
+                    const isPres = val === "presentacion";
+                    setNewRule((p) => ({
                       ...p,
                       aplica_a: val,
-                      clasificacion_ids: val === 'categoria' && form.clasificacion_id ? [form.clasificacion_id] : [],
+                      clasificacion_ids:
+                        val === "categoria" && form.clasificacion_id
+                          ? [form.clasificacion_id]
+                          : [],
                       presentacion_ids: [],
-                      precio_minimo: isPres ? 0 : baseNetCost
+                      precio_minimo: isPres ? 0 : baseNetCost,
                     }));
-                  }}>
+                  }}
+                >
                   <option value="producto">Este producto</option>
                   <option value="presentacion">Presentación</option>
                   <option value="categoria">Categoría</option>
@@ -230,61 +373,88 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
                 </select>
               </div>
             </div>
-            {newRule.aplica_a === 'producto' && (
-              <div className="odoo-field-row"><span className="odoo-field-label">Producto</span><span className="text-[13px] font-medium">{form.nombre ?? '—'}</span></div>
+            {newRule.aplica_a === "producto" && (
+              <div className="odoo-field-row">
+                <span className="odoo-field-label">Producto</span>
+                <span className="text-[13px] font-medium">
+                  {form.nombre ?? "—"}
+                </span>
+              </div>
             )}
-            {newRule.aplica_a === 'presentacion' && (
+            {newRule.aplica_a === "presentacion" && (
               <div className="odoo-field-row">
                 <span className="odoo-field-label">Presentaciones</span>
                 <div className="flex flex-wrap gap-1.5">
                   {(dbPresentaciones ?? []).map((p: any) => {
                     const selected = newRule.presentacion_ids.includes(p.id);
                     return (
-                      <button key={p.id} type="button" onClick={() => {
-                        const isCurrentlySelected = selected;
-                        const nextIds = isCurrentlySelected 
-                          ? newRule.presentacion_ids.filter(id => id !== p.id) 
-                          : [...newRule.presentacion_ids, p.id];
-                        
-                        let nextCost = newRule.precio_minimo;
-                        const baseCosto = baseNetCost;
-                        if (!isCurrentlySelected) {
-                          nextCost = baseCosto * Number(p.factor_base);
-                        } else if (nextIds.length > 0) {
-                          const firstRemaining = (dbPresentaciones ?? []).find((pr: any) => pr.id === nextIds[0]);
-                          if (firstRemaining) {
-                            nextCost = baseCosto * Number(firstRemaining.factor_base);
-                          }
-                        } else {
-                          nextCost = 0;
-                        }
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          const isCurrentlySelected = selected;
+                          const nextIds = isCurrentlySelected
+                            ? newRule.presentacion_ids.filter(
+                                (id) => id !== p.id,
+                              )
+                            : [...newRule.presentacion_ids, p.id];
 
-                        setNewRule(prev => ({ 
-                          ...prev, 
-                          presentacion_ids: nextIds,
-                          precio_minimo: nextCost
-                        }));
-                      }}
-                        className={`text-[12px] px-2 py-0.5 rounded-full border transition-colors ${selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary/50'}`}>
+                          let nextCost = newRule.precio_minimo;
+                          const baseCosto = baseNetCost;
+                          if (!isCurrentlySelected) {
+                            nextCost = baseCosto * Number(p.factor_base);
+                          } else if (nextIds.length > 0) {
+                            const firstRemaining = (
+                              dbPresentaciones ?? []
+                            ).find((pr: any) => pr.id === nextIds[0]);
+                            if (firstRemaining) {
+                              nextCost =
+                                baseCosto * Number(firstRemaining.factor_base);
+                            }
+                          } else {
+                            nextCost = 0;
+                          }
+
+                          setNewRule((prev) => ({
+                            ...prev,
+                            presentacion_ids: nextIds,
+                            precio_minimo: nextCost,
+                          }));
+                        }}
+                        className={`text-[12px] px-2 py-0.5 rounded-full border transition-colors ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-muted text-muted-foreground border-border hover:border-primary/50"}`}
+                      >
                         {p.nombre || `Factor ${p.factor_base}`}
                       </button>
                     );
                   })}
                   {(dbPresentaciones ?? []).length === 0 && (
-                    <span className="text-xs text-muted-foreground">No hay presentaciones definidas para este producto.</span>
+                    <span className="text-xs text-muted-foreground">
+                      No hay presentaciones definidas para este producto.
+                    </span>
                   )}
                 </div>
               </div>
             )}
-            {newRule.aplica_a === 'categoria' && (
+            {newRule.aplica_a === "categoria" && (
               <div className="odoo-field-row">
                 <span className="odoo-field-label">Categorías</span>
                 <div className="flex flex-wrap gap-1.5">
                   {(clasificaciones ?? []).map((c: any) => {
                     const selected = newRule.clasificacion_ids.includes(c.id);
                     return (
-                      <button key={c.id} type="button" onClick={() => setNewRule(p => ({ ...p, clasificacion_ids: selected ? p.clasificacion_ids.filter(id => id !== c.id) : [...p.clasificacion_ids, c.id] }))}
-                        className={`text-[12px] px-2 py-0.5 rounded-full border transition-colors ${selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary/50'}`}>
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() =>
+                          setNewRule((p) => ({
+                            ...p,
+                            clasificacion_ids: selected
+                              ? p.clasificacion_ids.filter((id) => id !== c.id)
+                              : [...p.clasificacion_ids, c.id],
+                          }))
+                        }
+                        className={`text-[12px] px-2 py-0.5 rounded-full border transition-colors ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-muted text-muted-foreground border-border hover:border-primary/50"}`}
+                      >
                         {c.nombre}
                       </button>
                     );
@@ -296,10 +466,31 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
               <div className="odoo-field-row">
                 <span className="odoo-field-label">Tipo de precio</span>
                 <div className="flex flex-col gap-1.5 text-[13px]">
-                  {(['descuento_precio', 'margen_costo', 'precio_fijo'] as TipoCalculoTarifa[]).map(t => (
-                    <label key={t} className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="radio" name="tipo_calc" checked={newRule.tipo_calculo === t} onChange={() => setNewRule(p => ({ ...p, tipo_calculo: t }))} className="h-3.5 w-3.5" />
-                      {t === 'descuento_precio' ? 'Descuento' : t === 'margen_costo' ? 'Fórmula' : 'Precio fijo'}
+                  {(
+                    [
+                      "descuento_precio",
+                      "margen_costo",
+                      "precio_fijo",
+                    ] as TipoCalculoTarifa[]
+                  ).map((t) => (
+                    <label
+                      key={t}
+                      className="flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <input
+                        type="radio"
+                        name="tipo_calc"
+                        checked={newRule.tipo_calculo === t}
+                        onChange={() =>
+                          setNewRule((p) => ({ ...p, tipo_calculo: t }))
+                        }
+                        className="h-3.5 w-3.5"
+                      />
+                      {t === "descuento_precio"
+                        ? "Descuento"
+                        : t === "margen_costo"
+                          ? "Fórmula"
+                          : "Precio fijo"}
                     </label>
                   ))}
                 </div>
@@ -307,32 +498,86 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
               <div className="odoo-field-row">
                 <span className="odoo-field-label">Lista de precios</span>
                 <SearchableSelect
-                  options={(allListas ?? []).map((l: any) => ({ value: l.id, label: `${l.es_principal ? '★ ' : ''}${l.nombre}` }))}
+                  options={(allListas ?? []).map((l: any) => ({
+                    value: l.id,
+                    label: `${l.es_principal ? "★ " : ""}${l.nombre}`,
+                  }))}
                   value={newRule.lista_precio_id}
-                  onChange={val => { const lista = (allListas ?? []).find((l: any) => l.id === val); setNewRule(p => ({ ...p, lista_precio_id: val, tarifa_id: (lista as any)?.tarifa_id ?? '' })); }}
+                  onChange={(val) => {
+                    const lista = (allListas ?? []).find(
+                      (l: any) => l.id === val,
+                    );
+                    setNewRule((p) => ({
+                      ...p,
+                      lista_precio_id: val,
+                      tarifa_id: (lista as any)?.tarifa_id ?? "",
+                    }));
+                  }}
                   placeholder="Buscar lista..."
                   onCreateNew={handleCreateLista}
                 />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-x-8">
-              {newRule.tipo_calculo === 'precio_fijo' && newRule.aplica_a === 'producto' && (
-                <div className="odoo-field-row"><span className="odoo-field-label">Precio fijo</span>
-                  <input type="number" className="input-odoo py-1 text-[13px] w-28" value={newRule.precio} onChange={e => setNewRule(p => ({ ...p, precio: +e.target.value }))} /></div>
+              {newRule.tipo_calculo === "precio_fijo" &&
+                newRule.aplica_a === "producto" && (
+                  <div className="odoo-field-row">
+                    <span className="odoo-field-label">Precio fijo</span>
+                    <input
+                      type="number"
+                      className="input-odoo py-1 text-[13px] w-28"
+                      value={newRule.precio}
+                      onChange={(e) =>
+                        setNewRule((p) => ({ ...p, precio: +e.target.value }))
+                      }
+                    />
+                  </div>
+                )}
+              {newRule.tipo_calculo === "margen_costo" && (
+                <div className="odoo-field-row">
+                  <span className="odoo-field-label">Margen %</span>
+                  <input
+                    type="number"
+                    className="input-odoo py-1 text-[13px] w-28"
+                    value={newRule.margen_pct}
+                    onChange={(e) =>
+                      setNewRule((p) => ({ ...p, margen_pct: +e.target.value }))
+                    }
+                  />
+                </div>
               )}
-              {newRule.tipo_calculo === 'margen_costo' && (
-                <div className="odoo-field-row"><span className="odoo-field-label">Margen %</span>
-                  <input type="number" className="input-odoo py-1 text-[13px] w-28" value={newRule.margen_pct} onChange={e => setNewRule(p => ({ ...p, margen_pct: +e.target.value }))} /></div>
-              )}
-              {newRule.tipo_calculo === 'descuento_precio' && (
-                <div className="odoo-field-row"><span className="odoo-field-label">Descuento %</span>
-                  <input type="number" className="input-odoo py-1 text-[13px] w-28" value={newRule.descuento_pct} onChange={e => setNewRule(p => ({ ...p, descuento_pct: +e.target.value }))} /></div>
+              {newRule.tipo_calculo === "descuento_precio" && (
+                <div className="odoo-field-row">
+                  <span className="odoo-field-label">Descuento %</span>
+                  <input
+                    type="number"
+                    className="input-odoo py-1 text-[13px] w-28"
+                    value={newRule.descuento_pct}
+                    onChange={(e) =>
+                      setNewRule((p) => ({
+                        ...p,
+                        descuento_pct: +e.target.value,
+                      }))
+                    }
+                  />
+                </div>
               )}
             </div>
           </div>
           <div className="flex items-center gap-2 px-4 py-3 border-t border-border">
-            <button onClick={handleSaveRule} disabled={saveLinea.isPending} className="btn-odoo-primary">Guardar y cerrar</button>
-            <button onClick={() => setShowModal(false)} className="btn-odoo-secondary">Descartar</button>
+            <button
+              onClick={handleSaveRule}
+              disabled={saveLinea.isPending}
+              className="btn-odoo-primary"
+            >
+              Guardar y cerrar
+            </button>
+            <button
+              onClick={() => setShowModal(false)}
+              className="btn-odoo-secondary"
+            >
+              Descartar
+            </button>
           </div>
         </div>
       </div>
@@ -342,7 +587,9 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
   const allRulesFlat = useMemo(() => {
     const arr: any[] = [];
     Array.from(grouped.entries()).forEach(([tarifaId, { nombre, rules }]) => {
-      rules.forEach(r => arr.push({ ...r, _tarifaId: tarifaId, _tarifaNombre: nombre }));
+      rules.forEach((r) =>
+        arr.push({ ...r, _tarifaId: tarifaId, _tarifaNombre: nombre }),
+      );
     });
     return arr;
   }, [grouped]);
@@ -351,10 +598,54 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
     <div className="space-y-3">
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-          <span>Costo antes de impuesto: <strong className="text-foreground">{cs}{(calcTax({precio: calcularCostoTotal(form.costo ?? 0, form.costos_adicionales), iva_pct: form.tiene_iva ? (form.iva_pct ?? 16) : 0, ieps_pct: form.tiene_ieps ? (form.ieps_pct ?? 0) : 0, ieps_tipo: form.ieps_tipo || 'porcentaje', incluye_impuestos: true}).precio_neto).toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></span>
-          <span>Costo total: <strong className="text-foreground">{cs}{(calcTax({precio: calcularCostoTotal(form.costo ?? 0, form.costos_adicionales), iva_pct: form.tiene_iva ? (form.iva_pct ?? 16) : 0, ieps_pct: form.tiene_ieps ? (form.ieps_pct ?? 0) : 0, ieps_tipo: form.ieps_tipo || 'porcentaje', incluye_impuestos: true}).total).toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></span>
-          {form.tiene_iva && <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">IVA {form.iva_pct ?? 16}%</span>}
-          {form.tiene_ieps && <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">IEPS {form.ieps_pct ?? 0}%</span>}
+          <span>
+            Costo antes de impuesto:{" "}
+            <strong className="text-foreground">
+              {cs}
+              {calcTax({
+                precio: calcularCostoTotal(
+                  form.costo ?? 0,
+                  form.costos_adicionales,
+                ),
+                iva_pct: form.tiene_iva ? (form.iva_pct ?? 16) : 0,
+                ieps_pct: form.tiene_ieps ? (form.ieps_pct ?? 0) : 0,
+                ieps_tipo: form.ieps_tipo || "porcentaje",
+                incluye_impuestos: true,
+              }).precio_neto.toLocaleString("es-MX", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </strong>
+          </span>
+          <span>
+            Costo total:{" "}
+            <strong className="text-foreground">
+              {cs}
+              {calcTax({
+                precio: calcularCostoTotal(
+                  form.costo ?? 0,
+                  form.costos_adicionales,
+                ),
+                iva_pct: form.tiene_iva ? (form.iva_pct ?? 16) : 0,
+                ieps_pct: form.tiene_ieps ? (form.ieps_pct ?? 0) : 0,
+                ieps_tipo: form.ieps_tipo || "porcentaje",
+                incluye_impuestos: true,
+              }).total.toLocaleString("es-MX", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </strong>
+          </span>
+          {form.tiene_iva && (
+            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+              IVA {form.iva_pct ?? 16}%
+            </span>
+          )}
+          {form.tiene_ieps && (
+            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+              IEPS {form.ieps_pct ?? 0}%
+            </span>
+          )}
           {!form.tiene_iva && !form.tiene_ieps && <span>Sin impuestos</span>}
         </div>
       </div>
@@ -383,53 +674,88 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
               const tarifaNombre = linea._tarifaNombre;
               const isEditing = editingId === linea.id;
               const currentVals = isEditing ? editVal : linea;
-              const costo = calcularCostoTotal(form.costo ?? 0, form.costos_adicionales);
+              const costo = calcularCostoTotal(
+                form.costo ?? 0,
+                form.costos_adicionales,
+              );
               const ivaPct = form.tiene_iva ? (form.iva_pct ?? 16) : 0;
               const iepsPct = form.tiene_ieps ? (form.ieps_pct ?? 0) : 0;
-              const iepsTipo = form.ieps_tipo || 'porcentaje';
-              
+              const iepsTipo = form.ieps_tipo || "porcentaje";
+
               const taxRes = calcTax({
                 precio: costo,
                 iva_pct: ivaPct,
                 ieps_pct: iepsPct,
                 ieps_tipo: iepsTipo,
-                incluye_impuestos: true
+                incluye_impuestos: true,
               });
               const costoNeto = taxRes.precio_neto;
               const costoConImpuestos = taxRes.total;
-              const basePrecio = ((isEditing ? (editVal.base_precio ?? linea.base_precio) : linea.base_precio) ?? 'sin_impuestos') as string;
-              const redondeoVal = ((isEditing ? (editVal.redondeo ?? linea.redondeo) : linea.redondeo) ?? 'ninguno') as string;
-              const redondeoLabel = ({ arriba: '⬆ Arriba', abajo: '⬇ Abajo', cercano: '↕ Cercano', ninguno: '— Ninguno' } as Record<string, string>)[redondeoVal] ?? '— Ninguno';
-              const baseLabel = basePrecio === 'con_impuestos' ? 'Con imp.' : 'Sin imp.';
+              const basePrecio = ((isEditing
+                ? (editVal.base_precio ?? linea.base_precio)
+                : linea.base_precio) ?? "sin_impuestos") as string;
+              const redondeoVal = ((isEditing
+                ? (editVal.redondeo ?? linea.redondeo)
+                : linea.redondeo) ?? "ninguno") as string;
+              const redondeoLabel =
+                (
+                  {
+                    arriba: "⬆ Arriba",
+                    abajo: "⬇ Abajo",
+                    cercano: "↕ Cercano",
+                    ninguno: "— Ninguno",
+                  } as Record<string, string>
+                )[redondeoVal] ?? "— Ninguno";
+              const baseLabel =
+                basePrecio === "con_impuestos" ? "Con imp." : "Sin imp.";
 
               const srcLinea = isEditing ? { ...linea, ...editVal } : linea;
               const pr = form.precio_principal ?? 0;
 
               let ruleFactor = 1;
-              if (srcLinea.aplica_a === 'presentacion' && srcLinea.presentacion_ids?.length > 0) {
-                const p = (dbPresentaciones ?? []).find((pr: any) => pr.id === srcLinea.presentacion_ids[0]);
+              if (
+                srcLinea.aplica_a === "presentacion" &&
+                srcLinea.presentacion_ids?.length > 0
+              ) {
+                const p = (dbPresentaciones ?? []).find(
+                  (pr: any) => pr.id === srcLinea.presentacion_ids[0],
+                );
                 if (p) ruleFactor = Number(p.factor_base) || 1;
               }
               const costoEfectivoNeto = costoNeto * ruleFactor;
               const costoEfectivoTotal = costoConImpuestos * ruleFactor;
               const prEfectivo = pr * ruleFactor;
-              const prEfectivoTotal = calcTax({ precio: prEfectivo, iva_pct: ivaPct, ieps_pct: iepsPct, ieps_tipo: iepsTipo, incluye_impuestos: false }).total;
+              const prEfectivoTotal = calcTax({
+                precio: prEfectivo,
+                iva_pct: ivaPct,
+                ieps_pct: iepsPct,
+                ieps_tipo: iepsTipo,
+                incluye_impuestos: false,
+              }).total;
 
               let calcSinImp = 0;
               let calcConImp = 0;
-              let useConImp = basePrecio === 'con_impuestos';
+              let useConImp = basePrecio === "con_impuestos";
 
-              if (srcLinea.tipo_calculo === 'margen_costo') {
+              if (srcLinea.tipo_calculo === "margen_costo") {
                 if (useConImp) {
-                  calcConImp = costoEfectivoTotal * (1 + ((srcLinea.margen_pct as number) ?? 0) / 100);
+                  calcConImp =
+                    costoEfectivoTotal *
+                    (1 + ((srcLinea.margen_pct as number) ?? 0) / 100);
                 } else {
-                  calcSinImp = costoEfectivoNeto * (1 + ((srcLinea.margen_pct as number) ?? 0) / 100);
+                  calcSinImp =
+                    costoEfectivoNeto *
+                    (1 + ((srcLinea.margen_pct as number) ?? 0) / 100);
                 }
-              } else if (srcLinea.tipo_calculo === 'descuento_precio') {
+              } else if (srcLinea.tipo_calculo === "descuento_precio") {
                 if (useConImp) {
-                  calcConImp = prEfectivoTotal * (1 - ((srcLinea.descuento_pct as number) ?? 0) / 100);
+                  calcConImp =
+                    prEfectivoTotal *
+                    (1 - ((srcLinea.descuento_pct as number) ?? 0) / 100);
                 } else {
-                  calcSinImp = prEfectivo * (1 - ((srcLinea.descuento_pct as number) ?? 0) / 100);
+                  calcSinImp =
+                    prEfectivo *
+                    (1 - ((srcLinea.descuento_pct as number) ?? 0) / 100);
                 }
               } else {
                 if (useConImp) {
@@ -440,34 +766,50 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
               }
 
               const minSinImp = costoEfectivoNeto;
-              const minConImp = calcTax({ precio: minSinImp, iva_pct: ivaPct, ieps_pct: iepsPct, ieps_tipo: iepsTipo, incluye_impuestos: false }).total;
+              const minConImp = calcTax({
+                precio: minSinImp,
+                iva_pct: ivaPct,
+                ieps_pct: iepsPct,
+                ieps_tipo: iepsTipo,
+                incluye_impuestos: false,
+              }).total;
 
               let precioSinImp: number, precioConImp: number;
               if (useConImp) {
                 const rawConImp = Math.max(calcConImp, minConImp);
-                precioConImp = applyRedondeo(rawConImp, srcLinea.redondeo as string ?? 'ninguno');
+                precioConImp = applyRedondeo(
+                  rawConImp,
+                  (srcLinea.redondeo as string) ?? "ninguno",
+                );
                 precioSinImp = calcTax({
                   precio: precioConImp,
                   iva_pct: ivaPct,
                   ieps_pct: iepsPct,
                   ieps_tipo: iepsTipo,
-                  incluye_impuestos: true
+                  incluye_impuestos: true,
                 }).precio_neto;
               } else {
                 const rawSinImp = Math.max(calcSinImp, minSinImp);
-                precioSinImp = applyRedondeo(rawSinImp, srcLinea.redondeo as string ?? 'ninguno');
+                precioSinImp = applyRedondeo(
+                  rawSinImp,
+                  (srcLinea.redondeo as string) ?? "ninguno",
+                );
                 precioConImp = calcTax({
                   precio: precioSinImp,
                   iva_pct: ivaPct,
                   ieps_pct: iepsPct,
                   ieps_tipo: iepsTipo,
-                  incluye_impuestos: false
+                  incluye_impuestos: false,
                 }).total;
               }
 
-              const isBaseConImp = basePrecio === 'con_impuestos';
-              const ganancia = isBaseConImp ? (precioConImp - costoEfectivoTotal) : (precioSinImp - costoEfectivoNeto);
-              const ganBase = isBaseConImp ? costoEfectivoTotal : costoEfectivoNeto;
+              const isBaseConImp = basePrecio === "con_impuestos";
+              const ganancia = isBaseConImp
+                ? precioConImp - costoEfectivoTotal
+                : precioSinImp - costoEfectivoNeto;
+              const ganBase = isBaseConImp
+                ? costoEfectivoTotal
+                : costoEfectivoNeto;
               const ganPct = ganBase > 0 ? (ganancia / ganBase) * 100 : 0;
               const listaName = linea.lista_precios?.nombre;
               const esPrincipal = linea.lista_precios?.es_principal;
@@ -479,107 +821,347 @@ export function PreciosTab({ form, tarifaLineas, tarifasDisp, productoId, isNew,
                 startEdit(linea, col);
               };
 
-              const handleBlur = () => { setTimeout(() => saveEdit(linea.id), 150); };
+              const handleBlur = () => {
+                setTimeout(() => saveEdit(linea.id), 150);
+              };
 
               return (
-                <tr key={linea.id} className="border-b border-table-border last:border-0 hover:bg-table-hover">
-                  <td className="py-1.5 px-3 text-xs font-medium cursor-pointer" onClick={() => navigate(`/productos/${productoId}/tarifas/${tarifaId}`)}>{tarifaNombre}</td>
-                  <td className="py-1.5 px-3 cursor-pointer" onClick={() => navigate(`/productos/${productoId}/tarifas/${tarifaId}`)}>
-                    <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${linea.aplica_a === 'producto' ? 'bg-primary/10 text-primary' : linea.aplica_a === 'categoria' ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'}`}>{aplica_label(linea)}</span>
+                <tr
+                  key={linea.id}
+                  className="border-b border-table-border last:border-0 hover:bg-table-hover"
+                >
+                  <td
+                    className="py-1.5 px-3 text-xs font-medium cursor-pointer"
+                    onClick={() =>
+                      navigate(`/productos/${productoId}/tarifas/${tarifaId}`)
+                    }
+                  >
+                    {tarifaNombre}
                   </td>
-                  <td className="py-1.5 px-3 text-xs cursor-pointer" onClick={() => navigate(`/productos/${productoId}/tarifas/${tarifaId}`)}>
-                    {listaName ? <span className="flex items-center gap-1">{esPrincipal && <Star className="h-3 w-3 text-amber-500 fill-amber-500" />}{listaName}</span> : <span className="text-muted-foreground">—</span>}
+                  <td
+                    className="py-1.5 px-3 cursor-pointer"
+                    onClick={() =>
+                      navigate(`/productos/${productoId}/tarifas/${tarifaId}`)
+                    }
+                  >
+                    <span
+                      className={`text-[11px] px-1.5 py-0.5 rounded-full ${linea.aplica_a === "producto" ? "bg-primary/10 text-primary" : linea.aplica_a === "categoria" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground"}`}
+                    >
+                      {aplica_label(linea)}
+                    </span>
                   </td>
-                  <td className="py-1.5 px-3 text-xs" onClick={cellClick('tipo')}>
-                    {isEditing && editingCol === 'tipo' ? (
-                      <select autoFocus className="input-odoo py-0.5 text-[12px] w-full" value={currentVals.tipo_calculo as string}
-                        onChange={e => setEditVal(p => ({ ...p, tipo_calculo: e.target.value }))} onBlur={handleBlur}>
-                        <option value="precio_fijo">Precio fijo</option><option value="margen_costo">Fórmula (margen)</option><option value="descuento_precio">Descuento</option>
-                      </select>
-                    ) : <span className="inline-edit-idle text-muted-foreground">{calcLabel(isEditing ? { ...linea, ...editVal } : linea)}</span>}
-                  </td>
-                  <td className="py-1.5 px-3 text-right" onClick={cellClick('valor')}>
-                    {isEditing && editingCol === 'valor' ? (
-                      <input autoFocus type="number" className="input-odoo py-0.5 text-[12px] w-20 text-right"
-                        value={(currentVals.tipo_calculo === 'precio_fijo' ? currentVals.precio : currentVals.tipo_calculo === 'margen_costo' ? currentVals.margen_pct : currentVals.descuento_pct) as number}
-                        onChange={e => { const v = +e.target.value; setEditVal(p => ({ ...p, ...(p.tipo_calculo === 'precio_fijo' ? { precio: v } : p.tipo_calculo === 'margen_costo' ? { margen_pct: v } : { descuento_pct: v }) })); }}
-                        onBlur={handleBlur} onKeyDown={e => { if (e.key === 'Enter') handleBlur(); if (e.key === 'Escape') { setEditingId(null); setEditingCol(null); } }} />
+                  <td
+                    className="py-1.5 px-3 text-xs cursor-pointer"
+                    onClick={() =>
+                      navigate(`/productos/${productoId}/tarifas/${tarifaId}`)
+                    }
+                  >
+                    {listaName ? (
+                      <span className="flex items-center gap-1">
+                        {esPrincipal && (
+                          <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
+                        )}
+                        {listaName}
+                      </span>
                     ) : (
-                      <span className="inline-edit-idle font-mono text-muted-foreground">
-                        {linea.tipo_calculo === 'precio_fijo' ? `${cs} ${(linea.precio ?? 0).toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : linea.tipo_calculo === 'margen_costo' ? `${linea.margen_pct}%` : `${linea.descuento_pct}%`}
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td
+                    className="py-1.5 px-3 text-xs"
+                    onClick={cellClick("tipo")}
+                  >
+                    {isEditing && editingCol === "tipo" ? (
+                      <select
+                        autoFocus
+                        className="input-odoo py-0.5 text-[12px] w-full"
+                        value={currentVals.tipo_calculo as string}
+                        onChange={(e) =>
+                          setEditVal((p) => ({
+                            ...p,
+                            tipo_calculo: e.target.value,
+                          }))
+                        }
+                        onBlur={handleBlur}
+                      >
+                        <option value="precio_fijo">Precio fijo</option>
+                        <option value="margen_costo">Fórmula (margen)</option>
+                        <option value="descuento_precio">Descuento</option>
+                      </select>
+                    ) : (
+                      <span className="inline-edit-idle text-muted-foreground">
+                        {calcLabel(
+                          isEditing ? { ...linea, ...editVal } : linea,
+                        )}
                       </span>
                     )}
                   </td>
-                  <td className="py-1.5 px-3 text-center text-xs" onClick={cellClick('redondeo')}>
-                    {isEditing && editingCol === 'redondeo' ? (
-                      <select autoFocus className="input-odoo py-0.5 text-[12px] w-full" value={(currentVals.redondeo as string) ?? 'ninguno'}
-                        onChange={e => setEditVal(p => ({ ...p, redondeo: e.target.value }))} onBlur={handleBlur}>
-                        <option value="ninguno">Ninguno</option><option value="arriba">Arriba</option><option value="abajo">Abajo</option><option value="cercano">Cercano</option>
+                  <td
+                    className="py-1.5 px-3 text-right"
+                    onClick={cellClick("valor")}
+                  >
+                    {isEditing && editingCol === "valor" ? (
+                      <input
+                        autoFocus
+                        type="number"
+                        className="input-odoo py-0.5 text-[12px] w-20 text-right"
+                        value={
+                          (currentVals.tipo_calculo === "precio_fijo"
+                            ? currentVals.precio
+                            : currentVals.tipo_calculo === "margen_costo"
+                              ? currentVals.margen_pct
+                              : currentVals.descuento_pct) as number
+                        }
+                        onChange={(e) => {
+                          const v = +e.target.value;
+                          setEditVal((p) => ({
+                            ...p,
+                            ...(p.tipo_calculo === "precio_fijo"
+                              ? { precio: v }
+                              : p.tipo_calculo === "margen_costo"
+                                ? { margen_pct: v }
+                                : { descuento_pct: v }),
+                          }));
+                        }}
+                        onBlur={handleBlur}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleBlur();
+                          if (e.key === "Escape") {
+                            setEditingId(null);
+                            setEditingCol(null);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <span className="inline-edit-idle font-mono text-muted-foreground">
+                        {linea.tipo_calculo === "precio_fijo"
+                          ? `${cs} ${(linea.precio ?? 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : linea.tipo_calculo === "margen_costo"
+                            ? `${linea.margen_pct}%`
+                            : `${linea.descuento_pct}%`}
+                      </span>
+                    )}
+                  </td>
+                  <td
+                    className="py-1.5 px-3 text-center text-xs"
+                    onClick={cellClick("redondeo")}
+                  >
+                    {isEditing && editingCol === "redondeo" ? (
+                      <select
+                        autoFocus
+                        className="input-odoo py-0.5 text-[12px] w-full"
+                        value={(currentVals.redondeo as string) ?? "ninguno"}
+                        onChange={(e) =>
+                          setEditVal((p) => ({
+                            ...p,
+                            redondeo: e.target.value,
+                          }))
+                        }
+                        onBlur={handleBlur}
+                      >
+                        <option value="ninguno">Ninguno</option>
+                        <option value="arriba">Arriba</option>
+                        <option value="abajo">Abajo</option>
+                        <option value="cercano">Cercano</option>
                       </select>
-                    ) : <span className="inline-edit-idle text-muted-foreground">{redondeoLabel}</span>}
+                    ) : (
+                      <span className="inline-edit-idle text-muted-foreground">
+                        {redondeoLabel}
+                      </span>
+                    )}
                   </td>
-                  <td className="py-1.5 px-3 text-center" onClick={cellClick('base')}>
-                    {isEditing && editingCol === 'base' ? (
-                      <select autoFocus className="input-odoo py-0.5 text-[12px] w-full" value={(currentVals.base_precio as string) ?? 'sin_impuestos'}
-                        onChange={e => setEditVal(p => ({ ...p, base_precio: e.target.value }))} onBlur={handleBlur}>
-                        <option value="sin_impuestos">Sin impuestos</option><option value="con_impuestos">Con impuestos</option>
+                  <td
+                    className="py-1.5 px-3 text-center"
+                    onClick={cellClick("base")}
+                  >
+                    {isEditing && editingCol === "base" ? (
+                      <select
+                        autoFocus
+                        className="input-odoo py-0.5 text-[12px] w-full"
+                        value={
+                          (currentVals.base_precio as string) ?? "con_impuestos"
+                        }
+                        onChange={(e) =>
+                          setEditVal((p) => ({
+                            ...p,
+                            base_precio: e.target.value,
+                          }))
+                        }
+                        onBlur={handleBlur}
+                      >
+                        <option value="con_impuestos">Con impuestos</option>
                       </select>
-                    ) : <span className={`inline-edit-idle text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-primary/10 text-primary`}>{baseLabel}</span>}
+                    ) : (
+                      <span
+                        className={`inline-edit-idle text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-primary/10 text-primary`}
+                      >
+                        {baseLabel}
+                      </span>
+                    )}
                   </td>
-                  <td className="py-1.5 px-3 text-right font-mono font-semibold text-foreground">{cs} {precioSinImp.toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                  <td className="py-1.5 px-3 text-right font-mono font-semibold text-primary">{cs} {precioConImp.toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                  <td className={`py-1.5 px-3 text-right font-mono font-semibold ${ganancia >= 0 ? 'text-green-600' : 'text-destructive'}`}>{cs} {ganancia.toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                  <td className={`py-1.5 px-3 text-right font-mono font-semibold ${ganPct >= 0 ? 'text-green-600' : 'text-destructive'}`}>{ganPct.toFixed(1)}%</td>
-                  <td className="py-1.5 px-3 text-right" onClick={cellClick('comision')}>
-                    {isEditing && editingCol === 'comision' ? (
-                      <input autoFocus type="number" className="input-odoo py-0.5 text-[12px] w-16 text-right" value={(currentVals.comision_pct as number) || ''}
-                        onChange={e => setEditVal(p => ({ ...p, comision_pct: +e.target.value }))} onBlur={handleBlur}
-                        onKeyDown={e => { if (e.key === 'Enter') handleBlur(); if (e.key === 'Escape') { setEditingId(null); setEditingCol(null); } }} />
-                    ) : <span className="inline-edit-idle font-mono text-xs text-primary">{linea.comision_pct ? `${linea.comision_pct}%` : '—'}</span>}
+                  <td className="py-1.5 px-3 text-right font-mono font-semibold text-foreground">
+                    {cs}{" "}
+                    {precioSinImp.toLocaleString("es-MX", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
                   </td>
-                  <td className="py-1.5 px-3 text-center" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => handleDeleteRule(linea.id)} className="text-destructive hover:text-destructive/80"><Trash2 className="h-3.5 w-3.5" /></button>
+                  <td className="py-1.5 px-3 text-right font-mono font-semibold text-primary">
+                    {cs}{" "}
+                    {precioConImp.toLocaleString("es-MX", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </td>
+                  <td
+                    className={`py-1.5 px-3 text-right font-mono font-semibold ${ganancia >= 0 ? "text-green-600" : "text-destructive"}`}
+                  >
+                    {cs}{" "}
+                    {ganancia.toLocaleString("es-MX", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </td>
+                  <td
+                    className={`py-1.5 px-3 text-right font-mono font-semibold ${ganPct >= 0 ? "text-green-600" : "text-destructive"}`}
+                  >
+                    {ganPct.toFixed(1)}%
+                  </td>
+                  <td
+                    className="py-1.5 px-3 text-right"
+                    onClick={cellClick("comision")}
+                  >
+                    {isEditing && editingCol === "comision" ? (
+                      <input
+                        autoFocus
+                        type="number"
+                        className="input-odoo py-0.5 text-[12px] w-16 text-right"
+                        value={(currentVals.comision_pct as number) || ""}
+                        onChange={(e) =>
+                          setEditVal((p) => ({
+                            ...p,
+                            comision_pct: +e.target.value,
+                          }))
+                        }
+                        onBlur={handleBlur}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleBlur();
+                          if (e.key === "Escape") {
+                            setEditingId(null);
+                            setEditingCol(null);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <span className="inline-edit-idle font-mono text-xs text-primary">
+                        {linea.comision_pct ? `${linea.comision_pct}%` : "—"}
+                      </span>
+                    )}
+                  </td>
+                  <td
+                    className="py-1.5 px-3 text-center"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={() => handleDeleteRule(linea.id)}
+                      className="text-destructive hover:text-destructive/80"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </td>
                 </tr>
               );
             })}
             {allRulesFlat.length === 0 && (
-              <tr><td colSpan={13} className="text-center py-4 text-muted-foreground text-xs">Sin reglas de precio aplicables a este producto.</td></tr>
+              <tr>
+                <td
+                  colSpan={13}
+                  className="text-center py-4 text-muted-foreground text-xs"
+                >
+                  Sin reglas de precio aplicables a este producto.
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
       </div>
       {!isNew && (
         <div className="flex flex-col gap-4">
-          <button className="odoo-link self-start" onClick={() => { setNewRule(p => ({ ...p, precio_minimo: baseNetCost })); setShowModal(true); }}>Agregar un precio</button>
+          <button
+            className="odoo-link self-start"
+            onClick={() => {
+              setNewRule((p) => ({ ...p, precio_minimo: baseNetCost }));
+              setShowModal(true);
+            }}
+          >
+            Agregar un precio
+          </button>
           <div className="text-xs text-muted-foreground bg-primary/5 border border-primary/15 rounded-lg p-4 space-y-3 mt-2">
-            <p className="font-semibold text-primary text-[13px] border-b border-primary/10 pb-1">Guía rápida sobre Precios y Reglas</p>
-            
+            <p className="font-semibold text-primary text-[13px] border-b border-primary/10 pb-1">
+              Guía rápida sobre Precios y Reglas
+            </p>
+
             <div className="space-y-1.5">
-              <p className="font-medium text-foreground">¿Para qué sirve la columna "Base"?</p>
-              <p>Define el costo inicial sobre el cual se aplicará tu porcentaje de ganancia:</p>
+              <p className="font-medium text-foreground">
+                ¿Para qué sirve la columna "Base"?
+              </p>
+              <p>
+                Define el costo inicial sobre el cual se aplicará tu porcentaje
+                de ganancia:
+              </p>
               <ul className="list-disc list-inside ml-2 space-y-1">
-                <li><strong>Sin impuestos:</strong> La ganancia se calcula directamente sobre el <strong>Costo antes de impuesto</strong> (tu costo real neto libre de IVA/IEPS).</li>
-                <li><strong>Con impuestos:</strong> La ganancia se calcula sobre el <strong>Costo total</strong> (que incluye fletes, adicionales e impuestos).</li>
+                <li>
+                  <strong>Sin impuestos:</strong> La ganancia se calcula
+                  directamente sobre el <strong>Costo antes de impuesto</strong>{" "}
+                  (tu costo real neto libre de IVA/IEPS).
+                </li>
+                <li>
+                  <strong>Con impuestos:</strong> La ganancia se calcula sobre
+                  el <strong>Costo total</strong> (que incluye fletes,
+                  adicionales e impuestos).
+                </li>
               </ul>
             </div>
 
             <div className="space-y-1.5 pt-2 border-t border-primary/5">
-              <p className="font-medium text-foreground">Protección de Costo Automática</p>
+              <p className="font-medium text-foreground">
+                Protección de Costo Automática
+              </p>
               <p>
-                Para proteger tu margen, el sistema nunca permitirá vender un producto por debajo de su costo de adquisición. 
-                El <strong>Costo antes de impuesto</strong> actúa automáticamente como el precio mínimo neto permitido.
+                Para proteger tu margen, el sistema nunca permitirá vender un
+                producto por debajo de su costo de adquisición. El{" "}
+                <strong>Costo antes de impuesto</strong> actúa automáticamente
+                como el precio mínimo neto permitido.
               </p>
             </div>
 
             <div className="space-y-1.5 pt-2 border-t border-primary/5">
-              <p className="font-medium text-foreground">Ejemplo de Cálculo (s/impuestos vs c/impuestos):</p>
+              <p className="font-medium text-foreground">
+                Ejemplo de Cálculo (s/impuestos vs c/impuestos):
+              </p>
               <p className="leading-relaxed">
-                Si tu producto tiene un Costo antes de impuesto de {cs}39.31 (Costo total {cs}57.00) y agregas una ganancia del 10%:
+                Si tu producto tiene un Costo antes de impuesto de {cs}39.31
+                (Costo total {cs}57.00) y agregas una ganancia del 10%:
               </p>
               <ul className="list-disc list-inside ml-2 space-y-1">
-                <li>Con base <strong>Sin impuestos</strong>: El precio neto se calcula como <code className="bg-primary/5 px-1 py-0.5 rounded text-[11px] font-mono">39.31 * 1.10 = {cs}43.24</code>. A este precio neto se le aplican los impuestos (IVA/IEPS) correspondientes.</li>
-                <li>Con base <strong>Con impuestos</strong>: El precio final total se calcula como <code className="bg-primary/5 px-1 py-0.5 rounded text-[11px] font-mono">57.00 * 1.10 = {cs}62.70</code>, y el precio neto se extrae restando proporcionalmente el IVA/IEPS de ese total.</li>
+                <li>
+                  Con base <strong>Sin impuestos</strong>: El precio neto se
+                  calcula como{" "}
+                  <code className="bg-primary/5 px-1 py-0.5 rounded text-[11px] font-mono">
+                    39.31 * 1.10 = {cs}43.24
+                  </code>
+                  . A este precio neto se le aplican los impuestos (IVA/IEPS)
+                  correspondientes.
+                </li>
+                <li>
+                  Con base <strong>Con impuestos</strong>: El precio final total
+                  se calcula como{" "}
+                  <code className="bg-primary/5 px-1 py-0.5 rounded text-[11px] font-mono">
+                    57.00 * 1.10 = {cs}62.70
+                  </code>
+                  , y el precio neto se extrae restando proporcionalmente el
+                  IVA/IEPS de ese total.
+                </li>
               </ul>
             </div>
           </div>
